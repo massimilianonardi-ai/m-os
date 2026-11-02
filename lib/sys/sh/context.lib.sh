@@ -366,7 +366,7 @@ context()
   # Shell state changes are confined to this final application stage.
   if [ -n "$_context_next_path_prefix" ]
   then
-    PATH="$_context_next_path_prefix:${_context_host_path}"
+    PATH="$_context_next_path_prefix${_context_host_path:+:$_context_host_path}"
   else
     PATH=$_context_host_path
   fi
