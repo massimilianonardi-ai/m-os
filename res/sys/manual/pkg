@@ -141,6 +141,20 @@ COMMANDS
             >=21
             >=21 <26
 
+PACKAGE LIBRARY EXPORTS
+    A selected package range may contain library export descriptors in
+    lib/sh/<name>.lib.sh and lib/java/<name>.jar. Each descriptor names one
+    relative readable file already inside the extracted package useful root.
+    During package integration, pkg validates the descriptor and materializes
+    a symlink to the installed concrete's corresponding root file under
+    lib/sh or lib/java. Library-only packages need no command declaration.
+
+    Library exports are ordinary versioned package contents, not facilities.
+    Context can expose selected versions by adding the shell source directory
+    to PATH and the Java JAR directory to CLASSPATH using a literal /* entry.
+    These projections have no effect on module loaders outside their declared
+    runtime and are removed together with the installed concrete.
+
 NATIVE-COMMAND MIGRATION
     Installed package concretes contain copies of launcher and package env
     definitions from the catalog revision used during installation. After
