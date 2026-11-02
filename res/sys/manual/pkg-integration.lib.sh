@@ -11,7 +11,15 @@ FUNCTIONS
         flat-pkg primary component/payload-root metadata and dmg-pkg primary
         component/payload-root/overlay metadata, validate dependency declaration
         syntax, materialize the managed concrete and its command/environment/
-        facility/state metadata, and validate/materialize declarative facility
+        facility/state metadata and optional ordinary package library views
+        lib/sh and lib/java. The package range descriptor lib/<runtime>/<name>
+        contains one relative pathname beneath the useful root; integration
+        validates it and creates the corresponding concrete-local symlink.
+        Only non-executable POSIX *.lib.sh files and readable *.jar files
+        are accepted in this first stage. Library publication is independent
+        of facility declarations and does not copy payloads.
+
+        Integration also validates/materializes declarative facility
         command/environment projections plus service realization metadata. A
         facility command may project either a useful-root executable or a validated
         ordinary package command of the same concrete provider. PATH is rejected as
@@ -67,6 +75,7 @@ RETURN STATUS
         18  state materialization failed
         19  setuid/state rollback failed after setuid materialization failure
         20  setuid materialization failed and rollback succeeded
+        21  ordinary library-view materialization failed
 
     Definition validation may also propagate its existing status 1 or 2 as
     described above.
