@@ -40,7 +40,9 @@ FUNCTIONS
 
         Selected shell libraries must be non-executable *.lib.sh links and
         selected Java libraries *.jar links; duplicate library leaf names
-        of the same runtime across selected packages are rejected.
+        of the same runtime across selected packages are rejected. A shell
+        source library name must also not collide with an executable name
+        from the selected packages or protected m system command roots.
 
         The function removes only its previously published PATH and CLASSPATH
         blocks when changing selection. Other edits are retained. A pre-existing
@@ -70,6 +72,8 @@ RETURN STATUS
     13   invalid selected library symlink or library type
     14   selected packages export the same library leaf name
     15   previous context-owned CLASSPATH block unavailable or modified
+    16   PATH is readonly in the invoking shell
+    17   CLASSPATH is readonly in the invoking shell
 
 LIMITATIONS
     This is the first package-command and library selection increment of the broader
