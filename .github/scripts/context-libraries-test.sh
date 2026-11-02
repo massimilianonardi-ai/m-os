@@ -99,4 +99,28 @@ then
 fi
 [ "$PATH" = "$before_path" ] && [ "$CLASSPATH" = "$before_classpath" ] || exit 25
 
+# Failed readonly probes must leave an already active shell unchanged.
+(
+  readonly CLASSPATH
+  previous=$PATH
+  if context pkg=context-ci-lib@1
+  then
+    exit 26
+  fi
+  [ "$PATH" = "$previous" ] || exit 27
+) || exit 28
+
+# An unrelated PATH edit and an unrelated CLASSPATH edit must survive
+# a subsequent context replacement.
+unset CLASSPATH
+context pkg=context-ci-lib@1 || exit 29
+PATH="/tmp/context-host-extra:$PATH"
+CLASSPATH="/tmp/context-classpath-extra:$CLASSPATH"
+export PATH CLASSPATH
+context pkg=context-ci-lib@2 || exit 30
+case "$PATH" in *"/tmp/context-host-extra"*) : ;; *) exit 31 ;; esac
+case "$CLASSPATH" in *"/tmp/context-classpath-extra"*) : ;; *) exit 32 ;; esac
+context || exit 33
+[ "$CLASSPATH" = "/tmp/context-classpath-extra" ] || exit 34
+
 printf '%s\n' 'PASS: installed lib/sh and lib/java symlinks, POSIX dot, JVM CLASSPATH, replacement, rollback, collision'
