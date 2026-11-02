@@ -363,6 +363,17 @@ context()
     fi
   done
 
+  # Readonly shell variables can abort a POSIX shell on assignment. Probe
+  # writability in subshells so an abort cannot partially update the caller.
+  ( PATH="${PATH-}" ) 2>/dev/null || {
+    _context_error context-path-readonly PATH
+    return 16
+  }
+  ( CLASSPATH="${CLASSPATH-}" ) 2>/dev/null || {
+    _context_error context-classpath-readonly CLASSPATH
+    return 17
+  }
+
   # Shell state changes are confined to this final application stage.
   if [ -n "$_context_next_path_prefix" ]
   then
