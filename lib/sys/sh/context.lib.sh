@@ -214,6 +214,40 @@ _context_libraries_validate()
               _context_error context-library-link-invalid "$_context_lib_file"
               return 13
             }
+
+            # PATH serves both dot lookup and executable lookup: never let
+            # a command script shadow a selected shell library name.
+            for _context_lib_core_dir in "${m_BIN_SYS_DIR-}" "${m_BIN_SYS_OSARCH_DIR-}"
+            do
+              [ -n "$_context_lib_core_dir" ] || continue
+              if [ -e "$_context_lib_core_dir/$_context_lib_name" ] ||
+                 [ -L "$_context_lib_core_dir/$_context_lib_name" ]
+              then
+                _context_error context-library-name-collision "$_context_lib_name"
+                return 14
+              fi
+            done
+            _context_lib_other_items=$1
+            while [ -n "$_context_lib_other_items" ]
+            do
+              case "$_context_lib_other_items" in
+                *"$_context_lib_newline"*)
+                  _context_lib_other=${_context_lib_other_items%%"$_context_lib_newline"*}
+                  _context_lib_other_items=${_context_lib_other_items#*"$_context_lib_newline"}
+                  ;;
+                *)
+                  _context_lib_other=$_context_lib_other_items
+                  _context_lib_other_items=
+                  ;;
+              esac
+              _context_lib_command="$m_PKG_DIR/$_context_lib_other/cmd/$_context_lib_name"
+              if [ -e "$_context_lib_command" ] || [ -L "$_context_lib_command" ]
+              then
+                _context_error context-library-name-collision "$_context_lib_name"
+                return 14
+              fi
+            done
+
             case "$_context_lib_newline$_context_lib_sh_names$_context_lib_newline" in
               *"$_context_lib_newline$_context_lib_name$_context_lib_newline"*)
                 _context_error context-library-name-collision "$_context_lib_name"
