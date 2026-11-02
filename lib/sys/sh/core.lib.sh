@@ -10,3 +10,4 @@ loadlib()
 }
 
 loadlib "sys/sh/base"
+loadlib "sys/sh/context"
