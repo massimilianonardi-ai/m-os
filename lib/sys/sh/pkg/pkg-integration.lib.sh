@@ -299,6 +299,90 @@ _pkg_integration_dmg_overlay_validate()
   return 0
 }
 
+# Library exports are ordinary package capabilities, independent of facilities.
+# Descriptor leaf: <library>.lib.sh or <archive>.jar.
+# Descriptor content: relative pathname inside the validated useful root.
+_pkg_integration_libraries_validate()
+{
+  [ "$#" -eq 2 ] || return 2
+  pkg_integration_lib_range=$1
+  pkg_integration_lib_root=$2
+  [ -d "$pkg_integration_lib_range/lib" ] || return 0
+  valid_dir "$pkg_integration_lib_range/lib" || return 1
+
+  for pkg_integration_lib_runtime in "$pkg_integration_lib_range/lib/"*
+  do
+    [ -e "$pkg_integration_lib_runtime" ] || [ -L "$pkg_integration_lib_runtime" ] || continue
+    case "${pkg_integration_lib_runtime##*/}" in
+      sh | java) : ;;
+      *) return 1 ;;
+    esac
+    valid_dir "$pkg_integration_lib_runtime" || return 1
+    _pkg_integration_dir_entries_empty "$pkg_integration_lib_runtime" && return 1
+
+    for pkg_integration_lib_descriptor in "$pkg_integration_lib_runtime/"*
+    do
+      [ -e "$pkg_integration_lib_descriptor" ] || [ -L "$pkg_integration_lib_descriptor" ] || continue
+      pkg_integration_lib_name=${pkg_integration_lib_descriptor##*/}
+      pkg_name_valid "$pkg_integration_lib_name" || return 1
+      case "${pkg_integration_lib_runtime##*/}:$pkg_integration_lib_name" in
+        sh:*.lib.sh | java:*.jar) : ;;
+        *) return 1 ;;
+      esac
+
+      _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
+      [ -e "$pkg_integration_lib_root/$pkg_integration_link_target" ] || return 1
+      readpathce pkg_integration_lib_resolved "$pkg_integration_lib_root/$pkg_integration_link_target" || return 1
+      case "$pkg_integration_lib_resolved" in
+        "$pkg_integration_lib_root"/*) : ;;
+        *) return 1 ;;
+      esac
+      [ -f "$pkg_integration_lib_resolved" ] && [ -r "$pkg_integration_lib_resolved" ] || return 1
+      if [ "${pkg_integration_lib_runtime##*/}" = sh ]
+      then
+        [ ! -x "$pkg_integration_lib_resolved" ] || return 1
+        command -p -- sh -n "$pkg_integration_lib_resolved" >/dev/null 2>&1 || return 1
+      fi
+    done
+
+    for pkg_integration_lib_hidden in "$pkg_integration_lib_runtime"/.[!.]* "$pkg_integration_lib_runtime"/..?*
+    do
+      [ -e "$pkg_integration_lib_hidden" ] || [ -L "$pkg_integration_lib_hidden" ] || continue
+      return 1
+    done
+  done
+
+  for pkg_integration_lib_hidden in "$pkg_integration_lib_range/lib"/.[!.]* "$pkg_integration_lib_range/lib"/..?*
+  do
+    [ -e "$pkg_integration_lib_hidden" ] || [ -L "$pkg_integration_lib_hidden" ] || continue
+    return 1
+  done
+}
+
+_pkg_integration_libraries_materialize()
+{
+  [ "$#" -eq 2 ] || return 2
+  pkg_integration_lib_range=$1
+  pkg_integration_lib_concrete=$2
+  [ -d "$pkg_integration_lib_range/lib" ] || return 0
+  command -p -- mkdir "$pkg_integration_lib_concrete/lib" || return 1
+
+  for pkg_integration_lib_runtime in "$pkg_integration_lib_range/lib/"*
+  do
+    [ -d "$pkg_integration_lib_runtime" ] || continue
+    pkg_integration_lib_runtime_name=${pkg_integration_lib_runtime##*/}
+    command -p -- mkdir "$pkg_integration_lib_concrete/lib/$pkg_integration_lib_runtime_name" || return 1
+    for pkg_integration_lib_descriptor in "$pkg_integration_lib_runtime/"*
+    do
+      [ -f "$pkg_integration_lib_descriptor" ] || continue
+      _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
+      pkg_integration_lib_name=${pkg_integration_lib_descriptor##*/}
+      command -p -- ln -s "../../root/$pkg_integration_link_target" \
+        "$pkg_integration_lib_concrete/lib/$pkg_integration_lib_runtime_name/$pkg_integration_lib_name" || return 1
+    done
+  done
+}
+
 _pkg_integration_validate_definition()
 {
   [ "$#" -eq 2 ] || return 2
@@ -356,6 +440,9 @@ _pkg_integration_validate_definition()
       var)
         valid_dir "$pkg_integration_entry" || return 1
         ;;
+      lib)
+        valid_dir "$pkg_integration_entry" || return 1
+        ;;
       cmd)
         valid_dir "$pkg_integration_entry" || return 1
         pkg_integration_have_cmd=1
@@ -405,6 +492,7 @@ _pkg_integration_validate_definition()
       ;;
   esac
 
+  _pkg_integration_libraries_validate "$pkg_integration_range" "$pkg_integration_root" || return 1
   _pkg_integration_facility_projection_validate "$pkg_integration_range" "$pkg_integration_root" || return 1
 
   [ "$pkg_integration_have_cmd" -eq "$pkg_integration_have_link" ] || return 1
@@ -734,6 +822,13 @@ pkg_integrate()
     _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
     _pkg_integration_error pkg-integrate materialization-failed
     return 13
+  fi
+
+  if ! _pkg_integration_libraries_materialize "$pkg_integrate_range" "$pkg_integration_concrete"
+  then
+    _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
+    _pkg_integration_error pkg-integrate library-materialization-failed
+    return 21
   fi
 
   if ! _pkg_integration_materialize_env "$pkg_integrate_range" "$pkg_integration_concrete"
