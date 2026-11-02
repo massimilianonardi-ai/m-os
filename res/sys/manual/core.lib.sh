@@ -4,7 +4,7 @@ NAME
 DESCRIPTION
     lib/sys/sh/core.lib.sh is directly sourced by the root m bootstrap and
     by native POSIX shell commands requiring m shell functions. Its loadlib
-    primitive loads base.lib.sh before returning to the caller.
+    primitive loads base.lib.sh and context.lib.sh before returning to the caller.
 
 FUNCTIONS
     loadlib <library-reference>
@@ -17,7 +17,8 @@ FUNCTIONS
             2                       library file unavailable/unreadable
 
 DEPENDENCIES
-    m_LIB_DIR; sys/sh/base.lib.sh; POSIX sh.
+    m_LIB_DIR; sys/sh/base.lib.sh; sys/sh/context.lib.sh; POSIX sh.
 
 SEE ALSO
     base.lib.sh
+    context.lib.sh
