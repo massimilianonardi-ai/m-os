@@ -73,7 +73,7 @@ _context_resolve()
 # The wrapping colon preserves empty host PATH entries exactly.
 _context_path_unapply()
 {
-  [ "$#" -eq 2 ] || return 2
+  [ "$#" -eq 2 ] || [ "$#" -eq 3 ] || return 2
   _context_unapply_path=$1
   _context_unapply_prefix=$2
   if [ -z "$_context_unapply_prefix" ]
@@ -86,7 +86,15 @@ _context_path_unapply()
   _context_unapply_marker=":$_context_unapply_prefix:"
   case "$_context_unapply_wrapped" in
     *"$_context_unapply_marker"*) : ;;
-    *) _context_error context-path-modified "$_context_unapply_prefix"; return 6 ;;
+    *)
+      if [ "${3-}" = CLASSPATH ]
+      then
+        _context_error context-classpath-modified "$_context_unapply_prefix"
+      else
+        _context_error context-path-modified "$_context_unapply_prefix"
+      fi
+      return 6
+      ;;
   esac
 
   _context_unapply_before=${_context_unapply_wrapped%%"$_context_unapply_marker"*}
@@ -259,11 +267,10 @@ context()
     }
     _context_classpath_host_set=${m_CONTEXT_CLASSPATH_HOST_SET-}
   fi
-  _context_path_unapply "${CLASSPATH-}" "${m_CONTEXT_CLASSPATH_PREFIX-}" || {
-    _context_error context-classpath-modified owned-block
-    return 15
-  }
+  _context_path_unapply "${CLASSPATH-}" "${m_CONTEXT_CLASSPATH_PREFIX-}" CLASSPATH || return 15
   _context_host_classpath=$_context_path_base
+  # Retain non-context classpath edits made after an initially unset value.
+  [ -z "$_context_host_classpath" ] || _context_classpath_host_set=x
 
   _context_commands_validate "$_context_next" || return $?
   _context_libraries_validate "$_context_next" || return $?
