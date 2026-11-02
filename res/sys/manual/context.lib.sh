@@ -4,8 +4,9 @@ NAME
 DESCRIPTION
     context is a POSIX shell function loaded by the m core shell runtime.
     This initial implementation selects already installed package concrete
-    command directories and publishes their ordered command lookup through
-    the current shell PATH. It does not create filesystem projections and
+    command and published library directories, composing executable and
+    non-executable shell source lookup through PATH and selected Java JAR
+    directories through CLASSPATH. It does not create filesystem projections and
     does not resolve package dependencies or facility provider environments.
 
     The caller must invoke the function in the shell whose PATH should change.
@@ -16,30 +17,41 @@ FUNCTIONS
     context [pkg=<package>@<version>[!<osarch>] ...]
 
         With no arguments, clear the current context-owned package command
-        selections and remove the previously published command block from PATH.
+        selections and remove the previously published command/library block
+        from PATH and Java JAR contributions from CLASSPATH.
 
         With one or more pkg= arguments, select each installed concrete.
         Arguments are evaluated left-to-right. A later selection for the same
         package name replaces the earlier one; selections for other package
         names are retained across calls. The most recently selected package
-        directory appears first in the context-owned PATH block.
+        directory appears first in the context-owned PATH block. Where present,
+        the concrete's lib/sh directory joins PATH, and its lib/java directory
+        contributes one literal wildcard entry (<directory>/*) to CLASSPATH.
 
         An osarch-qualified concrete must match the current m_OSARCH.
         A generic concrete has no osarch suffix. The installed concrete and
-        its cmd directory must exist as real directories.
+        any published cmd, lib/sh and lib/java view directories must be real
+        directories. Library-only installed concretes are supported.
 
         Commands from two selected package directories must not collide with
         each other or with the protected m sys/sys-osarch commands. Collision
         causes failure, not an implicit winner. Selected package directories
         are prepended ahead of inherited PATH entries, which remain available.
 
-        The function removes only its previously published PATH block when
-        changing selection. Other PATH edits are retained. If the published
-        block cannot be identified because it was removed or rewritten, the
-        operation fails without changing PATH or the previous selection.
+        Selected shell libraries must be non-executable *.lib.sh links and
+        selected Java libraries *.jar links; duplicate library leaf names
+        of the same runtime across selected packages are rejected.
 
-        Selection is validated before PATH or active selection state changes.
-        Applying the same selection repeatedly does not grow PATH.
+        The function removes only its previously published PATH and CLASSPATH
+        blocks when changing selection. Other edits are retained. A pre-existing
+        unset or set-but-empty CLASSPATH is restored exactly on reset. If either
+        published block is lost or rewritten, activation fails without changing
+        PATH, CLASSPATH or the previous active selection.
+
+        Selection is validated before PATH, CLASSPATH or active selection state
+        changes. Applying the same selection repeatedly does not grow either
+        search path. Shell source files can be loaded with POSIX dot lookup;
+        m-owned loadlib/loadsyslib still use their established contract.
 
 RETURN STATUS
     0    selection applied
@@ -54,11 +66,19 @@ RETURN STATUS
     9    invalid or non-executable package command
     10   package command collides with a protected m core command
     11   selected packages expose a colliding command name
+    12   invalid selected library view directory
+    13   invalid selected library symlink or library type
+    14   selected packages export the same library leaf name
+    15   previous context-owned CLASSPATH block unavailable or modified
 
 LIMITATIONS
-    This is the first package-command selection increment of the broader
+    This is the first package-command and library selection increment of the broader
     context design. It does not yet accept facility, provider, profile,
     locale, user/system, full-context or inheritance-policy operands.
+    Only sh and Java ordinary library search views are supported; other
+    runtimes need their own defined import/loader semantics. CLASSPATH may be
+    overridden by explicit Java -cp or launcher-specific class loading;
+    wildcard expansion order within one directory is unspecified.
     Provider environment/service coherence and child-context propagation
     are still handled by their existing owners, not by this function.
     The function makes no claim to an atomic filesystem snapshot during
