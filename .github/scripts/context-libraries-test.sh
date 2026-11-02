@@ -15,11 +15,11 @@ cleanup()
   done
   command -p -- rm -rf -- "$work"
 }
-trap cleanup 0
 for concrete in $created
 do
   [ ! -e "$m_PKG_DIR/$concrete" ] && [ ! -L "$m_PKG_DIR/$concrete" ] || exit 3
 done
+trap cleanup 0
 
 for version in 1 2
 do
@@ -86,7 +86,7 @@ case "$PATH" in *"/context-ci-lib@"*) exit 19 ;; esac
 CLASSPATH=
 export CLASSPATH
 context pkg=context-ci-lib@1 || exit 20
-case "$CLASSPATH" in *: ) : ;; *) exit 21 ;; esac
+case "$CLASSPATH" in *:) : ;; *) exit 21 ;; esac
 context || exit 22
 [ "${CLASSPATH+x}" = x ] && [ -z "$CLASSPATH" ] || exit 23
 
