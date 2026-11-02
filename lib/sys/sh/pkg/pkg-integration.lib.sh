@@ -827,7 +827,7 @@ pkg_integrate()
   if ! _pkg_integration_libraries_materialize "$pkg_integrate_range" "$pkg_integration_concrete"
   then
     _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
-    _pkg_integration_error pkg-integrate library-materialization-failed
+    log error execution library-materialization-failed operation pkg-integrate
     return 21
   fi
 
