@@ -1364,7 +1364,9 @@ _pkg_provider_global_plan_class()
   _pkg_provider_global_class_set "$pkg_provider_global_pkg" "$pkg_provider_global_osarch" || return 1
   pkg_provider_global_current=
 
-  if [ -z "$pkg_provider_global_version" ] || [ "$pkg_provider_global_require_default" -eq 1 ]
+  # An explicitly pinned provider is independent of the ordinary package
+  # default. Only an unversioned selector requires that mutable default.
+  if [ -z "$pkg_provider_global_version" ]
   then
     if [ ! -e "$pkg_provider_global_selector_path" ] && [ ! -L "$pkg_provider_global_selector_path" ]
     then
