@@ -302,15 +302,23 @@ _pkg_integration_dmg_overlay_validate()
 # Library exports are ordinary package capabilities, independent of facilities.
 # Descriptor leaf: <library>.lib.sh or <archive>.jar.
 # Descriptor content: relative pathname inside the validated useful root.
+# Library descriptors share one typed materializer. V1 descriptors name
+# root-relative files; v2 descriptors are relative symlink destinations.
 _pkg_integration_libraries_validate()
 {
-  [ "$#" -eq 2 ] || return 2
+  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || return 2
   pkg_integration_lib_range=$1
   pkg_integration_lib_root=$2
-  [ -d "$pkg_integration_lib_range/lib" ] || return 0
-  valid_dir "$pkg_integration_lib_range/lib" || return 1
+  pkg_integration_lib_schema=${3-v1}
+  case "$pkg_integration_lib_schema" in
+    v1) pkg_integration_lib_base="$pkg_integration_lib_range/lib" ;;
+    v2) pkg_integration_lib_base="$pkg_integration_lib_range/link/lib" ;;
+    *) return 2 ;;
+  esac
+  [ -e "$pkg_integration_lib_base" ] || [ -L "$pkg_integration_lib_base" ] || return 0
+  valid_dir "$pkg_integration_lib_base" || return 1
 
-  for pkg_integration_lib_runtime in "$pkg_integration_lib_range/lib/"*
+  for pkg_integration_lib_runtime in "$pkg_integration_lib_base/"*
   do
     [ -e "$pkg_integration_lib_runtime" ] || [ -L "$pkg_integration_lib_runtime" ] || continue
     case "${pkg_integration_lib_runtime##*/}" in
@@ -329,8 +337,15 @@ _pkg_integration_libraries_validate()
         sh:*.lib.sh | java:*.jar) : ;;
         *) return 1 ;;
       esac
+      if [ "$pkg_integration_lib_schema" = v2 ]
+      then
+        _pkg_integration_v2_descriptor_read "$pkg_integration_lib_descriptor" || return 1
+        _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_integration_lib_root" "../../../root/" || return 1
+        pkg_integration_link_target=$pkg_v2_relative
+      else
+        _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
+      fi
 
-      _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
       [ -e "$pkg_integration_lib_root/$pkg_integration_link_target" ] || return 1
       readpathce pkg_integration_lib_resolved "$pkg_integration_lib_root/$pkg_integration_link_target" || return 1
       case "$pkg_integration_lib_resolved" in
@@ -352,7 +367,7 @@ _pkg_integration_libraries_validate()
     done
   done
 
-  for pkg_integration_lib_hidden in "$pkg_integration_lib_range/lib"/.[!.]* "$pkg_integration_lib_range/lib"/..?*
+  for pkg_integration_lib_hidden in "$pkg_integration_lib_base"/.[!.]* "$pkg_integration_lib_base"/..?*
   do
     [ -e "$pkg_integration_lib_hidden" ] || [ -L "$pkg_integration_lib_hidden" ] || continue
     return 1
@@ -361,24 +376,43 @@ _pkg_integration_libraries_validate()
 
 _pkg_integration_libraries_materialize()
 {
-  [ "$#" -eq 2 ] || return 2
+  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || return 2
   pkg_integration_lib_range=$1
   pkg_integration_lib_concrete=$2
-  [ -d "$pkg_integration_lib_range/lib" ] || return 0
-  command -p -- mkdir "$pkg_integration_lib_concrete/lib" || return 1
+  pkg_integration_lib_schema=${3-v1}
+  case "$pkg_integration_lib_schema" in
+    v1)
+      pkg_integration_lib_base="$pkg_integration_lib_range/lib"
+      pkg_integration_lib_dest="$pkg_integration_lib_concrete/lib"
+      ;;
+    v2)
+      pkg_integration_lib_base="$pkg_integration_lib_range/link/lib"
+      pkg_integration_lib_dest="$pkg_integration_lib_concrete/link/lib"
+      ;;
+    *) return 2 ;;
+  esac
+  [ -d "$pkg_integration_lib_base" ] || return 0
+  command -p -- mkdir "$pkg_integration_lib_dest" || return 1
 
-  for pkg_integration_lib_runtime in "$pkg_integration_lib_range/lib/"*
+  for pkg_integration_lib_runtime in "$pkg_integration_lib_base/"*
   do
     [ -d "$pkg_integration_lib_runtime" ] || continue
     pkg_integration_lib_runtime_name=${pkg_integration_lib_runtime##*/}
-    command -p -- mkdir "$pkg_integration_lib_concrete/lib/$pkg_integration_lib_runtime_name" || return 1
+    command -p -- mkdir "$pkg_integration_lib_dest/$pkg_integration_lib_runtime_name" || return 1
     for pkg_integration_lib_descriptor in "$pkg_integration_lib_runtime/"*
     do
       [ -f "$pkg_integration_lib_descriptor" ] || continue
-      _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
+      if [ "$pkg_integration_lib_schema" = v2 ]
+      then
+        _pkg_integration_v2_descriptor_read "$pkg_integration_lib_descriptor" || return 1
+        pkg_integration_lib_target=$pkg_v2_target
+      else
+        _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
+        pkg_integration_lib_target="../../root/$pkg_integration_link_target"
+      fi
       pkg_integration_lib_name=${pkg_integration_lib_descriptor##*/}
-      command -p -- ln -s "../../root/$pkg_integration_link_target" \
-        "$pkg_integration_lib_concrete/lib/$pkg_integration_lib_runtime_name/$pkg_integration_lib_name" || return 1
+      command -p -- ln -s "$pkg_integration_lib_target" \
+        "$pkg_integration_lib_dest/$pkg_integration_lib_runtime_name/$pkg_integration_lib_name" || return 1
     done
   done
 }
@@ -400,12 +434,17 @@ _pkg_integration_v2_descriptor_read()
 
 _pkg_integration_v2_root_target_validate()
 {
-  [ "$#" -eq 2 ] || return 2
+  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || return 2
   pkg_v2_root_target=$1
   pkg_v2_useful_root=$2
+  pkg_v2_root_prefix=${3-../../root/}
+  case "$pkg_v2_root_prefix" in
+    ../../root/ | ../../../root/) : ;;
+    *) return 2 ;;
+  esac
 
   case "$pkg_v2_root_target" in
-    ../../root/*) pkg_v2_relative="${pkg_v2_root_target#../../root/}" ;;
+    "$pkg_v2_root_prefix"*) pkg_v2_relative=${pkg_v2_root_target#"$pkg_v2_root_prefix"} ;;
     *) return 1 ;;
   esac
   case "$pkg_v2_relative" in
@@ -448,14 +487,20 @@ _pkg_integration_v2_validate_definition()
 
   [ -f "$pkg_v2_range/format" ] && [ ! -L "$pkg_v2_range/format" ] || return 1
   valid_dir "$pkg_v2_range/link" || return 1
-  valid_dir "$pkg_v2_range/link/bin" || return 1
-  _pkg_integration_dir_entries_empty "$pkg_v2_range/link/bin" && return 1
+  if [ -e "$pkg_v2_range/link/bin" ] || [ -L "$pkg_v2_range/link/bin" ]
+  then
+    valid_dir "$pkg_v2_range/link/bin" || return 1
+    _pkg_integration_dir_entries_empty "$pkg_v2_range/link/bin" && return 1
+  else
+    valid_dir "$pkg_v2_range/link/lib" || return 1
+  fi
+  _pkg_integration_libraries_validate "$pkg_v2_range" "$pkg_v2_root" v2 || return 1
 
   for pkg_v2_entry in "$pkg_v2_range/link"/*
   do
     [ -e "$pkg_v2_entry" ] || [ -L "$pkg_v2_entry" ] || continue
     case "${pkg_v2_entry##*/}" in
-      bin | target) valid_dir "$pkg_v2_entry" || return 1 ;;
+      bin | target | lib) valid_dir "$pkg_v2_entry" || return 1 ;;
       *) return 1 ;;
     esac
   done
@@ -518,7 +563,11 @@ _pkg_integration_v2_materialize_commands()
   pkg_v2_range=$1
   pkg_v2_concrete=$2
 
-  command -p -- mkdir "$pkg_v2_concrete/link" "$pkg_v2_concrete/link/bin" || return 1
+  command -p -- mkdir "$pkg_v2_concrete/link" || return 1
+  if [ -d "$pkg_v2_range/link/bin" ]
+  then
+    command -p -- mkdir "$pkg_v2_concrete/link/bin" || return 1
+  fi
   if [ -d "$pkg_v2_range/cmd" ]
   then
     command -p -- mkdir "$pkg_v2_concrete/cmd" || return 1
@@ -862,10 +911,6 @@ _pkg_default_view_set()
   if [ -e "$pkg_default_view_dir" ] || [ -L "$pkg_default_view_dir" ]
   then
     valid_dir "$pkg_default_view_dir" || return 1
-  elif [ "$pkg_schema" = v2 ]
-  then
-    # Current v2 command-bearing packages must have the public bin view.
-    return 1
   fi
 }
 
@@ -1029,7 +1074,7 @@ pkg_integrate()
     return 13
   fi
 
-  if ! _pkg_integration_libraries_materialize "$pkg_integrate_range" "$pkg_integration_concrete"
+  if ! _pkg_integration_libraries_materialize "$pkg_integrate_range" "$pkg_integration_concrete" "$pkg_integrate_schema"
   then
     _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
     log error execution library-materialization-failed operation pkg-integrate
