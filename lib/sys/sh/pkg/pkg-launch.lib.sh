@@ -1,3 +1,4 @@
+loadsyslib "pkg/pkg-common"
 loadsyslib "pkg/facility/pkg-facility"
 loadsyslib "pkg/facility/pkg-dependency"
 
@@ -189,7 +190,17 @@ launcher()
     return 1
   }
 
-  pkg_launch_link="$pkg_launch_concrete/link/$pkg_launch_command"
+  _pkg_schema_read "$pkg_launch_concrete" || {
+    _pkg_launch_error package-schema-invalid
+    return 1
+  }
+
+  if [ "$pkg_schema" = v2 ]
+  then
+    pkg_launch_link="$pkg_launch_concrete/link/target/$pkg_launch_command"
+  else
+    pkg_launch_link="$pkg_launch_concrete/link/$pkg_launch_command"
+  fi
   [ -L "$pkg_launch_link" ] || {
     _pkg_launch_error link-missing
     return 1
