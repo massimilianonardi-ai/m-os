@@ -33,6 +33,11 @@ _context_resolve()
     return 0
   fi
 
+  # Detect the active host platform in this subshell: selecting an exact
+  # concrete must work in a fresh m sh session without changing caller
+  # variables other than the PATH/CLASSPATH owned by context.
+  loadsyslib "osarch" || return 1
+
   _context_resolved=${m_CONTEXT_PACKAGES-}
   _context_newline='
 '
