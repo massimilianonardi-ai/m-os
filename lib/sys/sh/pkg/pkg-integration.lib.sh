@@ -480,7 +480,7 @@ _pkg_integration_v2_validate_definition()
       archive_regex | digest_type | format)
         [ -f "$pkg_v2_entry" ] && [ ! -L "$pkg_v2_entry" ] || return 1
         ;;
-      cmd | link)
+      cmd | link | state-map)
         valid_dir "$pkg_v2_entry" || return 1
         ;;
       *)
@@ -1053,7 +1053,7 @@ pkg_integrate()
   pkg_integrate_status=$?
   [ "$pkg_integrate_status" -eq 0 ] || return "$pkg_integrate_status"
 
-  _pkg_state_validate "$pkg_integrate_range" "$pkg_integrate_root" "$pkg_integrate_pkg" || return 10
+  _pkg_state_validate "$pkg_integrate_range" "$pkg_integrate_root" "$pkg_integrate_pkg" "$pkg_integrate_schema" || return 10
   _pkg_setuid_validate "$pkg_integrate_range" "$pkg_integrate_root" "$pkg_integrate_osarch" "$pkg_state_paths" || return 11
 
   # Phase 4: create the concrete package and move the prepared useful root
@@ -1116,7 +1116,7 @@ pkg_integrate()
   fi
 
   # Phase 6: materialize state and privileged setuid effects.
-  if ! _pkg_state_materialize "$pkg_integrate_range" "$pkg_integration_concrete" "$pkg_integrate_pkg"
+  if ! _pkg_state_materialize "$pkg_integrate_range" "$pkg_integration_concrete" "$pkg_integrate_pkg" "$pkg_integrate_schema"
   then
     _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
     _pkg_integration_error pkg-integrate state-materialization-failed
