@@ -102,7 +102,20 @@ pkg_catalog_init()
   pkg_catalog_head="$(git -C "$pkg_catalog_cache" rev-parse HEAD)" || return 1
   git -C "$pkg_catalog_cache" archive "$pkg_catalog_head" | tar -x -C "$pkg_catalog_work" || return 1
 
-  _pkg_catalog_assign "$pkg_catalog_output_work" "$pkg_catalog_work" || return 1
+  # v1 preserves the original pkg/facility definition schema unchanged.
+  # Accept an unversioned catalog only as the explicit legacy snapshot shape.
+  pkg_catalog_definition_root=$pkg_catalog_work
+  if [ -e "$pkg_catalog_work/v1" ] || [ -L "$pkg_catalog_work/v1" ]
+  then
+    valid_dir "$pkg_catalog_work/v1" || return 1
+    [ ! -e "$pkg_catalog_work/pkg" ] && [ ! -L "$pkg_catalog_work/pkg" ] || return 1
+    [ ! -e "$pkg_catalog_work/facility" ] && [ ! -L "$pkg_catalog_work/facility" ] || return 1
+    pkg_catalog_definition_root="$pkg_catalog_work/v1"
+  fi
+  valid_dir "$pkg_catalog_definition_root/pkg" || return 1
+  valid_dir "$pkg_catalog_definition_root/facility" || return 1
+
+  _pkg_catalog_assign "$pkg_catalog_output_work" "$pkg_catalog_definition_root" || return 1
   _pkg_catalog_assign "$pkg_catalog_output_head" "$pkg_catalog_head"
 }
 

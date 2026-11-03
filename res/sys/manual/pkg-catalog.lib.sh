@@ -12,8 +12,11 @@ FUNCTIONS
         checkout, resolve one exact HEAD and export that revision into
         <work-root>/catalog.
 
-        On success <catalog-variable> receives the exported snapshot directory and
-        <head-variable> receives the exact Git revision. The destination variable
+        On success <catalog-variable> receives the v1 definition directory
+        under the exported snapshot (or the original root for an explicitly
+        unversioned legacy catalog) and <head-variable> receives the exact
+        catalog Git revision. v1 preserves the old pkg/ and facility/ schemas;
+        a catalog with both versioned and flat roots is invalid. The destination variable
         names must be distinct valid shell identifiers. <work-root> and
         <cache-root> must be existing real directories and <work-root>/catalog
         must not already exist. Catalog refresh command output is kept off standard
