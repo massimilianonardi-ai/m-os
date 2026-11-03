@@ -90,3 +90,22 @@ pkg_concrete_read()
   [ "$#" -eq 4 ] || return 1
   _pkg_spec_read concrete "$@"
 }
+
+# An absent marker is the existing v1 installed-concrete layout.
+# A v2 marker is data created and owned by the package integrator.
+_pkg_schema_read()
+{
+  [ "$#" -eq 1 ] || return 2
+  pkg_schema=v1
+  pkg_schema_marker="$1/schema"
+
+  if [ -e "$pkg_schema_marker" ] || [ -L "$pkg_schema_marker" ]
+  then
+    [ -f "$pkg_schema_marker" ] && [ ! -L "$pkg_schema_marker" ] &&
+      [ -r "$pkg_schema_marker" ] && [ ! -x "$pkg_schema_marker" ] || return 1
+    [ "$(command -p -- cat -- "$pkg_schema_marker")" = v2 ] || return 1
+    pkg_schema_size="$(command -p -- wc -c < "$pkg_schema_marker")" || return 1
+    [ "$pkg_schema_size" -eq 3 ] || return 1
+    pkg_schema=v2
+  fi
+}

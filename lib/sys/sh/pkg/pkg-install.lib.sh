@@ -46,8 +46,21 @@ pkg_install_one()
 
   pkg_extract "$pkg_install_artifact" "$pkg_install_range" "$pkg_install_extract_dir" || exit 13
 
-  pkg_facility_provider_validate "$pkg_install_catalog_work" "$pkg_install_range" "$pkg_install_extract_dir" || exit 17
-  pkg_integrate "$pkg_install_pkg" "$pkg_install_version" "$pkg_install_range" "$pkg_install_extract_dir" "$pkg_install_osarch" || exit 18
+  pkg_install_schema=v1
+  pkg_install_definition_root=$pkg_install_catalog_work
+  case "$pkg_install_catalog_work" in
+    */v1)
+      case "$pkg_install_range" in
+        "${pkg_install_catalog_work%/v1}/v2/"*)
+          pkg_install_schema=v2
+          pkg_install_definition_root="${pkg_install_catalog_work%/v1}/v2"
+          ;;
+      esac
+      ;;
+  esac
+
+  pkg_facility_provider_validate "$pkg_install_definition_root" "$pkg_install_range" "$pkg_install_extract_dir" || exit 17
+  pkg_integrate "$pkg_install_pkg" "$pkg_install_version" "$pkg_install_range" "$pkg_install_extract_dir" "$pkg_install_osarch" "$pkg_install_schema" || exit 18
 
   if [ -n "$pkg_install_osarch" ]
   then
