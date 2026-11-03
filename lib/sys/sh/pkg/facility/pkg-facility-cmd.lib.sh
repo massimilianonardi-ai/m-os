@@ -188,3 +188,84 @@ _pkg_facility_cmd_provider_validate()
 
   [ "$pkg_facility_cmd_realization_count" -eq "$pkg_facility_cmd_contract_count" ]
 }
+
+
+# v2 command contracts own the names. A provider supplies either an explicit
+# link/bin mapping or a useful-root binary directory in facility-bin/<facility>.
+_pkg_facility_cmd_v2_provider_validate()
+{
+  [ "$#" -eq 4 ] || return 2
+  pkg_facility_v2_contract=$1
+  pkg_facility_v2_definition=$2
+  pkg_facility_v2_root=$3
+  pkg_facility_v2_name=$4
+
+  _pkg_facility_cmd_contract_validate "$pkg_facility_v2_contract" || return 1
+  readpathce pkg_facility_v2_root_resolved "$pkg_facility_v2_root" || return 1
+
+  pkg_facility_v2_bin=
+  pkg_facility_v2_parameter="$pkg_facility_v2_definition/facility-bin/$pkg_facility_v2_name"
+  if [ -e "$pkg_facility_v2_parameter" ] || [ -L "$pkg_facility_v2_parameter" ]
+  then
+    _pkg_facility_cmd_target_read "$pkg_facility_v2_parameter" || return 1
+    pkg_facility_v2_bin=$pkg_facility_cmd_target
+    readpathce pkg_facility_v2_directory "$pkg_facility_v2_root/$pkg_facility_v2_bin" || return 1
+    case "$pkg_facility_v2_directory" in
+      "$pkg_facility_v2_root_resolved"/*) : ;;
+      *) return 1 ;;
+    esac
+    [ -d "$pkg_facility_v2_directory" ] || return 1
+  fi
+
+  for pkg_facility_v2_marker in "$pkg_facility_v2_contract"/*
+  do
+    [ -f "$pkg_facility_v2_marker" ] || return 1
+    pkg_facility_v2_command=${pkg_facility_v2_marker##*/}
+    pkg_facility_v2_link="$pkg_facility_v2_definition/link/bin/$pkg_facility_v2_command"
+
+    if [ -e "$pkg_facility_v2_link" ] || [ -L "$pkg_facility_v2_link" ]
+    then
+      [ -f "$pkg_facility_v2_link" ] && [ ! -L "$pkg_facility_v2_link" ] &&
+        [ -r "$pkg_facility_v2_link" ] && [ ! -x "$pkg_facility_v2_link" ] || return 1
+      pkg_facility_v2_link_target="$(command -p -- cat -- "$pkg_facility_v2_link")" || return 1
+      case "$pkg_facility_v2_link_target" in
+        "../../cmd/$pkg_facility_v2_command")
+          pkg_facility_v2_wrapper="$pkg_facility_v2_definition/cmd/$pkg_facility_v2_command"
+          [ -f "$pkg_facility_v2_wrapper" ] && [ ! -L "$pkg_facility_v2_wrapper" ] &&
+            [ -r "$pkg_facility_v2_wrapper" ] && [ ! -x "$pkg_facility_v2_wrapper" ] || return 1
+          pkg_facility_v2_upstream="$pkg_facility_v2_definition/link/target/$pkg_facility_v2_command"
+          [ -f "$pkg_facility_v2_upstream" ] && [ ! -L "$pkg_facility_v2_upstream" ] || return 1
+          pkg_facility_v2_link_target="$(command -p -- cat -- "$pkg_facility_v2_upstream")" || return 1
+          ;;
+      esac
+      case "$pkg_facility_v2_link_target" in
+        ../../root/*) pkg_facility_v2_relative=${pkg_facility_v2_link_target#../../root/} ;;
+        *) return 1 ;;
+      esac
+      _pkg_facility_cmd_target_path_valid "$pkg_facility_v2_relative" || return 1
+      pkg_facility_v2_target="$pkg_facility_v2_root/$pkg_facility_v2_relative"
+    else
+      [ -n "$pkg_facility_v2_bin" ] || return 1
+      pkg_facility_v2_target="$pkg_facility_v2_root/$pkg_facility_v2_bin/$pkg_facility_v2_command"
+    fi
+
+    readpathce pkg_facility_v2_resolved "$pkg_facility_v2_target" || return 1
+    case "$pkg_facility_v2_resolved" in
+      "$pkg_facility_v2_root_resolved"/*) : ;;
+      *) return 1 ;;
+    esac
+    [ -f "$pkg_facility_v2_resolved" ] && [ -x "$pkg_facility_v2_resolved" ] || return 1
+  done
+}
+
+_pkg_facility_cmd_target_path_valid()
+{
+  [ "$#" -eq 1 ] || return 2
+  case "$1" in
+    "" | /* | */ | *//* | *'
+'*) return 1 ;;
+  esac
+  case "/$1/" in
+    */./* | */../*) return 1 ;;
+  esac
+}
