@@ -112,7 +112,7 @@ do
 done
 [ "$("$java_concrete/link/bin/javac")" = fixture-java ] || exit 34
 [ -f "$java_concrete/facility-env/java" ] || exit 35
-[ "$(printf 'JAVA_HOME\\troot\\n')" = "$(command -p -- cat -- "$java_concrete/facility-env/java")" ] || exit 41
+[ "$(printf 'JAVA_HOME\troot\n')" = "$(command -p -- cat -- "$java_concrete/facility-env/java")" ] || exit 41
 
 # Exercise the real public default + freshly bootstrapped environment: the
 # installed projection is consumed by pkg-provider, not by a parallel context
