@@ -257,10 +257,18 @@ _pkg_facility_provider_part_validate()
       fi
       ;;
     env)
-      _pkg_facility_env_provider_validate \
-        "$pkg_facility_provider_contract_part" \
-        "$pkg_facility_provider_definition/facility-env/$pkg_facility_provider_name" \
-        "$pkg_facility_provider_root"
+      if [ "$pkg_facility_provider_schema" = v2 ]
+      then
+        _pkg_facility_env_v2_provider_validate \
+          "$pkg_facility_provider_contract_part" \
+          "$pkg_facility_provider_definition/facility-env/$pkg_facility_provider_name" \
+          "$pkg_facility_provider_root"
+      else
+        _pkg_facility_env_provider_validate \
+          "$pkg_facility_provider_contract_part" \
+          "$pkg_facility_provider_definition/facility-env/$pkg_facility_provider_name" \
+          "$pkg_facility_provider_root"
+      fi
       ;;
     service)
       _pkg_facility_service_provider_validate \
