@@ -480,8 +480,11 @@ _pkg_integration_v2_validate_definition()
       archive_regex | digest_type | format)
         [ -f "$pkg_v2_entry" ] && [ ! -L "$pkg_v2_entry" ] || return 1
         ;;
-      cmd | link | state-map)
+      cmd | link | state-map | facility-bin | facility-service | facility-env)
         valid_dir "$pkg_v2_entry" || return 1
+        ;;
+      facility)
+        _pkg_facility_file_validate "$pkg_v2_entry" || return 1
         ;;
       *)
         # No v2 facility/state/library descriptor may be silently ignored
@@ -492,12 +495,19 @@ _pkg_integration_v2_validate_definition()
   done
 
   [ -f "$pkg_v2_range/format" ] && [ ! -L "$pkg_v2_range/format" ] || return 1
-  valid_dir "$pkg_v2_range/link" || return 1
+  if [ -e "$pkg_v2_range/link" ] || [ -L "$pkg_v2_range/link" ]
+  then
+    valid_dir "$pkg_v2_range/link" || return 1
+  elif [ ! -d "$pkg_v2_range/facility-bin" ]
+  then
+    return 1
+  fi
   if [ -e "$pkg_v2_range/link/bin" ] || [ -L "$pkg_v2_range/link/bin" ]
   then
     valid_dir "$pkg_v2_range/link/bin" || return 1
     _pkg_integration_dir_entries_empty "$pkg_v2_range/link/bin" && return 1
-  else
+  elif [ ! -d "$pkg_v2_range/facility-bin" ]
+  then
     valid_dir "$pkg_v2_range/link/lib" || return 1
   fi
   _pkg_integration_libraries_validate "$pkg_v2_range" "$pkg_v2_root" v2 || return 1
@@ -601,6 +611,59 @@ _pkg_integration_v2_materialize_commands()
     command -p -- ln -s "$pkg_v2_target" "$pkg_v2_concrete/link/bin/${pkg_v2_descriptor##*/}" || return 1
   done
   printf 'v2\n' > "$pkg_v2_concrete/schema" || return 1
+}
+
+
+# The contract owns facility command names; package facility-bin supplies
+# an optional root-relative directory for omitted link/bin descriptors.
+_pkg_integration_v2_facility_commands_materialize()
+{
+  [ "$#" -eq 3 ] || return 2
+  pkg_v2_facility_range=$1
+  pkg_v2_facility_concrete=$2
+  pkg_v2_facility_catalog=$3
+  [ -f "$pkg_v2_facility_range/facility" ] || return 0
+  [ -d "$pkg_v2_facility_catalog/facility" ] || return 1
+
+  while IFS= read -r pkg_v2_facility_line
+  do
+    _pkg_facility_line_parse "$pkg_v2_facility_line" || return 1
+    pkg_v2_facility_name=$pkg_facility_name
+    pkg_v2_facility_contract="$pkg_v2_facility_catalog/facility/$pkg_facility_name/$pkg_facility_compatibility/cmd"
+    [ -e "$pkg_v2_facility_contract" ] || [ -L "$pkg_v2_facility_contract" ] || continue
+    valid_dir "$pkg_v2_facility_contract" || return 1
+
+    command -p -- mkdir -p "$pkg_v2_facility_concrete/link/bin" \
+      "$pkg_v2_facility_concrete/facility-cmd/$pkg_v2_facility_name" || return 1
+
+    pkg_v2_facility_bin=
+    pkg_v2_facility_parameter="$pkg_v2_facility_range/facility-bin/$pkg_v2_facility_name"
+    if [ -f "$pkg_v2_facility_parameter" ]
+    then
+      _pkg_facility_cmd_target_read "$pkg_v2_facility_parameter" || return 1
+      pkg_v2_facility_bin=$pkg_facility_cmd_target
+    fi
+
+    for pkg_v2_facility_member in "$pkg_v2_facility_contract"/*
+    do
+      [ -f "$pkg_v2_facility_member" ] || return 1
+      pkg_v2_facility_command=${pkg_v2_facility_member##*/}
+      pkg_v2_facility_public="$pkg_v2_facility_concrete/link/bin/$pkg_v2_facility_command"
+      if [ ! -e "$pkg_v2_facility_public" ] && [ ! -L "$pkg_v2_facility_public" ]
+      then
+        [ -n "$pkg_v2_facility_bin" ] || return 1
+        command -p -- ln -s \
+          "../../root/$pkg_v2_facility_bin/$pkg_v2_facility_command" \
+          "$pkg_v2_facility_public" || return 1
+      fi
+      [ -L "$pkg_v2_facility_public" ] || return 1
+      readpathce pkg_v2_facility_resolved "$pkg_v2_facility_public" || return 1
+      [ -f "$pkg_v2_facility_resolved" ] && [ -x "$pkg_v2_facility_resolved" ] || return 1
+      command -p -- ln -s \
+        "../../link/bin/$pkg_v2_facility_command" \
+        "$pkg_v2_facility_concrete/facility-cmd/$pkg_v2_facility_name/$pkg_v2_facility_command" || return 1
+    done
+  done < "$pkg_v2_facility_range/facility"
 }
 
 _pkg_integration_validate_definition()
@@ -1017,13 +1080,14 @@ _pkg_default_create_bindings()
 pkg_integrate()
 (
   # Phase 1: validate invocation and package identity.
-  [ "$#" -ge 4 ] && [ "$#" -le 6 ] || return 1
+  [ "$#" -ge 4 ] && [ "$#" -le 7 ] || return 1
   pkg_integrate_pkg=$1
   pkg_integrate_version=$2
   pkg_integrate_range_input=$3
   pkg_integrate_root_input=$4
   pkg_integrate_osarch=${5-}
   pkg_integrate_schema=${6-v1}
+  pkg_integrate_catalog=${7-}
   case "$pkg_integrate_schema" in
     v1 | v2) : ;;
     *) return 2 ;;
@@ -1053,6 +1117,12 @@ pkg_integrate()
   pkg_integrate_status=$?
   [ "$pkg_integrate_status" -eq 0 ] || return "$pkg_integrate_status"
 
+  if [ "$pkg_integrate_schema" = v2 ] && [ -f "$pkg_integrate_range/facility" ]
+  then
+    [ -n "$pkg_integrate_catalog" ] || return 2
+    pkg_facility_provider_validate "$pkg_integrate_catalog" "$pkg_integrate_range" "$pkg_integrate_root" || return 2
+  fi
+
   _pkg_state_validate "$pkg_integrate_range" "$pkg_integrate_root" "$pkg_integrate_pkg" "$pkg_integrate_schema" || return 10
   _pkg_setuid_validate "$pkg_integrate_range" "$pkg_integrate_root" "$pkg_integrate_osarch" "$pkg_state_paths" || return 11
 
@@ -1078,6 +1148,14 @@ pkg_integrate()
     _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
     _pkg_integration_error pkg-integrate materialization-failed
     return 13
+  fi
+
+  if [ "$pkg_integrate_schema" = v2 ] &&
+     ! _pkg_integration_v2_facility_commands_materialize "$pkg_integrate_range" "$pkg_integration_concrete" "$pkg_integrate_catalog"
+  then
+    _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
+    _pkg_integration_error pkg-integrate facility-command-materialization-failed
+    return 22
   fi
 
   if ! _pkg_integration_libraries_materialize "$pkg_integrate_range" "$pkg_integration_concrete" "$pkg_integrate_schema"
