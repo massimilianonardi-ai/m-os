@@ -1333,6 +1333,8 @@ _pkg_provider_global_plan_concrete()
 
   _pkg_schema_read "$m_PKG_DIR/$pkg_provider_global_concrete" || return 1
   pkg_provider_global_schema=$pkg_schema
+  pkg_provider_global_relative=facility-cmd/$pkg_provider_global_facility
+  [ "$pkg_provider_global_schema" != v2 ] || pkg_provider_global_relative=link/bin
   pkg_provider_global_cmd_dir="$m_PKG_DIR/$pkg_provider_global_concrete/facility-cmd/$pkg_provider_global_facility"
   if [ ! -e "$pkg_provider_global_cmd_dir" ] && [ ! -L "$pkg_provider_global_cmd_dir" ]
   then
@@ -1350,7 +1352,7 @@ _pkg_provider_global_plan_concrete()
     [ -f "$pkg_provider_global_resolved" ] && [ -x "$pkg_provider_global_resolved" ] || return 1
     printf -- '%s\t%s\n' \
       "$pkg_provider_global_public_dir/$pkg_provider_global_command" \
-      "../../pkg/$pkg_provider_global_target_name/facility-cmd/$pkg_provider_global_facility/$pkg_provider_global_command"
+      "../../pkg/$pkg_provider_global_target_name/$pkg_provider_global_relative/$pkg_provider_global_command"
   done
 }
 
@@ -1476,7 +1478,7 @@ _pkg_provider_global_plan_validate()
   do
     [ -n "$pkg_provider_global_validate_public" ] && [ -n "$pkg_provider_global_validate_target" ] && [ -z "$pkg_provider_global_validate_extra" ] || return 1
     case "$pkg_provider_global_validate_public" in "$m_BIN_EXT_DIR"/* | "$m_BIN_DIR"/ext-*/*) : ;; *) return 1 ;; esac
-    case "$pkg_provider_global_validate_target" in ../../pkg/*/facility-cmd/*/*) : ;; *) return 1 ;; esac
+    case "$pkg_provider_global_validate_target" in ../../pkg/*/facility-cmd/*/* | ../../pkg/*/link/bin/*) : ;; *) return 1 ;; esac
 
     if [ -n "$pkg_provider_global_seen" ]
     then
