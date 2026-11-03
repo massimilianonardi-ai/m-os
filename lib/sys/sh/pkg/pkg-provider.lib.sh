@@ -1331,6 +1331,8 @@ _pkg_provider_global_plan_concrete()
   _pkg_provider_resolved_validate "$pkg_provider_global_concrete" "$pkg_provider_global_pkg" "" "$pkg_provider_global_osarch" || return 1
   _pkg_provider_global_class_set "$pkg_provider_global_pkg" "$pkg_provider_global_osarch" || return 1
 
+  _pkg_schema_read "$m_PKG_DIR/$pkg_provider_global_concrete" || return 1
+  pkg_provider_global_schema=$pkg_schema
   pkg_provider_global_cmd_dir="$m_PKG_DIR/$pkg_provider_global_concrete/facility-cmd/$pkg_provider_global_facility"
   if [ ! -e "$pkg_provider_global_cmd_dir" ] && [ ! -L "$pkg_provider_global_cmd_dir" ]
   then
