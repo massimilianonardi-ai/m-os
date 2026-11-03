@@ -808,6 +808,14 @@ _pkg_provider_global_selector_resolve()
   pkg_provider_global_environment_selector_version=$pkg_provider_selector_version
   pkg_provider_global_environment_selector_osarch=$pkg_provider_selector_osarch
 
+  # An explicit version pins the concrete; no package-class default symlink
+  # is required. Only an unversioned selector follows package defaults.
+  pkg_provider_global_environment_require_default=1
+  if [ -n "$pkg_provider_global_environment_selector_version" ]
+  then
+    pkg_provider_global_environment_require_default=0
+  fi
+
   if [ -n "$pkg_provider_global_environment_selector_osarch" ]
   then
     [ -n "$pkg_provider_global_environment_active_osarch" ] || return 1
@@ -825,7 +833,7 @@ _pkg_provider_global_selector_resolve()
   if [ -n "$pkg_provider_global_environment_active_osarch" ]
   then
     pkg_provider_global_environment_candidate="$(
-      _pkg_provider_global_environment_class_resolve         "$pkg_provider_global_environment_selector_pkg"         "$pkg_provider_global_environment_selector_version"         "$pkg_provider_global_environment_active_osarch"         1
+      _pkg_provider_global_environment_class_resolve         "$pkg_provider_global_environment_selector_pkg"         "$pkg_provider_global_environment_selector_version"         "$pkg_provider_global_environment_active_osarch"         "$pkg_provider_global_environment_require_default"
     )"
     pkg_provider_global_environment_candidate_status=$?
     case "$pkg_provider_global_environment_candidate_status" in
@@ -838,7 +846,7 @@ _pkg_provider_global_selector_resolve()
     esac
   fi
 
-  _pkg_provider_global_environment_class_resolve     "$pkg_provider_global_environment_selector_pkg"     "$pkg_provider_global_environment_selector_version"     ""     1
+  _pkg_provider_global_environment_class_resolve     "$pkg_provider_global_environment_selector_pkg"     "$pkg_provider_global_environment_selector_version"     ""     "$pkg_provider_global_environment_require_default"
 )
 
 pkg_provider_default_resolve()
