@@ -36,6 +36,11 @@ pkg_integrate "$name" 1 "$range" "$work/root" "" v2 "$work/catalog/v2" || exit 1
 [ "$("$concrete/link/bin/node")" = fixture-node-v2 ] || exit 15
 [ "$("$concrete/facility-cmd/nodejs/node")" = fixture-node-v2 ] || exit 16
 
+# The normal public provider default publishes exactly the facility command.
+"$m_ROOT/m" pkg provider default nodejs "$name@1" || exit 19
+[ "$("$m_ROOT/m" node)" = fixture-node-v2 ] || exit 20
+"$m_ROOT/m" pkg provider default -u nodejs || exit 21
+
 command -p -- rm -f -- "$concrete/root/bin/node" || exit 17
 if pkg_facility_provider_validate "$work/catalog/v2" "$range" "$concrete/root"
 then
