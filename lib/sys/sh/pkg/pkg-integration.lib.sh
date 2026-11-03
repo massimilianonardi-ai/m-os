@@ -869,13 +869,11 @@ _pkg_integration_v2_facility_env_materialize()
       pkg_v2_env_variable=${pkg_v2_env_parameter##*/}
       while IFS= read -r pkg_v2_env_descriptor
       do
-        printf '%s\\t%s\\n' "$pkg_v2_env_variable" "$pkg_v2_env_descriptor" >>
-          "$pkg_v2_env_output" || return 1
+        printf '%s\t%s\n' "$pkg_v2_env_variable" "$pkg_v2_env_descriptor" >> "$pkg_v2_env_output" || return 1
       done < "$pkg_v2_env_parameter"
     done
 
-    LC_ALL=C command -p -- sort < "$pkg_v2_env_output" >
-      "$pkg_v2_env_output.sorted" || return 1
+    LC_ALL=C command -p -- sort < "$pkg_v2_env_output" > "$pkg_v2_env_output.sorted" || return 1
     command -p -- mv -- "$pkg_v2_env_output.sorted" "$pkg_v2_env_output" || return 1
     _pkg_facility_env_realization_validate \
       "$pkg_v2_env_output" "$pkg_v2_env_concrete/root" || return 1
@@ -884,7 +882,7 @@ _pkg_integration_v2_facility_env_materialize()
 
 _pkg_integration_materialize_facility_projection()
 {
-  [ "$#" -eq 2 ] || return 2
+  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || return 2
   pkg_integration_range=$1
   pkg_integration_concrete=$2
   pkg_integration_projection_schema=${3-v1}
