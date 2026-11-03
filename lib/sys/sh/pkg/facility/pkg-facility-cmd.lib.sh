@@ -269,3 +269,33 @@ _pkg_facility_cmd_target_path_valid()
     */./* | */../*) return 1 ;;
   esac
 }
+
+_pkg_facility_cmd_v2_entry_validate()
+{
+  [ "$#" -eq 3 ] || return 2
+  pkg_facility_entry_definition=$1
+  pkg_facility_entry_root=$2
+  pkg_facility_entry_name=$3
+  pkg_facility_entry_descriptor="$pkg_facility_entry_definition/link/bin/$pkg_facility_entry_name"
+  [ -f "$pkg_facility_entry_descriptor" ] && [ ! -L "$pkg_facility_entry_descriptor" ] || return 1
+  pkg_facility_entry_value="$(command -p -- cat -- "$pkg_facility_entry_descriptor")" || return 1
+  case "$pkg_facility_entry_value" in
+    "../../cmd/$pkg_facility_entry_name")
+      [ -f "$pkg_facility_entry_definition/cmd/$pkg_facility_entry_name" ] || return 1
+      [ ! -L "$pkg_facility_entry_definition/cmd/$pkg_facility_entry_name" ] || return 1
+      pkg_facility_entry_value="$(command -p -- cat -- "$pkg_facility_entry_definition/link/target/$pkg_facility_entry_name")" || return 1
+      ;;
+  esac
+  case "$pkg_facility_entry_value" in
+    ../../root/*) pkg_facility_entry_relative=${pkg_facility_entry_value#../../root/} ;;
+    *) return 1 ;;
+  esac
+  _pkg_facility_cmd_target_path_valid "$pkg_facility_entry_relative" || return 1
+  readpathce pkg_facility_entry_root_canonical "$pkg_facility_entry_root" || return 1
+  readpathce pkg_facility_entry_canonical "$pkg_facility_entry_root/$pkg_facility_entry_relative" || return 1
+  case "$pkg_facility_entry_canonical" in
+    "$pkg_facility_entry_root_canonical"/*) : ;;
+    *) return 1 ;;
+  esac
+  [ -f "$pkg_facility_entry_canonical" ] && [ -x "$pkg_facility_entry_canonical" ]
+}
