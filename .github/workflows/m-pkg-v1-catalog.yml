@@ -1,0 +1,46 @@
+name: m v1 catalog root and public package resolution
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'lib/sys/sh/pkg/pkg-catalog.lib.sh'
+      - 'res/sys/manual/pkg-catalog.lib.sh'
+      - '.github/workflows/m-pkg-v1-catalog.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalog-v1:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check versioned snapshot and public requirement resolution
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          [ "$(./m pkg requirement list mk@v0.1.0)" = 'nodejs =26' ]
+          [ "$(./m pkg requirement list jsc@v0.1.0)" = 'nodejs =26' ]
+          ./m sh -c '
+            . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
+            loadsyslib "pkg/pkg-catalog" || exit 1
+            work=$(mktemp -d) || exit 1
+            cache=$(mktemp -d) || exit 1
+            trap '\''rm -rf -- "$work" "$cache"'\'' 0
+            pkg_catalog_init selected revision "$work" "$cache" || exit 1
+            case "$selected" in */catalog/v1) : ;; *) exit 1 ;; esac
+            [ -f "$selected/pkg/mk/all/n0001=v0.1.0/dependency" ] || exit 1
+            [ -d "$selected/facility/nodejs/26" ] || exit 1
+            [ -n "$revision" ] || exit 1
+          '
+          echo 'PASS: v1 snapshot, package requirement queries and facility contract'
