@@ -33,7 +33,16 @@ printf '%s\n' 'package demo; public class Shared { public static String version(
 javac -d "$work/java-classes" "$work/java-src/demo/Shared.java"
 jar cf "$root/lib/java/sample.jar" -C "$work/java-classes" .
 
-pkg_integrate "$name" 1 "$range" "$root" "" v2 || exit 8
+set -x
+if pkg_integrate "$name" 1 "$range" "$root" "" v2
+then
+  :
+else
+  status=$?
+  printf 'v2 library-only integration failed: status=%s\n' "$status" >&2
+  exit 8
+fi
+set +x
 [ "$(command -p -- cat -- "$concrete/schema")" = v2 ] || exit 9
 [ ! -e "$concrete/link/bin" ] && [ ! -L "$concrete/link/bin" ] || exit 10
 [ -L "$concrete/link/lib/sh/sample.lib.sh" ] && [ -L "$concrete/link/lib/java/sample.jar" ] || exit 11
