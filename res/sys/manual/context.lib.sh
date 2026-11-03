@@ -77,7 +77,6 @@ RETURN STATUS
     15   previous context-owned CLASSPATH block unavailable or modified
     16   PATH is readonly in the invoking shell
     17   CLASSPATH is readonly in the invoking shell
-    18   invalid concrete schema for a selected view
 
 LIMITATIONS
     This is the first package-command and library selection increment of the broader
