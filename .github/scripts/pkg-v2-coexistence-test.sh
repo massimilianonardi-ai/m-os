@@ -45,6 +45,19 @@ context "pkg=$CONCRETE" "pkg=context-ci-v1@1" || exit 14
 [ "$(jq -n '6*7')" = 42 ] || exit 18
 [ "$(jq-wrapped '6*7')" = 42 ] || exit 19
 [ "$(ci-v1)" = v1 ] || exit 20
+
+# Most-recent-first precedence spans both v1 cmd and v2 link/bin views.
+# Re-selecting the earlier concrete moves it to the front without
+# discarding the other selection or duplicating PATH contributions.
+[ "${PATH%%:*}" = "$legacy/cmd" ] || exit 23
+context "pkg=$CONCRETE" || exit 24
+[ "${PATH%%:*}" = "$m_PKG_DIR/$CONCRETE/link/bin" ] || exit 25
+[ "$(command -v ci-v1)" = "$legacy/cmd/ci-v1" ] || exit 26
+[ "$(jq -n '6*7')" = 42 ] || exit 27
+before_reapply=$PATH
+context "pkg=$CONCRETE" || exit 28
+[ "$PATH" = "$before_reapply" ] || exit 29
+
 context || exit 21
 [ "$PATH" = "$baseline" ] || exit 22
 printf '%s\n' 'PASS: v1 + v2 installed views, context selection and reset'
