@@ -19,7 +19,11 @@ FUNCTIONS
         link/lib/sh and link/lib/java. Both layouts bind to one exact installed
         concrete. Only non-executable POSIX *.lib.sh and readable *.jar
         library exports are supported; ordinary libraries do not create
-        facility provider-selection state.
+        facility provider-selection state. v2 also accepts an explicit
+        package-specific env shell script where launcher preparation remains
+        necessary; it is syntax-checked as non-executable POSIX source.
+        This does not redefine facility-env binding or introduce a generic
+        declarative package environment schema.
 
         Integration also validates/materializes declarative facility command,
         environment and service realizations. v1 retains facility-cmd mappings
