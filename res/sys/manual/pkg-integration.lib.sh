@@ -6,30 +6,36 @@ DESCRIPTION
     default application inside the managed package store.
 
 FUNCTIONS
-    pkg_integrate <package> <version> <range-dir> <root-dir> [<osarch>]
+    pkg_integrate <package> <version> <range-dir> <root-dir> [<osarch> [<schema> [<catalog-root>]]]
         Validate a resolved package definition and extracted useful root, including
         flat-pkg primary component/payload-root metadata and dmg-pkg primary
         component/payload-root/overlay metadata, validate dependency declaration
         syntax, materialize the managed concrete and its command/environment/
-        facility/state metadata and optional ordinary package library views
-        lib/sh and lib/java. The package range descriptor lib/<runtime>/<name>
-        contains one relative pathname beneath the useful root; integration
-        validates it and creates the corresponding concrete-local symlink.
-        Only non-executable POSIX *.lib.sh files and readable *.jar files
-        are accepted in this first stage. Library publication is independent
-        of facility declarations and does not copy payloads.
+        facility/state metadata and optional ordinary package library views.
+        v1 materializes command wrappers in cmd/ and ordinary libraries in
+        lib/sh and lib/java. The optional schema is v1 by default. v2 stores a
+        schema marker and exposes commands through link/bin (either useful-root
+        executables or validated cmd wrappers), with library links under
+        link/lib/sh and link/lib/java. Both layouts bind to one exact installed
+        concrete. Only non-executable POSIX *.lib.sh and readable *.jar
+        library exports are supported; ordinary libraries do not create
+        facility provider-selection state.
 
-        Integration also validates/materializes declarative facility
-        command/environment projections plus service realization metadata. A
-        facility command may project either a useful-root executable or a validated
-        ordinary package command of the same concrete provider. PATH is rejected as
-        facility-env metadata because command-path exposure is owned by facility-cmd
-        publication.
+        Integration also validates/materializes declarative facility command,
+        environment and service realizations. v1 retains facility-cmd mappings
+        and flat facility-env records. In v2, command members derive from the
+        central facility contract and the provider supplies facility-bin and/or
+        exact link/bin entrypoints. The v2 provider supplies typed environment
+        values keyed under facility-env/<facility>/<variable>; integration
+        creates the established flat installed facility-env representation
+        consumed by pkg-provider. PATH is permitted with root/root-path
+        contributions only; it is not a literal variable replacement.
 
         pkg_integrate does not acquire or derive pkg-catalog context. The normal
         pkg-install path performs exact-snapshot provider conformance before calling
-        integration. Integration validates the local realization structure it
-        materializes through the same trusted cmd/env/service typed-part handlers,
+        integration. For v2 providers, catalog-root must be supplied so integration
+        can validate contract-derived members against that same catalog snapshot.
+        Integration validates local realization structure through trusted handlers
         while retaining package-definition envelope and declared-facility checks.
 
         osarch controls the concrete package identity/class. Dependency declarations
@@ -44,8 +50,8 @@ FUNCTIONS
         provider index must be maintained. Persistent package state is not removed.
 
     pkg_default_apply <package> <version> [<osarch>]
-        Select an installed concrete as the package/platform default and publish its
-        package commands. An empty version clears that package default. A transition
+        Select an installed concrete as the package/platform default and publish
+        its command view (v1 cmd, v2 link/bin). An empty version clears it. A transition
         also reconciles global facility commands whose configured provider selector
         depends on the presence or current concrete of this package/class.
 
@@ -76,6 +82,7 @@ RETURN STATUS
         19  setuid/state rollback failed after setuid materialization failure
         20  setuid materialization failed and rollback succeeded
         21  ordinary library-view materialization failed
+        22  v2 facility command materialization failed
 
     Definition validation may also propagate its existing status 1 or 2 as
     described above.
