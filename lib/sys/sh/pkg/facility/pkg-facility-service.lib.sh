@@ -112,5 +112,7 @@ _pkg_facility_service_provider_validate()
 {
   [ "$#" -eq 4 ] || return 2
   _pkg_facility_service_contract_validate "$1" || return 1
-  _pkg_facility_service_realization_validate "$2" "$3" "$4"
+  pkg_facility_service_schema=v1
+  case "$1" in */v2/facility/*/service) pkg_facility_service_schema=v2 ;; esac
+  _pkg_facility_service_realization_validate "$2" "$3" "$4" "$pkg_facility_service_schema"
 }
