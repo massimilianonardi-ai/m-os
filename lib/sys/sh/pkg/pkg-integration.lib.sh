@@ -383,6 +383,171 @@ _pkg_integration_libraries_materialize()
   done
 }
 
+# v2 commands are concrete-local executable symlinks. A link targets either
+# the useful root or an optional package-specific cmd wrapper; it never names
+# another package, selector, or globally published command.
+_pkg_integration_v2_descriptor_read()
+{
+  [ "$#" -eq 1 ] || return 2
+  [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] && [ ! -x "$1" ] || return 1
+  pkg_v2_target="$(command -p -- cat -- "$1")" || return 1
+  pkg_v2_newline='
+'
+  case "$pkg_v2_target" in
+    "" | /* | *"$pkg_v2_newline"* | *"$(printf '\r')"*) return 1 ;;
+  esac
+}
+
+_pkg_integration_v2_root_target_validate()
+{
+  [ "$#" -eq 2 ] || return 2
+  pkg_v2_root_target=$1
+  pkg_v2_useful_root=$2
+
+  case "$pkg_v2_root_target" in
+    ../../root/*) pkg_v2_relative="${pkg_v2_root_target#../../root/}" ;;
+    *) return 1 ;;
+  esac
+  case "$pkg_v2_relative" in
+    "" | /* | */ | *//*) return 1 ;;
+  esac
+  case "/$pkg_v2_relative/" in
+    */./* | */../*) return 1 ;;
+  esac
+  readpathce pkg_v2_resolved "$pkg_v2_useful_root/$pkg_v2_relative" || return 1
+  case "$pkg_v2_resolved" in
+    "$pkg_v2_useful_root"/*) : ;;
+    *) return 1 ;;
+  esac
+  [ -f "$pkg_v2_resolved" ] && [ -x "$pkg_v2_resolved" ]
+}
+
+_pkg_integration_v2_validate_definition()
+{
+  [ "$#" -eq 2 ] || return 2
+  pkg_v2_range=$1
+  pkg_v2_root=$2
+
+  for pkg_v2_entry in "$pkg_v2_range"/* "$pkg_v2_range"/.[!.]* "$pkg_v2_range"/..?*
+  do
+    [ -e "$pkg_v2_entry" ] || [ -L "$pkg_v2_entry" ] || continue
+    case "${pkg_v2_entry##*/}" in
+      archive_regex | digest_type | format)
+        [ -f "$pkg_v2_entry" ] && [ ! -L "$pkg_v2_entry" ] || return 1
+        ;;
+      cmd | link)
+        valid_dir "$pkg_v2_entry" || return 1
+        ;;
+      *)
+        # No v2 facility/state/library descriptor may be silently ignored
+        # before its responsible handler is implemented and validated.
+        return 2
+        ;;
+    esac
+  done
+
+  [ -f "$pkg_v2_range/format" ] && [ ! -L "$pkg_v2_range/format" ] || return 1
+  valid_dir "$pkg_v2_range/link" || return 1
+  valid_dir "$pkg_v2_range/link/bin" || return 1
+  _pkg_integration_dir_entries_empty "$pkg_v2_range/link/bin" && return 1
+
+  for pkg_v2_entry in "$pkg_v2_range/link"/*
+  do
+    [ -e "$pkg_v2_entry" ] || [ -L "$pkg_v2_entry" ] || continue
+    case "${pkg_v2_entry##*/}" in
+      bin | target) valid_dir "$pkg_v2_entry" || return 1 ;;
+      *) return 1 ;;
+    esac
+  done
+
+  for pkg_v2_descriptor in "$pkg_v2_range/link/bin"/*
+  do
+    [ -e "$pkg_v2_descriptor" ] || [ -L "$pkg_v2_descriptor" ] || continue
+    pkg_v2_command=${pkg_v2_descriptor##*/}
+    pkg_name_valid "$pkg_v2_command" || return 1
+    _pkg_integration_v2_descriptor_read "$pkg_v2_descriptor" || return 1
+    case "$pkg_v2_target" in
+      ../../root/*)
+        _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
+        ;;
+      "../../cmd/$pkg_v2_command")
+        pkg_v2_cmd="$pkg_v2_range/cmd/$pkg_v2_command"
+        [ -f "$pkg_v2_cmd" ] && [ ! -L "$pkg_v2_cmd" ] &&
+          [ -r "$pkg_v2_cmd" ] && [ ! -x "$pkg_v2_cmd" ] || return 1
+        _pkg_integration_v2_descriptor_read "$pkg_v2_range/link/target/$pkg_v2_command" || return 1
+        _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
+        ;;
+      *) return 1 ;;
+    esac
+  done
+
+  if [ -d "$pkg_v2_range/cmd" ]
+  then
+    valid_dir "$pkg_v2_range/cmd" || return 1
+    for pkg_v2_cmd in "$pkg_v2_range/cmd"/*
+    do
+      [ -e "$pkg_v2_cmd" ] || [ -L "$pkg_v2_cmd" ] || continue
+      pkg_v2_command=${pkg_v2_cmd##*/}
+      pkg_name_valid "$pkg_v2_command" || return 1
+      [ -f "$pkg_v2_cmd" ] && [ ! -L "$pkg_v2_cmd" ] &&
+        [ -r "$pkg_v2_cmd" ] && [ ! -x "$pkg_v2_cmd" ] || return 1
+      _pkg_integration_v2_descriptor_read "$pkg_v2_range/link/bin/$pkg_v2_command" || return 1
+      [ "$pkg_v2_target" = "../../cmd/$pkg_v2_command" ] || return 1
+      _pkg_integration_v2_descriptor_read "$pkg_v2_range/link/target/$pkg_v2_command" || return 1
+      _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
+    done
+  fi
+
+  if [ -d "$pkg_v2_range/link/target" ]
+  then
+    valid_dir "$pkg_v2_range/link/target" || return 1
+    for pkg_v2_descriptor in "$pkg_v2_range/link/target"/*
+    do
+      [ -e "$pkg_v2_descriptor" ] || [ -L "$pkg_v2_descriptor" ] || continue
+      pkg_v2_command=${pkg_v2_descriptor##*/}
+      [ -f "$pkg_v2_range/cmd/$pkg_v2_command" ] || return 1
+    done
+  fi
+
+  return 0
+}
+
+_pkg_integration_v2_materialize_commands()
+{
+  [ "$#" -eq 2 ] || return 2
+  pkg_v2_range=$1
+  pkg_v2_concrete=$2
+
+  command -p -- mkdir "$pkg_v2_concrete/link" "$pkg_v2_concrete/link/bin" || return 1
+  if [ -d "$pkg_v2_range/cmd" ]
+  then
+    command -p -- mkdir "$pkg_v2_concrete/cmd" || return 1
+    for pkg_v2_cmd in "$pkg_v2_range/cmd"/*
+    do
+      [ -f "$pkg_v2_cmd" ] || continue
+      command -p -- cp -- "$pkg_v2_cmd" "$pkg_v2_concrete/cmd/${pkg_v2_cmd##*/}" || return 1
+      command -p -- chmod +x "$pkg_v2_concrete/cmd/${pkg_v2_cmd##*/}" || return 1
+    done
+  fi
+  if [ -d "$pkg_v2_range/link/target" ]
+  then
+    command -p -- mkdir "$pkg_v2_concrete/link/target" || return 1
+    for pkg_v2_descriptor in "$pkg_v2_range/link/target"/*
+    do
+      [ -f "$pkg_v2_descriptor" ] || continue
+      _pkg_integration_v2_descriptor_read "$pkg_v2_descriptor" || return 1
+      command -p -- ln -s "$pkg_v2_target" "$pkg_v2_concrete/link/target/${pkg_v2_descriptor##*/}" || return 1
+    done
+  fi
+  for pkg_v2_descriptor in "$pkg_v2_range/link/bin"/*
+  do
+    [ -f "$pkg_v2_descriptor" ] || continue
+    _pkg_integration_v2_descriptor_read "$pkg_v2_descriptor" || return 1
+    command -p -- ln -s "$pkg_v2_target" "$pkg_v2_concrete/link/bin/${pkg_v2_descriptor##*/}" || return 1
+  done
+  printf 'v2\n' > "$pkg_v2_concrete/schema" || return 1
+}
+
 _pkg_integration_validate_definition()
 {
   [ "$#" -eq 2 ] || return 2
@@ -777,12 +942,17 @@ _pkg_default_create_bindings()
 pkg_integrate()
 (
   # Phase 1: validate invocation and package identity.
-  [ "$#" -eq 4 ] || [ "$#" -eq 5 ] || return 1
+  [ "$#" -ge 4 ] && [ "$#" -le 6 ] || return 1
   pkg_integrate_pkg=$1
   pkg_integrate_version=$2
   pkg_integrate_range_input=$3
   pkg_integrate_root_input=$4
   pkg_integrate_osarch=${5-}
+  pkg_integrate_schema=${6-v1}
+  case "$pkg_integrate_schema" in
+    v1 | v2) : ;;
+    *) return 2 ;;
+  esac
 
   pkg_name_version_osarch_valid "$pkg_integrate_pkg" "$pkg_integrate_version" "$pkg_integrate_osarch" || return 2
 
@@ -799,7 +969,12 @@ pkg_integrate()
 
   # Phase 3: validate the complete integration plan before consuming the
   # caller-owned staging root.
-  _pkg_integration_validate_definition "$pkg_integrate_range" "$pkg_integrate_root"
+  if [ "$pkg_integrate_schema" = v2 ]
+  then
+    _pkg_integration_v2_validate_definition "$pkg_integrate_range" "$pkg_integrate_root"
+  else
+    _pkg_integration_validate_definition "$pkg_integrate_range" "$pkg_integrate_root"
+  fi
   pkg_integrate_status=$?
   [ "$pkg_integrate_status" -eq 0 ] || return "$pkg_integrate_status"
 
@@ -817,7 +992,13 @@ pkg_integrate()
 
   # Phase 5: materialize package-local runtime metadata and projections.
   # Any failure restores the caller-owned staging root.
-  if ! _pkg_integration_materialize_commands "$pkg_integrate_range" "$pkg_integration_concrete"
+  if [ "$pkg_integrate_schema" = v2 ]
+  then
+    _pkg_integration_v2_materialize_commands "$pkg_integrate_range" "$pkg_integration_concrete"
+  else
+    _pkg_integration_materialize_commands "$pkg_integrate_range" "$pkg_integration_concrete"
+  fi
+  if [ "$?" -ne 0 ]
   then
     _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
     _pkg_integration_error pkg-integrate materialization-failed
