@@ -486,6 +486,11 @@ _pkg_integration_v2_validate_definition()
       facility)
         _pkg_facility_file_validate "$pkg_v2_entry" || return 1
         ;;
+      env)
+        # Retain an explicit package-specific launcher script where a safe
+        # declarative equivalent has not yet been established.
+        _pkg_integration_env_validate "$pkg_v2_entry" || return 1
+        ;;
       *)
         # No v2 facility/state/library descriptor may be silently ignored
         # before its responsible handler is implemented and validated.
