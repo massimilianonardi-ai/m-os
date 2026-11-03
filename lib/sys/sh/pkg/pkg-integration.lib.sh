@@ -846,31 +846,52 @@ _pkg_default_current_valid()
   pkg_version_valid "$pkg_default_current_version"
 }
 
-_pkg_default_public_target()
+# Public package defaults publish the exact concrete's command view.
+# v1 remains its historical cmd directory; v2 exposes link/bin instead.
+_pkg_default_view_set()
 {
   [ "$#" -eq 1 ] || return 2
-  pkg_default_public_target="../../pkg/$pkg_integration_selector_name/cmd/$1"
+  valid_dir "$m_PKG_DIR/$1" || return 1
+  _pkg_schema_read "$m_PKG_DIR/$1" || return 1
+  case "$pkg_schema" in
+    v1) pkg_default_view_rel=cmd ;;
+    v2) pkg_default_view_rel=link/bin ;;
+    *) return 1 ;;
+  esac
+  pkg_default_view_dir="$m_PKG_DIR/$1/$pkg_default_view_rel"
+  if [ -e "$pkg_default_view_dir" ] || [ -L "$pkg_default_view_dir" ]
+  then
+    valid_dir "$pkg_default_view_dir" || return 1
+  elif [ "$pkg_schema" = v2 ]
+  then
+    # Current v2 command-bearing packages must have the public bin view.
+    return 1
+  fi
+}
+
+_pkg_default_public_target()
+{
+  [ "$#" -eq 2 ] || return 2
+  _pkg_default_view_set "$2" || return 1
+  pkg_default_public_target="../../pkg/$pkg_integration_selector_name/$pkg_default_view_rel/$1"
 }
 
 _pkg_default_validate_current_bindings()
 {
   [ "$#" -eq 1 ] || return 2
   pkg_default_old_concrete=$1
-  pkg_default_old_cmd_dir="$m_PKG_DIR/$pkg_default_old_concrete/cmd"
+  _pkg_default_view_set "$pkg_default_old_concrete" || return 1
+  pkg_default_old_cmd_dir=$pkg_default_view_dir
 
-  valid_dir "$m_PKG_DIR/$pkg_default_old_concrete" || return 1
-  if [ ! -e "$pkg_default_old_cmd_dir" ] && [ ! -L "$pkg_default_old_cmd_dir" ]
-  then
-    return 0
-  fi
-  valid_dir "$pkg_default_old_cmd_dir" || return 1
+  [ -d "$pkg_default_old_cmd_dir" ] || return 0
   valid_dir "$pkg_integration_public_dir" || return 1
 
   for pkg_default_cmd_path in "$pkg_default_old_cmd_dir"/*
   do
     [ -e "$pkg_default_cmd_path" ] || [ -L "$pkg_default_cmd_path" ] || continue
     pkg_default_command=${pkg_default_cmd_path##*/}
-    _pkg_default_public_target "$pkg_default_command" || return 1
+    [ -f "$pkg_default_cmd_path" ] && [ -x "$pkg_default_cmd_path" ] || return 1
+    _pkg_default_public_target "$pkg_default_command" "$pkg_default_old_concrete" || return 1
     pkg_default_expected=$pkg_default_public_target
     pkg_default_public="$pkg_integration_public_dir/$pkg_default_command"
     [ -L "$pkg_default_public" ] || return 1
@@ -884,25 +905,24 @@ _pkg_default_validate_new_collisions()
   [ "$#" -eq 2 ] || return 2
   pkg_default_new_concrete=$1
   pkg_default_old_concrete=$2
-  pkg_default_new_cmd_dir="$m_PKG_DIR/$pkg_default_new_concrete/cmd"
+  _pkg_default_view_set "$pkg_default_new_concrete" || return 1
+  pkg_default_new_cmd_dir=$pkg_default_view_dir
 
-  if [ ! -e "$pkg_default_new_cmd_dir" ] && [ ! -L "$pkg_default_new_cmd_dir" ]
-  then
-    return 0
-  fi
-  valid_dir "$pkg_default_new_cmd_dir" || return 1
+  [ -d "$pkg_default_new_cmd_dir" ] || return 0
 
   for pkg_default_cmd_path in "$pkg_default_new_cmd_dir"/*
   do
     [ -e "$pkg_default_cmd_path" ] || [ -L "$pkg_default_cmd_path" ] || continue
     pkg_default_command=${pkg_default_cmd_path##*/}
+    [ -f "$pkg_default_cmd_path" ] && [ -x "$pkg_default_cmd_path" ] || return 1
     pkg_default_public="$pkg_integration_public_dir/$pkg_default_command"
     [ ! -e "$pkg_default_public" ] && [ ! -L "$pkg_default_public" ] && continue
 
     [ -n "$pkg_default_old_concrete" ] || return 1
-    [ -f "$m_PKG_DIR/$pkg_default_old_concrete/cmd/$pkg_default_command" ] && [ ! -L "$m_PKG_DIR/$pkg_default_old_concrete/cmd/$pkg_default_command" ] || return 1
-    _pkg_default_public_target "$pkg_default_command" || return 1
+    _pkg_default_public_target "$pkg_default_command" "$pkg_default_old_concrete" || return 1
     pkg_default_expected=$pkg_default_public_target
+    pkg_default_old_command=$pkg_default_view_dir/$pkg_default_command
+    [ -f "$pkg_default_old_command" ] && [ -x "$pkg_default_old_command" ] || return 1
     [ -L "$pkg_default_public" ] || return 1
     pkg_default_actual="$(command -p -- readlink "$pkg_default_public")" || return 1
     [ "$pkg_default_actual" = "$pkg_default_expected" ] || return 1
@@ -912,7 +932,8 @@ _pkg_default_validate_new_collisions()
 _pkg_default_remove_bindings()
 {
   [ "$#" -eq 1 ] || return 2
-  pkg_default_cmd_dir="$m_PKG_DIR/$1/cmd"
+  _pkg_default_view_set "$1" || return 1
+  pkg_default_cmd_dir=$pkg_default_view_dir
   [ -d "$pkg_default_cmd_dir" ] || return 0
 
   for pkg_default_cmd_path in "$pkg_default_cmd_dir"/*
@@ -926,14 +947,17 @@ _pkg_default_remove_bindings()
 _pkg_default_create_bindings()
 {
   [ "$#" -eq 1 ] || return 2
-  pkg_default_cmd_dir="$m_PKG_DIR/$1/cmd"
+  pkg_default_selected_concrete=$1
+  _pkg_default_view_set "$pkg_default_selected_concrete" || return 1
+  pkg_default_cmd_dir=$pkg_default_view_dir
   [ -d "$pkg_default_cmd_dir" ] || return 0
 
   for pkg_default_cmd_path in "$pkg_default_cmd_dir"/*
   do
     [ -e "$pkg_default_cmd_path" ] || [ -L "$pkg_default_cmd_path" ] || continue
     pkg_default_command=${pkg_default_cmd_path##*/}
-    _pkg_default_public_target "$pkg_default_command" || return 1
+    [ -f "$pkg_default_cmd_path" ] && [ -x "$pkg_default_cmd_path" ] || return 1
+    _pkg_default_public_target "$pkg_default_command" "$pkg_default_selected_concrete" || return 1
     pkg_default_target=$pkg_default_public_target
     command -p -- ln -s "$pkg_default_target" "$pkg_integration_public_dir/$pkg_default_command" || return 1
   done
