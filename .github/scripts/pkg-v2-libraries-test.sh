@@ -44,6 +44,7 @@ pkg_default_apply "$name" 1 || exit 13
 printf '%s\n' 'import demo.Shared; public class Consumer { public static void main(String[] args) { System.out.print(Shared.version()); } }' > "$work/Consumer.java"
 javac -cp "$concrete/link/lib/java/sample.jar" -d "$work/consumer" "$work/Consumer.java"
 
+unset CLASSPATH
 baseline=$PATH
 context "pkg=$name@1" || exit 15
 [ "${CLASSPATH-}" = "$concrete/link/lib/java/*" ] || exit 16
