@@ -60,7 +60,7 @@ pkg_install_one()
   esac
 
   pkg_facility_provider_validate "$pkg_install_definition_root" "$pkg_install_range" "$pkg_install_extract_dir" || exit 17
-  pkg_integrate "$pkg_install_pkg" "$pkg_install_version" "$pkg_install_range" "$pkg_install_extract_dir" "$pkg_install_osarch" "$pkg_install_schema" || exit 18
+  pkg_integrate "$pkg_install_pkg" "$pkg_install_version" "$pkg_install_range" "$pkg_install_extract_dir" "$pkg_install_osarch" "$pkg_install_schema" "$pkg_install_definition_root" || exit 18
 
   if [ -n "$pkg_install_osarch" ]
   then
