@@ -112,6 +112,12 @@ _pkg_repository_nodejs_index_versions()
   do
     [ -z "$nodejs_extra" ] || return 1
     case "$nodejs_token" in s:*) nodejs_version=${nodejs_token#s:};; *) return 1;; esac
+    # The upstream index also lists valid prerelease tags (for example,
+    # v27.0.0-alpha...). They are outside this stable-release adapter and
+    # must not invalidate otherwise valid releases of the selected major.
+    case "$nodejs_version" in
+      v[0-9]*-*) continue ;;
+    esac
     _pkg_repository_nodejs_validate_version "$nodejs_version" || return 1
     nodejs_record_major="$(_pkg_repository_nodejs_version_major "$nodejs_version")" || return 1
     [ "$nodejs_record_major" = "$nodejs_major" ] || continue
