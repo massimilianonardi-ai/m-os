@@ -340,7 +340,7 @@ _pkg_integration_libraries_validate()
       if [ "$pkg_integration_lib_schema" = v2 ]
       then
         _pkg_integration_v2_descriptor_read "$pkg_integration_lib_descriptor" || return 1
-        _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_integration_lib_root" "../../../root/" || return 1
+        _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_integration_lib_root" "../../../root/" readable || return 1
         pkg_integration_link_target=$pkg_v2_relative
       else
         _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
@@ -434,10 +434,11 @@ _pkg_integration_v2_descriptor_read()
 
 _pkg_integration_v2_root_target_validate()
 {
-  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || return 2
+  [ "$#" -ge 2 ] && [ "$#" -le 4 ] || return 2
   pkg_v2_root_target=$1
   pkg_v2_useful_root=$2
   pkg_v2_root_prefix=${3-../../root/}
+  pkg_v2_target_mode=${4-executable}
   case "$pkg_v2_root_prefix" in
     ../../root/ | ../../../root/) : ;;
     *) return 2 ;;
@@ -458,7 +459,12 @@ _pkg_integration_v2_root_target_validate()
     "$pkg_v2_useful_root"/*) : ;;
     *) return 1 ;;
   esac
-  [ -f "$pkg_v2_resolved" ] && [ -x "$pkg_v2_resolved" ]
+  [ -f "$pkg_v2_resolved" ] || return 1
+  case "$pkg_v2_target_mode" in
+    executable) [ -x "$pkg_v2_resolved" ] ;;
+    readable) [ -r "$pkg_v2_resolved" ] ;;
+    *) return 2 ;;
+  esac
 }
 
 _pkg_integration_v2_validate_definition()
