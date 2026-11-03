@@ -843,11 +843,51 @@ _pkg_integration_materialize_commands()
   done
 }
 
+# V2 inputs bind values to the exact facility-contract variable names. Keep
+# the established installed flat realization so pkg-provider remains its sole
+# runtime environment resolver and applying facility defaults stays unchanged.
+_pkg_integration_v2_facility_env_materialize()
+{
+  [ "$#" -eq 2 ] || return 2
+  pkg_v2_env_source="$1/facility-env"
+  pkg_v2_env_concrete=$2
+  [ -d "$pkg_v2_env_source" ] || return 0
+
+  command -p -- mkdir "$pkg_v2_env_concrete/facility-env" || return 1
+  for pkg_v2_env_facility_dir in "$pkg_v2_env_source"/*
+  do
+    [ -d "$pkg_v2_env_facility_dir" ] &&
+      [ ! -L "$pkg_v2_env_facility_dir" ] || return 1
+    pkg_v2_env_facility=${pkg_v2_env_facility_dir##*/}
+    pkg_v2_env_output="$pkg_v2_env_concrete/facility-env/$pkg_v2_env_facility"
+    : > "$pkg_v2_env_output" || return 1
+
+    for pkg_v2_env_parameter in "$pkg_v2_env_facility_dir"/*
+    do
+      [ -f "$pkg_v2_env_parameter" ] &&
+        [ ! -L "$pkg_v2_env_parameter" ] || return 1
+      pkg_v2_env_variable=${pkg_v2_env_parameter##*/}
+      while IFS= read -r pkg_v2_env_descriptor
+      do
+        printf '%s\\t%s\\n' "$pkg_v2_env_variable" "$pkg_v2_env_descriptor" >>
+          "$pkg_v2_env_output" || return 1
+      done < "$pkg_v2_env_parameter"
+    done
+
+    LC_ALL=C command -p -- sort < "$pkg_v2_env_output" >
+      "$pkg_v2_env_output.sorted" || return 1
+    command -p -- mv -- "$pkg_v2_env_output.sorted" "$pkg_v2_env_output" || return 1
+    _pkg_facility_env_realization_validate \
+      "$pkg_v2_env_output" "$pkg_v2_env_concrete/root" || return 1
+  done
+}
+
 _pkg_integration_materialize_facility_projection()
 {
   [ "$#" -eq 2 ] || return 2
   pkg_integration_range=$1
   pkg_integration_concrete=$2
+  pkg_integration_projection_schema=${3-v1}
 
   if [ -d "$pkg_integration_range/facility-cmd" ]
   then
@@ -880,7 +920,11 @@ _pkg_integration_materialize_facility_projection()
     done
   fi
 
-  if [ -d "$pkg_integration_range/facility-env" ]
+  if [ "$pkg_integration_projection_schema" = v2 ]
+  then
+    _pkg_integration_v2_facility_env_materialize \
+      "$pkg_integration_range" "$pkg_integration_concrete" || return 1
+  elif [ -d "$pkg_integration_range/facility-env" ]
   then
     command -p -- mkdir "$pkg_integration_concrete/facility-env" || return 1
     for pkg_integration_env_file in "$pkg_integration_range/facility-env"/*
@@ -1179,7 +1223,7 @@ pkg_integrate()
     return 15
   fi
 
-  if ! _pkg_integration_materialize_facility_projection "$pkg_integrate_range" "$pkg_integration_concrete"
+  if ! _pkg_integration_materialize_facility_projection "$pkg_integrate_range" "$pkg_integration_concrete" "$pkg_integrate_schema"
   then
     _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
     _pkg_integration_error pkg-integrate facility-projection-materialization-failed
