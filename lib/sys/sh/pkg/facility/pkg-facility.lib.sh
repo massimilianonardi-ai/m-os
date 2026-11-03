@@ -1,3 +1,4 @@
+loadsyslib "pkg/pkg-common"
 loadsyslib "pkg/facility/pkg-facility-cmd"
 loadsyslib "pkg/facility/pkg-facility-env"
 loadsyslib "pkg/facility/pkg-facility-service"
@@ -454,6 +455,22 @@ pkg_facility_service_start_resolve()
     "$pkg_facility_service_runtime_concrete/facility-service/$pkg_facility_service_runtime_facility" || return 1
   pkg_facility_service_runtime_command=$pkg_facility_service_scalar
   _pkg_facility_cmd_name_valid "$pkg_facility_service_runtime_command" || return 1
+
+  _pkg_schema_read "$pkg_facility_service_runtime_concrete" || return 1
+  if [ "$pkg_schema" = v2 ]
+  then
+    pkg_facility_service_runtime_command_path="$pkg_facility_service_runtime_concrete/link/bin/$pkg_facility_service_runtime_command"
+    [ -L "$pkg_facility_service_runtime_command_path" ] || return 1
+    readpathce pkg_facility_service_runtime_command_resolved "$pkg_facility_service_runtime_command_path" || return 1
+    case "$pkg_facility_service_runtime_command_resolved" in
+      "$pkg_facility_service_runtime_concrete_resolved/root/"* | "$pkg_facility_service_runtime_concrete_resolved/cmd/"*) : ;;
+      *) return 1 ;;
+    esac
+    [ -f "$pkg_facility_service_runtime_command_resolved" ] &&
+      [ -x "$pkg_facility_service_runtime_command_resolved" ] || return 1
+    printf -- '%s\n' "$pkg_facility_service_runtime_command_path"
+    return 0
+  fi
 
   pkg_facility_service_runtime_command_path="$pkg_facility_service_runtime_concrete/cmd/$pkg_facility_service_runtime_command"
   [ -f "$pkg_facility_service_runtime_command_path" ] && \
