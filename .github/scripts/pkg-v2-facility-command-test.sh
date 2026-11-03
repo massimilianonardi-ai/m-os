@@ -57,11 +57,11 @@ java_concrete="$m_PKG_DIR/$java_name@1"
 command -p -- mkdir -p "$work/catalog/v2/pkg/$java_name/all" "$work/java-root/bin" || exit 23
 command -p -- cp -R "$CATALOG_V2/facility/java" "$work/catalog/v2/facility/java" || exit 24
 java_range="$work/catalog/v2/pkg/$java_name/all/n0001=1"
-command -p -- mkdir -p "$java_range/facility-bin" "$java_range/facility-env" || exit 25
+command -p -- mkdir -p "$java_range/facility-bin" "$java_range/facility-env/java" || exit 25
 printf 'tar.gz\n' > "$java_range/format"
 printf 'java 21\n' > "$java_range/facility"
 printf 'bin\n' > "$java_range/facility-bin/java"
-printf 'JAVA_HOME\troot\n' > "$java_range/facility-env/java"
+printf 'root\n' > "$java_range/facility-env/java/JAVA_HOME"
 for member in "$work/catalog/v2/facility/java/21/cmd/"*
 do
   command_name=${member##*/}
@@ -77,6 +77,31 @@ fi
 printf '#!/bin/sh\nprintf "fixture-java\\n"\n' > "$work/java-root/bin/javac"
 command -p -- chmod +x "$work/java-root/bin/javac" || exit 29
 
+# The provider cannot redefine the central env membership or cardinality.
+printf 'literal unexpected\n' > "$java_range/facility-env/java/EXTRA"
+if pkg_facility_provider_validate "$work/catalog/v2" "$java_range" "$work/java-root"
+then
+  exit 37
+fi
+command -p -- rm -f "$java_range/facility-env/java/EXTRA"
+command -p -- mv "$java_range/facility-env/java/JAVA_HOME" "$work/held-JAVA_HOME"
+if pkg_facility_provider_validate "$work/catalog/v2" "$java_range" "$work/java-root"
+then
+  exit 38
+fi
+command -p -- mv "$work/held-JAVA_HOME" "$java_range/facility-env/java/JAVA_HOME"
+printf 'root\nroot\n' > "$java_range/facility-env/java/JAVA_HOME"
+if pkg_facility_provider_validate "$work/catalog/v2" "$java_range" "$work/java-root"
+then
+  exit 39
+fi
+printf 'root-path ../outside\n' > "$java_range/facility-env/java/JAVA_HOME"
+if pkg_facility_provider_validate "$work/catalog/v2" "$java_range" "$work/java-root"
+then
+  exit 40
+fi
+printf 'root\n' > "$java_range/facility-env/java/JAVA_HOME"
+
 pkg_facility_provider_validate "$work/catalog/v2" "$java_range" "$work/java-root" || exit 30
 pkg_integrate "$java_name" 1 "$java_range" "$work/java-root" "" v2 "$work/catalog/v2" || exit 31
 for member in "$work/catalog/v2/facility/java/21/cmd/"*
@@ -87,6 +112,16 @@ do
 done
 [ "$("$java_concrete/link/bin/javac")" = fixture-java ] || exit 34
 [ -f "$java_concrete/facility-env/java" ] || exit 35
+[ "$(printf 'JAVA_HOME\\troot\\n')" = "$(command -p -- cat -- "$java_concrete/facility-env/java")" ] || exit 41
+
+# Exercise the real public default + freshly bootstrapped environment: the
+# installed projection is consumed by pkg-provider, not by a parallel context
+# environment interpreter.
+"$m_ROOT/m" pkg provider default java "$java_name@1" || exit 42
+JAVA_ROOT_EXPECTED="$java_concrete/root" "$m_ROOT/m" sh -ec '
+  [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ]
+' || exit 43
+"$m_ROOT/m" pkg provider default -u java || exit 44
 command -p -- rm -rf "$java_concrete"
 
 printf '%s\n' 'PASS: central nodejs and Java facility contracts, provider parameters and public command mapping'
