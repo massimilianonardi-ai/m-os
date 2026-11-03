@@ -230,7 +230,8 @@ pkg_facility_compatibility_read()
 
 _pkg_facility_provider_part_validate()
 {
-  [ "$#" -eq 5 ] || return 2
+  [ "$#" -ge 5 ] && [ "$#" -le 6 ] || return 2
+  pkg_facility_provider_schema=${6-v1}
   pkg_facility_provider_part=$1
   pkg_facility_provider_contract_part=$2
   pkg_facility_provider_definition=$3
@@ -239,11 +240,20 @@ _pkg_facility_provider_part_validate()
 
   case "$pkg_facility_provider_part" in
     cmd)
-      _pkg_facility_cmd_provider_validate \
-        "$pkg_facility_provider_contract_part" \
-        "$pkg_facility_provider_definition/facility-cmd/$pkg_facility_provider_name" \
-        "$pkg_facility_provider_definition" \
-        "$pkg_facility_provider_root"
+      if [ "$pkg_facility_provider_schema" = v2 ]
+      then
+        _pkg_facility_cmd_v2_provider_validate \
+          "$pkg_facility_provider_contract_part" \
+          "$pkg_facility_provider_definition" \
+          "$pkg_facility_provider_root" \
+          "$pkg_facility_provider_name"
+      else
+        _pkg_facility_cmd_provider_validate \
+          "$pkg_facility_provider_contract_part" \
+          "$pkg_facility_provider_definition/facility-cmd/$pkg_facility_provider_name" \
+          "$pkg_facility_provider_definition" \
+          "$pkg_facility_provider_root"
+      fi
       ;;
     env)
       _pkg_facility_env_provider_validate \
@@ -266,7 +276,8 @@ _pkg_facility_provider_part_validate()
 
 _pkg_facility_provider_declared_validate()
 {
-  [ "$#" -eq 5 ] || return 2
+  [ "$#" -ge 5 ] && [ "$#" -le 6 ] || return 2
+  pkg_facility_provider_schema=${6-v1}
   pkg_facility_provider_catalog=$1
   pkg_facility_provider_definition=$2
   pkg_facility_provider_root=$3
@@ -285,7 +296,8 @@ _pkg_facility_provider_declared_validate()
       "$pkg_facility_provider_contract_part" \
       "$pkg_facility_provider_definition" \
       "$pkg_facility_provider_root" \
-      "$pkg_facility_provider_name" || return 1
+      "$pkg_facility_provider_name" \
+      "$pkg_facility_provider_schema" || return 1
   done
 }
 
@@ -311,7 +323,9 @@ _pkg_facility_provider_surface_validate()
     pkg_facility_surface_name=${pkg_facility_surface_entry##*/}
     _pkg_facility_name_valid "$pkg_facility_surface_name" || return 1
     _pkg_facility_declared_compatibility "$pkg_facility_surface_definition" "$pkg_facility_surface_name" || return 1
-    pkg_facility_surface_contract="$pkg_facility_surface_catalog/$pkg_facility_surface_name/$pkg_facility_declared_compatibility/$pkg_facility_surface_type"
+    pkg_facility_surface_contract_type=$pkg_facility_surface_type
+    [ "$pkg_facility_surface_type" != bin ] || pkg_facility_surface_contract_type=cmd
+    pkg_facility_surface_contract="$pkg_facility_surface_catalog/$pkg_facility_surface_name/$pkg_facility_declared_compatibility/$pkg_facility_surface_contract_type"
     [ -d "$pkg_facility_surface_contract" ] && [ ! -L "$pkg_facility_surface_contract" ] || return 1
   done
 
@@ -324,14 +338,17 @@ _pkg_facility_provider_surface_validate()
 
 _pkg_facility_provider_unknown_surfaces_reject()
 {
-  [ "$#" -eq 1 ] || return 2
+  [ "$#" -ge 1 ] && [ "$#" -le 2 ] || return 2
   pkg_facility_surface_definition=$1
+  pkg_facility_surface_schema=${2-v1}
 
   for pkg_facility_surface_entry in "$pkg_facility_surface_definition"/facility-*
   do
     [ -e "$pkg_facility_surface_entry" ] || [ -L "$pkg_facility_surface_entry" ] || continue
     case "${pkg_facility_surface_entry##*/}" in
-      facility-cmd | facility-env | facility-service) : ;;
+      facility-env | facility-service) : ;;
+      facility-cmd) [ "$pkg_facility_surface_schema" = v1 ] || return 1 ;;
+      facility-bin) [ "$pkg_facility_surface_schema" = v2 ] || return 1 ;;
       *) return 1 ;;
     esac
   done
@@ -344,6 +361,10 @@ pkg_facility_provider_validate()
   pkg_facility_provider_definition=$2
   pkg_facility_provider_root=$3
   pkg_facility_provider_file="$pkg_facility_provider_definition/facility"
+  pkg_facility_provider_schema=v1
+  case "$pkg_facility_provider_catalog_root" in
+    */v2) pkg_facility_provider_schema=v2 ;;
+  esac
 
   [ -d "$pkg_facility_provider_catalog_root" ] && [ ! -L "$pkg_facility_provider_catalog_root" ] || return 1
   [ -d "$pkg_facility_provider_catalog_root/pkg" ] && [ ! -L "$pkg_facility_provider_catalog_root/pkg" ] || return 1
@@ -358,7 +379,7 @@ pkg_facility_provider_validate()
     *) return 1 ;;
   esac
 
-  _pkg_facility_provider_unknown_surfaces_reject "$pkg_facility_provider_definition" || return 1
+  _pkg_facility_provider_unknown_surfaces_reject "$pkg_facility_provider_definition" "$pkg_facility_provider_schema" || return 1
 
   if [ ! -e "$pkg_facility_provider_file" ] && [ ! -L "$pkg_facility_provider_file" ]
   then
@@ -367,7 +388,9 @@ pkg_facility_provider_validate()
     [ ! -e "$pkg_facility_provider_definition/facility-env" ] && \
     [ ! -L "$pkg_facility_provider_definition/facility-env" ] && \
     [ ! -e "$pkg_facility_provider_definition/facility-service" ] && \
-    [ ! -L "$pkg_facility_provider_definition/facility-service" ]
+    [ ! -L "$pkg_facility_provider_definition/facility-service" ] && \
+    [ ! -e "$pkg_facility_provider_definition/facility-bin" ] && \
+    [ ! -L "$pkg_facility_provider_definition/facility-bin" ]
     return $?
   fi
 
@@ -383,10 +406,16 @@ pkg_facility_provider_validate()
       "$pkg_facility_provider_definition" \
       "$pkg_facility_provider_root" \
       "$pkg_facility_name" \
-      "$pkg_facility_compatibility" || return 1
+      "$pkg_facility_compatibility" \
+      "$pkg_facility_provider_schema" || return 1
   done < "$pkg_facility_provider_file"
 
-  _pkg_facility_provider_surface_validate "$pkg_facility_provider_catalog" "$pkg_facility_provider_definition" cmd || return 1
+  if [ "$pkg_facility_provider_schema" = v2 ]
+  then
+    _pkg_facility_provider_surface_validate "$pkg_facility_provider_catalog" "$pkg_facility_provider_definition" bin || return 1
+  else
+    _pkg_facility_provider_surface_validate "$pkg_facility_provider_catalog" "$pkg_facility_provider_definition" cmd || return 1
+  fi
   _pkg_facility_provider_surface_validate "$pkg_facility_provider_catalog" "$pkg_facility_provider_definition" env || return 1
   _pkg_facility_provider_surface_validate "$pkg_facility_provider_catalog" "$pkg_facility_provider_definition" service
 }
