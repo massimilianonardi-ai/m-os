@@ -126,6 +126,7 @@ done
 # environment interpreter.
 "$m_ROOT/m" pkg provider default java "$java_name@1" || exit 42
 JAVA_ROOT_EXPECTED="$java_concrete/root" JAVA_CONCRETE_EXPECTED="$java_concrete" "$m_ROOT/m" sh -ec '
+  . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 13
   [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ] || exit 1
 
   # Bootstrap gives technical m roots precedence over the global provider
