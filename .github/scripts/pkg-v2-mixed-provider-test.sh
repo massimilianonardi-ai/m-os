@@ -175,13 +175,23 @@ then
 fi
 [ -d "$provider_v2" ] && [ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-1 ] || exit 40
 
-# An invalid replacement must preserve the configured provider default.
-if "$m_ROOT/m" pkg provider default nodejs "$provider@999" >/dev/null 2>&1
+# A syntactically valid explicit selector may name an unavailable
+# concrete: keep the intent, fail resolution, never silently fall back.
+"$m_ROOT/m" pkg provider default nodejs "$provider@999" || exit 41
+[ "$("$m_ROOT/m" pkg provider default nodejs)" = "$provider@999" ] || exit 42
+if "$m_ROOT/m" pkg requirement resolve nodejs '=26' >/dev/null 2>&1
 then
-  exit 41
+  exit 75
 fi
-[ "$("$m_ROOT/m" pkg provider default nodejs)" = "$provider@2" ] || exit 42
+# The independent consumer binding still wins over that invalid default.
 [ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-1 ] || exit 43
+"$m_ROOT/m" pkg provider default nodejs "$provider@2" || exit 76
+# In contrast, an invalid selector *syntax* must be rejected atomically.
+if "$m_ROOT/m" pkg provider default nodejs "$provider@999!invalid" >/dev/null 2>&1
+then
+  exit 77
+fi
+[ "$("$m_ROOT/m" pkg provider default nodejs)" = "$provider@2" ] || exit 78
 
 "$m_ROOT/m" pkg provider bind -u "$consumer" nodejs || exit 44
 binding_set=0
