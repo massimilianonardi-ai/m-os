@@ -38,6 +38,7 @@ command -p -- cp -R -- "$CATALOG_V2/facility/java" "$catalog/facility/java" || e
 # Extend only the copied central contract to probe shared/delta extraction.
 : > "$catalog/facility/java/21/env/CI_SHARED"
 : > "$catalog/facility/java/21/env/CI_CLASS"
+: > "$catalog/facility/java/21/env/PATH"
 printf 'tar.gz\n' > "$range/format"
 printf 'java 21\n' > "$range/facility"
 printf 'bin\n' > "$range/facility-bin/java"
@@ -54,12 +55,7 @@ do
 done
 
 printf 'literal generic\n' > "$range/facility-env/java/CI_CLASS"
-# Emit a trace only on failing conformance to pinpoint a fixture mismatch.
-if ! pkg_facility_provider_validate "$catalog" "$range" "$work/root-generic"
-then
-  ( set -x; pkg_facility_provider_validate "$catalog" "$range" "$work/root-generic" ) >&2 || :
-  exit 11
-fi
+pkg_facility_provider_validate "$catalog" "$range" "$work/root-generic" || exit 11
 pkg_integrate "$name" 1 "$range" "$work/root-generic" "" v2 "$catalog" || exit 12
 printf 'literal specific\n' > "$range/facility-env/java/CI_CLASS"
 pkg_facility_provider_validate "$catalog" "$range" "$work/root-specific" || exit 13
