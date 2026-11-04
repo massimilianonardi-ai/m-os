@@ -54,7 +54,12 @@ do
 done
 
 printf 'literal generic\n' > "$range/facility-env/java/CI_CLASS"
-pkg_facility_provider_validate "$catalog" "$range" "$work/root-generic" || exit 11
+# Emit a trace only on failing conformance to pinpoint a fixture mismatch.
+if ! pkg_facility_provider_validate "$catalog" "$range" "$work/root-generic"
+then
+  ( set -x; pkg_facility_provider_validate "$catalog" "$range" "$work/root-generic" ) >&2 || :
+  exit 11
+fi
 pkg_integrate "$name" 1 "$range" "$work/root-generic" "" v2 "$catalog" || exit 12
 printf 'literal specific\n' > "$range/facility-env/java/CI_CLASS"
 pkg_facility_provider_validate "$catalog" "$range" "$work/root-specific" || exit 13
