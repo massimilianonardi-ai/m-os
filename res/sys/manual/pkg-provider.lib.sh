@@ -8,8 +8,12 @@ DESCRIPTION
     Facility defaults are system-scoped package-subsystem configuration. A facility
     default owns global command publication for that facility through bin/ext and
     bin/ext-<osarch> and contributes the selected provider's facility environment
-    to each new m bootstrap. Facility-default selectors are non-secret runtime
-    selection metadata: their storage is read-only/traversable for runtime accounts
+    to each new m bootstrap. Before a v2 global command is published,
+    its installed facility-cmd entry must still refer to that concrete's
+    matching link/bin command, which must remain a valid direct-root or
+    concrete-local wrapper projection. An altered projection is rejected
+    without changing the existing facility-default selection.
+    Facility-default selectors are non-secret runtime selection metadata: their storage is read-only/traversable for runtime accounts
     that must resolve global/system-host intent, while mutation remains protected by
     normal filesystem ownership. Consumer bindings are system-scoped package
     configuration stored as binding/<facility> beneath the consumer package conf
