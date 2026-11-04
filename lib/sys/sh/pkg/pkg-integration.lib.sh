@@ -1006,9 +1006,7 @@ _pkg_default_public_target()
   pkg_default_public_target="../../pkg/$pkg_integration_selector_name/$pkg_default_view_rel/$1"
 }
 
-# A v2 command view must retain its validated symlink destination.
-# V1 uses real cmd scripts and retains its existing selection semantics.
-# Preserve the v1 command view while validating v2 selected commands.
+# Validate v2 command destinations; preserve historical v1 selection.
 _pkg_default_command_validate()
 {
   [ "$#" -eq 2 ] || return 2
