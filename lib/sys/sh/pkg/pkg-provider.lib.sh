@@ -1356,6 +1356,29 @@ _pkg_provider_global_plan_concrete()
     [ -L "$pkg_provider_global_cmd_path" ] || return 1
     pkg_provider_global_command=${pkg_provider_global_cmd_path##*/}
     _pkg_provider_name_valid "$pkg_provider_global_command" || return 1
+    if [ "$pkg_provider_global_schema" = v2 ]
+    then
+      # The facility member is an installed projection of this concrete's
+      # link/bin entry, not an arbitrary executable symlink.
+      if ! pkg_provider_global_link="$(command -p -- readlink "$pkg_provider_global_cmd_path")"
+      then
+        log error execution provider-global-command-link-unreadable \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 3
+      fi
+      if [ "$pkg_provider_global_link" != "../../link/bin/$pkg_provider_global_command" ]
+      then
+        log error execution provider-global-command-link-invalid \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 4
+      fi
+      if ! _pkg_v2_installed_command_validate "$m_PKG_DIR/$pkg_provider_global_concrete" "$pkg_provider_global_command"
+      then
+        log error execution provider-global-command-target-invalid \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 5
+      fi
+    fi
     readpathce pkg_provider_global_resolved "$pkg_provider_global_cmd_path" || return 1
     [ -f "$pkg_provider_global_resolved" ] && [ -x "$pkg_provider_global_resolved" ] || return 1
     printf -- '%s\t%s\n' \
