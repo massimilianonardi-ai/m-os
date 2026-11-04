@@ -137,7 +137,8 @@ $nodejs_version"
     printf -- '%s\n' "$nodejs_version"
   done <<EOF_NODEJS_INDEX
 $nodejs_records
-EOF_NODEJS_INDEX)
+EOF_NODEJS_INDEX
+)
 
 _pkg_repository_nodejs_index_versions()
 (
