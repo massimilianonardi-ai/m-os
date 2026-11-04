@@ -95,26 +95,26 @@ _pkg_repository_nodejs_get()
   return 1
 }
 
-_pkg_repository_nodejs_index_versions()
+# Normalize index records against one requested major and stable-release
+# grammar. Input records come from the existing JSON adapter, not HTTP.
+_pkg_repository_nodejs_filter_versions()
 (
   [ "$#" -eq 2 ] || return 2
-  _pkg_repository_nodejs_validate_repository "$1" || return 1
-  nodejs_function=$2
-  nodejs_index_url=https://nodejs.org/dist/index.json
-
-  nodejs_body="$(_pkg_repository_nodejs_get "$nodejs_index_url" "$nodejs_function")" || return 1
-  nodejs_records="$(printf '%s\n' "$nodejs_body" | json_array_object_fields version)" || return 1
-  [ -n "$nodejs_records" ] || return 1
-
+  nodejs_major=$1
+  nodejs_records=$2
   nodejs_tab="$(printf '\t')"
   nodejs_seen=
   while IFS="$nodejs_tab" read -r nodejs_token nodejs_extra
   do
     [ -z "$nodejs_extra" ] || return 1
     case "$nodejs_token" in s:*) nodejs_version=${nodejs_token#s:};; *) return 1;; esac
-    # The upstream index also lists valid prerelease tags (for example,
-    # v27.0.0-alpha...). They are outside this stable-release adapter and
-    # must not invalidate otherwise valid releases of the selected major.
+    # Only the configured major is interpreted; foreign-major entries
+    # may contain unrelated release or prerelease syntax.
+    case "$nodejs_version" in
+      "v$nodejs_major".*) : ;;
+      *) continue ;;
+    esac
+    # Prerelease tags within the configured major are not stable releases.
     case "$nodejs_version" in
       v[0-9]*-*) continue ;;
     esac
@@ -137,7 +137,20 @@ $nodejs_version"
     printf -- '%s\n' "$nodejs_version"
   done <<EOF_NODEJS_INDEX
 $nodejs_records
-EOF_NODEJS_INDEX
+EOF_NODEJS_INDEX)
+
+_pkg_repository_nodejs_index_versions()
+(
+  [ "$#" -eq 2 ] || return 2
+  _pkg_repository_nodejs_validate_repository "$1" || return 1
+  nodejs_function=$2
+  nodejs_index_url=https://nodejs.org/dist/index.json
+
+  nodejs_body="$(_pkg_repository_nodejs_get "$nodejs_index_url" "$nodejs_function")" || return 1
+  nodejs_records="$(printf '%s\n' "$nodejs_body" | json_array_object_fields version)" || return 1
+  [ -n "$nodejs_records" ] || return 1
+
+  _pkg_repository_nodejs_filter_versions "$nodejs_major" "$nodejs_records"
 )
 
 pkg_repository_list_versions()
