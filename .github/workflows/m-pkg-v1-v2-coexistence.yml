@@ -1,0 +1,31 @@
+name: m v1/v2 installed package default coexistence
+
+on:
+  push:
+    branches: [pkg-schema-v2]
+    paths:
+      - '.github/scripts/pkg-v2-default-coexistence-test.sh'
+      - '.github/workflows/m-pkg-v1-v2-coexistence.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-default-transitions:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate mixed installed schema public default and launcher transitions offline
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          ./m sh .github/scripts/pkg-v2-default-coexistence-test.sh
