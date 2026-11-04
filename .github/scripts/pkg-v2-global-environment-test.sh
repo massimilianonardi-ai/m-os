@@ -29,15 +29,15 @@ then
   exit 7
 fi
 catalog="$work/catalog/v2"
+range="$catalog/pkg/$name/all/n0001=1"
 command -p -- mkdir -p -- "$catalog/facility" "$work/root-generic/bin" \
-  "$work/root-specific/bin" "$work/range/facility-bin" \
-  "$work/range/facility-env/java" || exit 8
+  "$work/root-specific/bin" "$range/facility-bin" \
+  "$range/facility-env/java" || exit 8
 command -p -- cp -R -- "$CATALOG_V2/facility/java" "$catalog/facility/java" || exit 9
 
 # Extend only the copied central contract to probe shared/delta extraction.
 : > "$catalog/facility/java/21/env/CI_SHARED"
 : > "$catalog/facility/java/21/env/CI_CLASS"
-range="$work/range"
 printf 'tar.gz\n' > "$range/format"
 printf 'java 21\n' > "$range/facility"
 printf 'bin\n' > "$range/facility-bin/java"
