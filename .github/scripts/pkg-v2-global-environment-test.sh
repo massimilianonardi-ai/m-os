@@ -56,7 +56,11 @@ done
 
 printf 'literal generic\n' > "$range/facility-env/java/CI_CLASS"
 pkg_facility_provider_validate "$catalog" "$range" "$work/root-generic" || exit 11
-pkg_integrate "$name" 1 "$range" "$work/root-generic" "" v2 "$catalog" || exit 12
+if ! pkg_integrate "$name" 1 "$range" "$work/root-generic" "" v2 "$catalog"
+then
+  printf '%s\n' 'FAIL: generic v2 integration rejected the fixture' >&2
+  exit 12
+fi
 printf 'literal specific\n' > "$range/facility-env/java/CI_CLASS"
 pkg_facility_provider_validate "$catalog" "$range" "$work/root-specific" || exit 13
 pkg_integrate "$name" 1 "$range" "$work/root-specific" "$m_OSARCH" v2 "$catalog" || exit 14
