@@ -10,7 +10,21 @@ name=facility-ci-node-v2
 concrete="$m_PKG_DIR/$name@1"
 cleanup()
 {
-  command -p -- rm -rf -- "$concrete" "$m_PKG_DIR/facility-ci-java-v2@1" "$work"
+  if [ "${consumer_user_env_created-0}" -eq 1 ]
+  then
+    command -p -- rm -f -- "$consumer_user_env" || :
+    command -p -- rmdir -- "$consumer_conf/.m" "$consumer_conf" 2>/dev/null || :
+  fi
+  if [ "${consumer_binding_set-0}" -eq 1 ]
+  then
+    "$m_ROOT/m" pkg provider bind -u facility-ci-env-consumer-v2 java >/dev/null 2>&1 || :
+  fi
+  if [ "${java_default_set-0}" -eq 1 ]
+  then
+    "$m_ROOT/m" pkg provider default -u java >/dev/null 2>&1 || :
+  fi
+  command -p -- rm -rf -- "$concrete" "$m_PKG_DIR/facility-ci-java-v2@1" \
+    "$m_PKG_DIR/facility-ci-env-consumer-v2@1" "$work"
 }
 [ ! -e "$concrete" ] && [ ! -L "$concrete" ] || exit 5
 trap cleanup 0
@@ -125,6 +139,7 @@ done
 # installed projection is consumed by pkg-provider, not by a parallel context
 # environment interpreter.
 "$m_ROOT/m" pkg provider default java "$java_name@1" || exit 42
+java_default_set=1
 JAVA_ROOT_EXPECTED="$java_concrete/root" JAVA_CONCRETE_EXPECTED="$java_concrete" "$m_ROOT/m" sh -ec '
   . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 13
   [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ] || exit 1
@@ -152,8 +167,110 @@ JAVA_ROOT_EXPECTED="$java_concrete/root" JAVA_CONCRETE_EXPECTED="$java_concrete"
   [ "$PATH" = "$before_context" ] || exit 11
   [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ] || exit 12
 ' || exit 43
-"$m_ROOT/m" pkg provider default -u java || exit 44
-command -p -- rm -rf "$java_concrete"
 
-printf '%s\n' 'PASS: central nodejs and Java facility contracts, provider parameters and public command mapping'
+# Exercise a real v2 package-consumer launch. The existing copied Java
+# contract is the provider input; all dependency, installation, launcher,
+# selected-provider, configuration and execution logic belongs to m itself.
+consumer_name=facility-ci-env-consumer-v2
+consumer_concrete="$m_PKG_DIR/$consumer_name@1"
+[ ! -e "$consumer_concrete" ] && [ ! -L "$consumer_concrete" ] || exit 47
+consumer_range="$work/catalog/v2/pkg/$consumer_name/all/n0001=1"
+consumer_root="$work/consumer-root"
+command -p -- mkdir -p -- "$consumer_range/cmd" "$consumer_range/link/bin" \
+  "$consumer_range/link/target" "$consumer_root/bin" || exit 48
+printf 'tar.gz\n' > "$consumer_range/format"
+printf 'java =21\n' > "$consumer_range/dependency"
+printf '../../cmd/ci-env\n' > "$consumer_range/link/bin/ci-env"
+printf '../../root/bin/ci-env\n' > "$consumer_range/link/target/ci-env"
+
+cat > "$consumer_range/cmd/ci-env" <<'CI_WRAPPER'
+#!/bin/sh
+. "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 2
+loadsyslib "pkg/pkg-launch" || exit 3
+launcher facility-ci-env-consumer-v2 "$@"
+CI_WRAPPER
+cat > "$consumer_range/env" <<'CI_PACKAGE_ENV'
+JAVA_HOME=ci-consumer-package-home
+CI_ENV_LAYER=consumer
+PATH="$pkg_launch_root/bin:$PATH"
+export JAVA_HOME CI_ENV_LAYER PATH
+CI_PACKAGE_ENV
+cat > "$consumer_root/bin/ci-env" <<'CI_EXECUTABLE'
+#!/bin/sh
+[ "$JAVA_HOME" = "$CI_EXPECTED_JAVA_HOME" ] || {
+  printf 'FAIL: JAVA_HOME expected=%s observed=%s\n' "$CI_EXPECTED_JAVA_HOME" "$JAVA_HOME" >&2
+  exit 1
+}
+[ "$CI_ENV_LAYER" = "$CI_EXPECTED_LAYER" ] || {
+  printf 'FAIL: environment layer expected=%s observed=%s\n' "$CI_EXPECTED_LAYER" "$CI_ENV_LAYER" >&2
+  exit 2
+}
+case "$PATH" in
+  "$CI_EXPECTED_PREFIX":*) : ;;
+  *)
+    printf 'FAIL: PATH prefix expected=%s observed=%s\n' "$CI_EXPECTED_PREFIX" "$PATH" >&2
+    exit 3
+    ;;
+esac
+[ "$(command -v javac)" = "$CI_EXPECTED_JAVAC" ] || {
+  printf 'FAIL: selected provider javac command unavailable\n' >&2
+  exit 4
+}
+[ "$HOME" = "$CI_EXPECTED_HOME" ] || {
+  printf 'FAIL: consumer HOME expected=%s observed=%s\n' "$CI_EXPECTED_HOME" "$HOME" >&2
+  exit 5
+}
+printf '%s\n' 'PASS: consumer package -> selected provider -> user environment -> actual target'
+CI_EXECUTABLE
+command -p -- chmod +x "$consumer_root/bin/ci-env" || exit 49
+pkg_integrate "$consumer_name" 1 "$consumer_range" "$consumer_root" "" v2 \
+  "$work/catalog/v2" || exit 50
+[ "$(command -p -- cat -- "$consumer_concrete/dependency")" = 'java =21' ] || exit 51
+[ "$(command -p -- readlink "$consumer_concrete/link/bin/ci-env")" = ../../cmd/ci-env ] || exit 52
+
+consumer_home="$("$m_ROOT/m" state-path user pkg "$consumer_name" home)" || exit 53
+consumer_conf="$("$m_ROOT/m" state-path user pkg "$consumer_name" conf)" || exit 54
+consumer_user_env="$consumer_conf/.m/env"
+[ ! -e "$consumer_user_env" ] && [ ! -L "$consumer_user_env" ] || exit 55
+provider_path="$java_concrete/root/tools:$java_concrete/root/bin"
+provider_javac="$java_concrete/root/bin/javac"
+
+CI_EXPECTED_HOME="$consumer_home" CI_EXPECTED_JAVAC="$provider_javac" \
+CI_EXPECTED_JAVA_HOME="$java_concrete/root" CI_EXPECTED_LAYER=consumer \
+CI_EXPECTED_PREFIX="$provider_path" \
+  "$m_ROOT/m" "$consumer_concrete/link/bin/ci-env" || exit 56
+
+command -p -- mkdir -p -- "$consumer_conf/.m" "$work/user-bin" || exit 57
+cat > "$consumer_user_env" <<'CI_USER_ENV'
+JAVA_HOME=ci-user-home-override
+CI_ENV_LAYER=user
+PATH="$CI_USER_BIN:$PATH"
+export JAVA_HOME CI_ENV_LAYER PATH
+CI_USER_ENV
+consumer_user_env_created=1
+CI_USER_BIN="$work/user-bin" CI_EXPECTED_HOME="$consumer_home" \
+CI_EXPECTED_JAVAC="$provider_javac" \
+CI_EXPECTED_JAVA_HOME=ci-user-home-override CI_EXPECTED_LAYER=user \
+CI_EXPECTED_PREFIX="$work/user-bin:$provider_path" \
+  "$m_ROOT/m" "$consumer_concrete/link/bin/ci-env" || exit 58
+
+# A consumer binding must preserve runtime provider application even after
+# its independent global default is removed. No re-integration is allowed.
+"$m_ROOT/m" pkg provider bind "$consumer_name" java "$java_name@1" || exit 59
+consumer_binding_set=1
+"$m_ROOT/m" pkg provider default -u java || exit 60
+java_default_set=0
+CI_USER_BIN="$work/user-bin" CI_EXPECTED_HOME="$consumer_home" \
+CI_EXPECTED_JAVAC="$provider_javac" \
+CI_EXPECTED_JAVA_HOME=ci-user-home-override CI_EXPECTED_LAYER=user \
+CI_EXPECTED_PREFIX="$work/user-bin:$provider_path" \
+  "$m_ROOT/m" "$consumer_concrete/link/bin/ci-env" || exit 61
+"$m_ROOT/m" pkg provider bind -u "$consumer_name" java || exit 62
+consumer_binding_set=0
+command -p -- rm -f -- "$consumer_user_env" || exit 63
+consumer_user_env_created=0
+command -p -- rmdir -- "$consumer_conf/.m" "$consumer_conf" 2>/dev/null || :
+command -p -- rm -rf -- "$consumer_concrete" "$java_concrete" || exit 64
+
+printf '%s\n' 'PASS: v2 facility contracts, global PATH/context precedence and normal consumer-launch environment layers'
 
