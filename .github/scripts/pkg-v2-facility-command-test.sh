@@ -102,6 +102,13 @@ then
 fi
 printf 'root\n' > "$java_range/facility-env/java/JAVA_HOME"
 
+# A local extension of the copied Java facility contract exercises the
+# existing generic PATH projection semantics; the catalog is not modified.
+# PATH members are ordered; the later member takes higher precedence.
+command -p -- mkdir -p -- "$work/java-root/tools" || exit 45
+: > "$work/catalog/v2/facility/java/21/env/PATH" || exit 46
+printf 'root-path bin\nroot-path tools\n' > "$java_range/facility-env/java/PATH"
+
 pkg_facility_provider_validate "$work/catalog/v2" "$java_range" "$work/java-root" || exit 30
 pkg_integrate "$java_name" 1 "$java_range" "$work/java-root" "" v2 "$work/catalog/v2" || exit 31
 for member in "$work/catalog/v2/facility/java/21/cmd/"*
@@ -112,14 +119,37 @@ do
 done
 [ "$("$java_concrete/link/bin/javac")" = fixture-java ] || exit 34
 [ -f "$java_concrete/facility-env/java" ] || exit 35
-[ "$(printf 'JAVA_HOME\troot\n')" = "$(command -p -- cat -- "$java_concrete/facility-env/java")" ] || exit 41
+[ "$(printf 'JAVA_HOME\troot\nPATH\troot-path bin\nPATH\troot-path tools\n')" = "$(command -p -- cat -- "$java_concrete/facility-env/java")" ] || exit 41
 
 # Exercise the real public default + freshly bootstrapped environment: the
 # installed projection is consumed by pkg-provider, not by a parallel context
 # environment interpreter.
 "$m_ROOT/m" pkg provider default java "$java_name@1" || exit 42
-JAVA_ROOT_EXPECTED="$java_concrete/root" "$m_ROOT/m" sh -ec '
-  [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ]
+JAVA_ROOT_EXPECTED="$java_concrete/root" JAVA_CONCRETE_EXPECTED="$java_concrete" "$m_ROOT/m" sh -ec '
+  [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ] || exit 1
+
+  # Bootstrap gives technical m roots precedence over the global provider
+  # projection, while the later PATH record (tools) precedes bin.
+  [ "${PATH%%:*}" = "$m_BIN_SYS_OSARCH_DIR" ] || exit 2
+  case ":$PATH:" in
+    *":$JAVA_ROOT_EXPECTED/tools:$JAVA_ROOT_EXPECTED/bin:"*) : ;;
+    *) exit 3 ;;
+  esac
+
+  before_context=$PATH
+  context "pkg=${JAVA_CONCRETE_EXPECTED##*/}" || exit 4
+  [ "${PATH%%:*}" = "$JAVA_CONCRETE_EXPECTED/link/bin" ] || exit 5
+  [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ] || exit 6
+  case ":$PATH:" in
+    *":$JAVA_ROOT_EXPECTED/tools:$JAVA_ROOT_EXPECTED/bin:"*) : ;;
+    *) exit 7 ;;
+  esac
+  once=$PATH
+  context "pkg=${JAVA_CONCRETE_EXPECTED##*/}" || exit 8
+  [ "$PATH" = "$once" ] || exit 9
+  context || exit 10
+  [ "$PATH" = "$before_context" ] || exit 11
+  [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ] || exit 12
 ' || exit 43
 "$m_ROOT/m" pkg provider default -u java || exit 44
 command -p -- rm -rf "$java_concrete"
