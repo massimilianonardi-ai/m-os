@@ -1040,6 +1040,37 @@ _pkg_default_public_target()
   pkg_default_public_target="../../pkg/$pkg_integration_selector_name/$pkg_default_view_rel/$1"
 }
 
+# A v2 command view must retain its validated symlink destination.
+# V1 uses real cmd scripts and retains its existing selection semantics.
+_pkg_default_command_validate()
+{
+  [ "$#" -eq 2 ] || return 2
+  [ "$pkg_default_view_rel" = link/bin ] || return 0
+
+  pkg_default_check_concrete=$1
+  pkg_default_check_command=$2
+  pkg_default_check_path="$m_PKG_DIR/$pkg_default_check_concrete/link/bin/$pkg_default_check_command"
+  [ -L "$pkg_default_check_path" ] || return 1
+  pkg_default_check_target="$(command -p -- readlink "$pkg_default_check_path")" || return 1
+
+  case "$pkg_default_check_target" in
+    "../../cmd/$pkg_default_check_command")
+      pkg_default_check_wrapper="$m_PKG_DIR/$pkg_default_check_concrete/cmd/$pkg_default_check_command"
+      [ -f "$pkg_default_check_wrapper" ] &&
+        [ ! -L "$pkg_default_check_wrapper" ] &&
+        [ -x "$pkg_default_check_wrapper" ] || return 1
+      ;;
+    ../../root/*)
+      _pkg_integration_v2_root_target_validate \
+        "$pkg_default_check_target" \
+        "$m_PKG_DIR/$pkg_default_check_concrete/root" || return 1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 _pkg_default_validate_current_bindings()
 {
   [ "$#" -eq 1 ] || return 2
@@ -1054,6 +1085,7 @@ _pkg_default_validate_current_bindings()
   do
     [ -e "$pkg_default_cmd_path" ] || [ -L "$pkg_default_cmd_path" ] || continue
     pkg_default_command=${pkg_default_cmd_path##*/}
+    _pkg_default_command_validate "$pkg_default_old_concrete" "$pkg_default_command" || return 1
     [ -f "$pkg_default_cmd_path" ] && [ -x "$pkg_default_cmd_path" ] || return 1
     _pkg_default_public_target "$pkg_default_command" "$pkg_default_old_concrete" || return 1
     pkg_default_expected=$pkg_default_public_target
@@ -1078,6 +1110,7 @@ _pkg_default_validate_new_collisions()
   do
     [ -e "$pkg_default_cmd_path" ] || [ -L "$pkg_default_cmd_path" ] || continue
     pkg_default_command=${pkg_default_cmd_path##*/}
+    _pkg_default_command_validate "$pkg_default_new_concrete" "$pkg_default_command" || return 1
     [ -f "$pkg_default_cmd_path" ] && [ -x "$pkg_default_cmd_path" ] || return 1
     pkg_default_public="$pkg_integration_public_dir/$pkg_default_command"
     [ ! -e "$pkg_default_public" ] && [ ! -L "$pkg_default_public" ] && continue
@@ -1120,6 +1153,7 @@ _pkg_default_create_bindings()
   do
     [ -e "$pkg_default_cmd_path" ] || [ -L "$pkg_default_cmd_path" ] || continue
     pkg_default_command=${pkg_default_cmd_path##*/}
+    _pkg_default_command_validate "$pkg_default_selected_concrete" "$pkg_default_command" || return 1
     [ -f "$pkg_default_cmd_path" ] && [ -x "$pkg_default_cmd_path" ] || return 1
     _pkg_default_public_target "$pkg_default_command" "$pkg_default_selected_concrete" || return 1
     pkg_default_target=$pkg_default_public_target
