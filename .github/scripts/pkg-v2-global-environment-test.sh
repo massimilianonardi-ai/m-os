@@ -145,7 +145,8 @@ node_root="$work/root-nodejs"
 command -p -- cp -R -- "$CATALOG_V2/facility/nodejs" \
   "$catalog/facility/nodejs" || exit 38
 command -p -- mkdir -p -- "$node_range/facility-bin" \
-  "$node_range/facility-env/nodejs" "$node_root/bin" || exit 39
+  "$node_range/facility-env/nodejs" "$node_root/bin" \
+  "$catalog/facility/nodejs/26/env" || exit 39
 : > "$catalog/facility/nodejs/26/env/CI_SHARED"
 : > "$catalog/facility/nodejs/26/env/PATH"
 printf 'tar.gz\n' > "$node_range/format"
