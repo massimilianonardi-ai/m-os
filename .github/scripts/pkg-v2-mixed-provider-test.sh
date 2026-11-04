@@ -51,6 +51,10 @@ cleanup()
   then
     "$m_ROOT/m" pkg default -u "$consumer" >/dev/null 2>&1 || :
   fi
+  if [ "${sentinel_created-0}" -eq 1 ]
+  then
+    command -p -- rm -f -- "$sentinel" || :
+  fi
   command -p -- rm -rf -- "$consumer_v1" "$consumer_v2" \
     "$provider_v1" "$provider_v2" "$work"
 }
@@ -154,4 +158,77 @@ binding_set=1
 "$m_ROOT/m" pkg provider bind -u "$consumer" nodejs || exit 34
 binding_set=0
 
-printf '%s\n' 'PASS: v1/v2 consumer default, provider default, consumer binding, ambiguity and real target launch'
+# Protect explicitly referenced installed provider versions from removal.
+"$m_ROOT/m" pkg provider bind "$consumer" nodejs "$provider@1" || exit 35
+binding_set=1
+if "$m_ROOT/m" pkg uninstall "$provider@1" >/dev/null 2>&1
+then
+  exit 36
+fi
+[ -d "$provider_v1" ] && [ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-1 ] || exit 37
+
+"$m_ROOT/m" pkg provider default nodejs "$provider@2" || exit 38
+default_set=1
+if "$m_ROOT/m" pkg uninstall "$provider@2" >/dev/null 2>&1
+then
+  exit 39
+fi
+[ -d "$provider_v2" ] && [ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-1 ] || exit 40
+
+# An invalid replacement must preserve the configured provider default.
+if "$m_ROOT/m" pkg provider default nodejs "$provider@999" >/dev/null 2>&1
+then
+  exit 41
+fi
+[ "$("$m_ROOT/m" pkg provider default nodejs)" = "$provider@2" ] || exit 42
+[ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-1 ] || exit 43
+
+"$m_ROOT/m" pkg provider bind -u "$consumer" nodejs || exit 44
+binding_set=0
+[ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-2 ] || exit 45
+"$m_ROOT/m" pkg provider default -u nodejs || exit 46
+default_set=0
+"$m_ROOT/m" pkg uninstall "$provider@2" || exit 47
+[ ! -e "$provider_v2" ] && [ ! -L "$provider_v2" ] || exit 48
+[ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-1 ] || exit 49
+
+# Uninstalling one v2 consumer leaves the v1 default and managed
+# consumer state in place. Reinstallation does not rewrite binding intent.
+consumer_home="$("$m_ROOT/m" state-path user pkg "$consumer" home)" || exit 50
+[ -d "$consumer_home" ] || exit 51
+sentinel="$consumer_home/.ci-mixed-provider-sentinel"
+[ ! -e "$sentinel" ] && [ ! -L "$sentinel" ] || exit 52
+printf 'persisted\n' > "$sentinel" || exit 53
+sentinel_created=1
+factory="$work/factory-consumer-v2"
+command -p -- cp -R -- "$consumer_v2/root" "$factory" || exit 54
+
+"$m_ROOT/m" pkg uninstall "$consumer@2" || exit 55
+[ ! -e "$consumer_v2" ] && [ ! -L "$consumer_v2" ] || exit 56
+[ "$("$m_ROOT/m" pkg default "$consumer")" = "$consumer@1" ] || exit 57
+[ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-1 ] || exit 58
+
+command -p -- cp -R -- "$factory" "$work/consumer-v2-reinstall" || exit 59
+pkg_integrate "$consumer" 2 "$range_v2" "$work/consumer-v2-reinstall" "" v2 || exit 60
+[ "$(command -p -- cat -- "$sentinel")" = persisted ] || exit 61
+[ "$("$m_ROOT/m" pkg default "$consumer")" = "$consumer@1" ] || exit 62
+"$m_ROOT/m" pkg default "$consumer@2" || exit 63
+[ "$("$m_ROOT/m" "$consumer")" = consumer-v2:provider-1 ] || exit 64
+
+# Removing a currently selected consumer clears the default and leaves
+# the other installed schema usable after an explicit new selection.
+"$m_ROOT/m" pkg uninstall "$consumer@2" || exit 65
+[ ! -e "$consumer_v2" ] && [ ! -L "$consumer_v2" ] || exit 66
+if "$m_ROOT/m" pkg default "$consumer" >/dev/null 2>&1
+then
+  exit 67
+fi
+[ -d "$consumer_v1" ] && [ -f "$sentinel" ] || exit 68
+"$m_ROOT/m" pkg default "$consumer@1" || exit 69
+[ "$("$m_ROOT/m" "$consumer")" = consumer-v1:provider-1 ] || exit 70
+"$m_ROOT/m" pkg uninstall "$consumer@1" || exit 71
+[ -f "$sentinel" ] || exit 72
+"$m_ROOT/m" pkg uninstall "$provider@1" || exit 73
+[ ! -e "$provider_v1" ] && [ ! -L "$provider_v1" ] || exit 74
+
+printf '%s\n' 'PASS: v1/v2 consumer lifecycle, provider reference refusal, default rollback, state and reinstall'
