@@ -1,9 +1,10 @@
 #!/bin/sh
 # Exercise real generic and host-specific v2 concretes; verify global env.
 set -eu
-[ -n "$m_ROOT" ] && [ -n "$m_LIB_DIR" ] && [ -n "$m_OSARCH" ] && [ -n "$CATALOG_V2" ] || exit 1
+[ -n "${m_ROOT-}" ] && [ -n "${m_LIB_DIR-}" ] && [ -n "${CATALOG_V2-}" ] || exit 1
 . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 2
-loadsyslib "pkg/pkg-integration" || exit 3
+loadsyslib "osarch" || exit 3
+loadsyslib "pkg/pkg-integration" || exit 4
 
 work=$(mktemp -d) || exit 4
 name=facility-ci-osarch-java-v2
