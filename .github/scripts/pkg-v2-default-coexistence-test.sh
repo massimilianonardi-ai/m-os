@@ -27,7 +27,16 @@ done
 
 cleanup()
 {
+  if [ "${damaged_link-0}" -eq 1 ]
+  then
+    command -p -- rm -f -- "$modern/link/bin/$name" || :
+    command -p -- ln -s "../../cmd/$name" "$modern/link/bin/$name" || :
+  fi
   "$m_ROOT/m" pkg default -u "$name" >/dev/null 2>&1 || :
+  if [ "${sentinel_created-0}" -eq 1 ]
+  then
+    command -p -- rm -f -- "$sentinel" || :
+  fi
   command -p -- rm -rf -- "$legacy" "$modern" "$work"
 }
 trap cleanup 0
@@ -137,4 +146,82 @@ then
 fi
 [ -d "$legacy" ] && [ -d "$modern" ] || exit 46
 
-printf '%s\n' 'PASS: v1/v2 exact defaults, public links, wrapped/direct execution, context and unset'
+# User-scoped package HOME is mutable state, not part of the concrete.
+# Capture a factory payload from the installed root before uninstall.
+factory="$work/factory-v2-root"
+command -p -- cp -R -- "$modern/root" "$factory" || exit 47
+user_home="$("$m_ROOT/m" state-path user pkg "$name" home)" || exit 48
+[ -d "$user_home" ] || exit 49
+sentinel="$user_home/.ci-mixed-lifecycle-sentinel"
+[ ! -e "$sentinel" ] && [ ! -L "$sentinel" ] || exit 50
+printf 'retained-state\n' > "$sentinel" || exit 51
+sentinel_created=1
+
+# Removing the unselected v2 concrete must preserve the v1 concrete,
+# the user's state and the absence of any ordinary package default.
+"$m_ROOT/m" pkg uninstall "$name@2" || exit 52
+[ ! -e "$modern" ] && [ ! -L "$modern" ] || exit 53
+[ -d "$legacy" ] && [ -f "$sentinel" ] || exit 54
+if "$m_ROOT/m" pkg default "$name" >/dev/null 2>&1
+then
+  exit 55
+fi
+
+# Reintegrate from a fresh staging root. It must not establish a default.
+command -p -- cp -R -- "$factory" "$work/second-v2-root" || exit 56
+pkg_integrate "$name" 2 "$work/v2" "$work/second-v2-root" "" v2 || exit 57
+[ -d "$modern" ] && [ -f "$sentinel" ] || exit 58
+if "$m_ROOT/m" pkg default "$name" >/dev/null 2>&1
+then
+  exit 59
+fi
+
+"$m_ROOT/m" pkg default "$name@2" || exit 60
+[ "$("$m_ROOT/m" "$name" again)" = modern:modern:fixed:again ] || exit 61
+
+# Corrupting an installed link to a broken outside path must make the
+# current-default transition reject the invalid view without mutating it.
+command -p -- rm -f -- "$modern/link/bin/$name" || exit 62
+command -p -- ln -s "../../../../../ci-escaped-target" "$modern/link/bin/$name" || exit 63
+damaged_link=1
+if "$m_ROOT/m" pkg default "$name@1" >/dev/null 2>&1
+then
+  exit 64
+fi
+[ "$("$m_ROOT/m" pkg default "$name")" = "$name@2" ] || exit 65
+command -p -- rm -f -- "$modern/link/bin/$name" || exit 66
+command -p -- ln -s "../../cmd/$name" "$modern/link/bin/$name" || exit 67
+damaged_link=0
+[ "$("$m_ROOT/m" "$name" repaired)" = modern:modern:fixed:repaired ] || exit 68
+
+# A descriptor escaping the useful root is rejected before integration
+# consumes the staging root or publishes a new version.
+command -p -- mkdir -p -- "$work/invalid-v2/link/bin" "$work/invalid-root/bin" || exit 69
+printf 'tar.gz\n' > "$work/invalid-v2/format"
+printf '../../root/../escape\n' > "$work/invalid-v2/link/bin/$name"
+printf '#!/bin/sh\nexit 0\n' > "$work/invalid-root/bin/$name"
+command -p -- chmod +x "$work/invalid-root/bin/$name" || exit 70
+if pkg_integrate "$name" 3 "$work/invalid-v2" "$work/invalid-root" "" v2 >/dev/null 2>&1
+then
+  exit 71
+fi
+[ ! -e "$m_PKG_DIR/$name@3" ] && [ ! -L "$m_PKG_DIR/$name@3" ] || exit 72
+[ -f "$work/invalid-root/bin/$name" ] || exit 73
+[ "$("$m_ROOT/m" pkg default "$name")" = "$name@2" ] || exit 74
+[ "$("$m_ROOT/m" "$name" intact)" = modern:modern:fixed:intact ] || exit 75
+
+# Uninstalling the selected v2 concrete retracts its public commands
+# but not the independently installed legacy concrete or managed state.
+"$m_ROOT/m" pkg uninstall "$name@2" || exit 76
+[ ! -e "$modern" ] && [ ! -L "$modern" ] || exit 77
+[ ! -e "$selector" ] && [ ! -L "$selector" ] || exit 78
+[ ! -e "$public" ] && [ ! -L "$public" ] || exit 79
+[ ! -e "$public_direct" ] && [ ! -L "$public_direct" ] || exit 80
+[ -d "$legacy" ] && [ "$(command -p -- cat -- "$sentinel")" = retained-state ] || exit 81
+"$m_ROOT/m" pkg default "$name@1" || exit 82
+[ "$("$m_ROOT/m" "$name" after)" = legacy:legacy:after ] || exit 83
+"$m_ROOT/m" pkg uninstall "$name@1" || exit 84
+[ ! -e "$legacy" ] && [ ! -L "$legacy" ] || exit 85
+[ -f "$sentinel" ] || exit 86
+
+printf '%s\n' 'PASS: v1/v2 default, uninstall/reintegration, managed state, invalid descriptor and rollback'
