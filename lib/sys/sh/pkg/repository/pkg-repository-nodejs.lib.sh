@@ -112,6 +112,12 @@ _pkg_repository_nodejs_index_versions()
   do
     [ -z "$nodejs_extra" ] || return 1
     case "$nodejs_token" in s:*) nodejs_version=${nodejs_token#s:};; *) return 1;; esac
+    # The upstream index can start with prereleases of a newer major.
+    # Only the configured major is subject to stable-version validation.
+    case "$nodejs_version" in
+      "v$nodejs_major".*) : ;;
+      *) continue ;;
+    esac
     _pkg_repository_nodejs_validate_version "$nodejs_version" || return 1
     nodejs_record_major="$(_pkg_repository_nodejs_version_major "$nodejs_version")" || return 1
     [ "$nodejs_record_major" = "$nodejs_major" ] || continue
