@@ -34,33 +34,27 @@ jobs:
           ref: 420e0870b81c77fb34cb125822ba76501516a35c
           path: catalog
           persist-credentials: false
-      - name: Exercise real Java repository adapters and public pkg lifecycle
+      - name: Checkout exact Java public-path permanent test
+        uses: actions/checkout@v4
+        with:
+          repository: massimilianonardi-ai/rumiai-tests
+          ref: 3f0eeb2db04ada295ee933ad6c0f4993c08c6ee5
+          path: tests
+          persist-credentials: false
+      - name: Prepare real m host and pinned local catalog
         shell: sh
         run: |
           set -eu
-          sh -n lib/sys/sh/pkg/repository/pkg-repository-temurin.lib.sh
-          sh -n lib/sys/sh/pkg/repository/pkg-repository-apache-maven.lib.sh
           ./m osarch update
           conf=$(./m state-path system sys pkg conf)
           mkdir -p -- "$conf"
           printf '%s\n' "$GITHUB_WORKSPACE/catalog" > "$conf/catalog"
-          ./m sh -ec '
-            . "$m_LIB_DIR/sys/sh/core.lib.sh"
-            loadsyslib "pkg/repository/pkg-repository-apache-maven"
-            repo="$GITHUB_WORKSPACE/catalog/v1/pkg/maven/$m_OSARCH/repository"
-            versions=$(pkg_repository_list_versions "$repo")
-            [ -n "$versions" ]
-            printf "%s\n" "$versions" | LC_ALL=C grep "^4\\." >/dev/null
-          '
-          echo 'CHECKPOINT: real Apache Maven 4 repository index read'
-          ./m pkg install temurin@21+35
-          java_concrete=$(./m pkg default temurin)
-          case "$java_concrete" in temurin@21+35!*) : ;; *) exit 1 ;; esac
-          ./m pkg provider default java "$java_concrete"
-          ./m java -version
-          echo 'CHECKPOINT: real Temurin provider installed and executed'
-          ./m pkg install maven
-          maven_concrete=$(./m pkg default maven)
-          case "$maven_concrete" in maven@4*) : ;; *) exit 1 ;; esac
-          ./m mvn -version
-          echo 'PASS: real v1 Temurin and Apache Maven adapters, managed Java provider and Maven CLI'
+      - name: Run permanent real Java v1 integration through rumiai-test
+        shell: sh
+        env:
+          RUMIAI_TEST_M_OS_ROOT: ${{ github.workspace }}
+          RUMIAI_TEST_PKG_CATALOG_ROOT: ${{ github.workspace }}/catalog
+        run: |
+          set -eu
+          ./tests/rumiai-test --list m-os/pkg-java-v1
+          ./tests/rumiai-test m-os/pkg-java-v1
