@@ -217,7 +217,7 @@ _pkg_state_direct_links_validate()
           esac
           ;;
       esac
-      _pkg_integration_v2_root_target_validate \
+      _pkg_v2_root_target_validate \
         "$pkg_v2_target" "$pkg_state_root" "$pkg_state_link_prefix" "$pkg_state_link_mode" || return 1
       pkg_state_link_target=$pkg_v2_relative
     else
