@@ -23,6 +23,8 @@ trap cleanup 0
 
 [ ! -e "$generic" ] && [ ! -L "$generic" ] || exit 5
 [ ! -e "$specific" ] && [ ! -L "$specific" ] || exit 6
+# The integration entrypoint requires the managed package store to exist.
+command -p -- mkdir -p -- "$m_PKG_DIR" || exit 8
 if "$m_ROOT/m" pkg provider default java >/dev/null 2>&1
 then
   printf '%s\n' 'INFRASTRUCTURE: existing java default would be replaced' >&2
@@ -56,9 +58,12 @@ done
 
 printf 'literal generic\n' > "$range/facility-env/java/CI_CLASS"
 pkg_facility_provider_validate "$catalog" "$range" "$work/root-generic" || exit 11
-if ! pkg_integrate "$name" 1 "$range" "$work/root-generic" "" v2 "$catalog"
+if pkg_integrate "$name" 1 "$range" "$work/root-generic" "" v2 "$catalog"
 then
-  printf '%s\n' 'FAIL: generic v2 integration rejected the fixture' >&2
+  :
+else
+  status=$?
+  printf 'FAIL: generic v2 integration status=%s\n' "$status" >&2
   exit 12
 fi
 printf 'literal specific\n' > "$range/facility-env/java/CI_CLASS"
