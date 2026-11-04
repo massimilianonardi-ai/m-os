@@ -1,6 +1,11 @@
 name: m live package installation
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - 'lib/sys/sh/pkg/repository/pkg-repository-nodejs.lib.sh'
+      - '.github/workflows/m-pkg-live-install.yml'
   workflow_dispatch:
 
 permissions:
@@ -22,6 +27,9 @@ jobs:
         run: |
           set -eu
           ./m osarch update
+          # Dependency planning must accept a stable v26 release even if
+          # the upstream index begins with a v27 prerelease.
+          ./m pkg depend nodejs@v26.8.2
           ./m pkg install nodejs@v26.8.2
           concrete=$(./m pkg default nodejs)
           case "$concrete" in
