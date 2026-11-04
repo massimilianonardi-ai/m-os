@@ -55,7 +55,9 @@ FUNCTIONS
 
     pkg_default_apply <package> <version> [<osarch>]
         Select an installed concrete as the package/platform default and publish
-        its command view (v1 cmd, v2 link/bin). An empty version clears it. A transition
+        its command view (v1 cmd, v2 link/bin). For v2, selection validates
+        the installed direct/wrapped command symlink destinations against the
+        selected concrete before changing public links. An empty version clears it. A transition
         also reconciles global facility commands whose configured provider selector
         depends on the presence or current concrete of this package/class.
 

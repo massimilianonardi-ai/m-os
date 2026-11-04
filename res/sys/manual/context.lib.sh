@@ -36,6 +36,11 @@ FUNCTIONS
         be real directories. Library-only installed concretes are supported;
         missing command views do not require invented links.
 
+        A v2 command link is revalidated at selection time: direct targets must
+        remain executable within that concrete's root, and wrapper targets
+        must refer to its matching cmd entry. Invalid links prevent activation
+        without changing PATH, CLASSPATH or the previous selection.
+
         Commands from two selected package directories must not collide with
         each other or with the protected m sys/sys-osarch commands. Collision
         causes failure, not an implicit winner. Selected package directories
@@ -92,7 +97,10 @@ LIMITATIONS
     materialized by pkg and applied by the existing pkg-provider machinery;
     activating context does not apply a second facility environment.
     The function makes no claim to an atomic filesystem snapshot during
-    concurrent package uninstallation or publication.
+    concurrent package uninstallation or publication. Activation-time
+    validation cannot prevent subsequent external mutation of a direct
+    command symlink already placed on PATH; package-local materialization
+    remains the immutable installation owned by pkg.
 
 DEPENDENCIES
     m_ROOT, m_PKG_DIR, optionally m_OSARCH, m_BIN_SYS_DIR and

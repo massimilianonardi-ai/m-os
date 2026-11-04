@@ -340,7 +340,7 @@ _pkg_integration_libraries_validate()
       if [ "$pkg_integration_lib_schema" = v2 ]
       then
         _pkg_integration_v2_descriptor_read "$pkg_integration_lib_descriptor" || return 1
-        _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_integration_lib_root" "../../../root/" readable || return 1
+        _pkg_v2_root_target_validate "$pkg_v2_target" "$pkg_integration_lib_root" "../../../root/" readable || return 1
         pkg_integration_link_target=$pkg_v2_relative
       else
         _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
@@ -432,40 +432,6 @@ _pkg_integration_v2_descriptor_read()
   esac
 }
 
-_pkg_integration_v2_root_target_validate()
-{
-  [ "$#" -ge 2 ] && [ "$#" -le 4 ] || return 2
-  pkg_v2_root_target=$1
-  pkg_v2_useful_root=$2
-  pkg_v2_root_prefix=${3-../../root/}
-  pkg_v2_target_mode=${4-executable}
-  case "$pkg_v2_root_prefix" in
-    ../../root/ | ../../../root/) : ;;
-    *) return 2 ;;
-  esac
-
-  case "$pkg_v2_root_target" in
-    "$pkg_v2_root_prefix"*) pkg_v2_relative=${pkg_v2_root_target#"$pkg_v2_root_prefix"} ;;
-    *) return 1 ;;
-  esac
-  case "$pkg_v2_relative" in
-    "" | /* | */ | *//*) return 1 ;;
-  esac
-  case "/$pkg_v2_relative/" in
-    */./* | */../*) return 1 ;;
-  esac
-  readpathce pkg_v2_resolved "$pkg_v2_useful_root/$pkg_v2_relative" || return 1
-  case "$pkg_v2_resolved" in
-    "$pkg_v2_useful_root"/*) : ;;
-    *) return 1 ;;
-  esac
-  [ -f "$pkg_v2_resolved" ] || return 1
-  case "$pkg_v2_target_mode" in
-    executable) [ -x "$pkg_v2_resolved" ] ;;
-    readable) [ -r "$pkg_v2_resolved" ] ;;
-    *) return 2 ;;
-  esac
-}
 
 _pkg_integration_v2_validate_definition()
 {
@@ -537,14 +503,14 @@ _pkg_integration_v2_validate_definition()
     _pkg_integration_v2_descriptor_read "$pkg_v2_descriptor" || return 1
     case "$pkg_v2_target" in
       ../../root/*)
-        _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
+        _pkg_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
         ;;
       "../../cmd/$pkg_v2_command")
         pkg_v2_cmd="$pkg_v2_range/cmd/$pkg_v2_command"
         [ -f "$pkg_v2_cmd" ] && [ ! -L "$pkg_v2_cmd" ] &&
           [ -r "$pkg_v2_cmd" ] && [ ! -x "$pkg_v2_cmd" ] || return 1
         _pkg_integration_v2_descriptor_read "$pkg_v2_range/link/target/$pkg_v2_command" || return 1
-        _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
+        _pkg_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
         ;;
       *) return 1 ;;
     esac
@@ -563,7 +529,7 @@ _pkg_integration_v2_validate_definition()
       _pkg_integration_v2_descriptor_read "$pkg_v2_range/link/bin/$pkg_v2_command" || return 1
       [ "$pkg_v2_target" = "../../cmd/$pkg_v2_command" ] || return 1
       _pkg_integration_v2_descriptor_read "$pkg_v2_range/link/target/$pkg_v2_command" || return 1
-      _pkg_integration_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
+      _pkg_v2_root_target_validate "$pkg_v2_target" "$pkg_v2_root" || return 1
     done
   fi
 
@@ -1042,33 +1008,12 @@ _pkg_default_public_target()
 
 # A v2 command view must retain its validated symlink destination.
 # V1 uses real cmd scripts and retains its existing selection semantics.
+# Preserve the v1 command view while validating v2 selected commands.
 _pkg_default_command_validate()
 {
   [ "$#" -eq 2 ] || return 2
   [ "$pkg_default_view_rel" = link/bin ] || return 0
-
-  pkg_default_check_concrete=$1
-  pkg_default_check_command=$2
-  pkg_default_check_path="$m_PKG_DIR/$pkg_default_check_concrete/link/bin/$pkg_default_check_command"
-  [ -L "$pkg_default_check_path" ] || return 1
-  pkg_default_check_target="$(command -p -- readlink "$pkg_default_check_path")" || return 1
-
-  case "$pkg_default_check_target" in
-    "../../cmd/$pkg_default_check_command")
-      pkg_default_check_wrapper="$m_PKG_DIR/$pkg_default_check_concrete/cmd/$pkg_default_check_command"
-      [ -f "$pkg_default_check_wrapper" ] &&
-        [ ! -L "$pkg_default_check_wrapper" ] &&
-        [ -x "$pkg_default_check_wrapper" ] || return 1
-      ;;
-    ../../root/*)
-      _pkg_integration_v2_root_target_validate \
-        "$pkg_default_check_target" \
-        "$m_PKG_DIR/$pkg_default_check_concrete/root" || return 1
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+  _pkg_v2_installed_command_validate "$m_PKG_DIR/$1" "$2"
 }
 
 _pkg_default_validate_current_bindings()

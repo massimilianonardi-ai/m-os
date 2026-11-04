@@ -162,6 +162,15 @@ _context_commands_validate()
       }
       _context_scan_name=${_context_scan_command##*/}
 
+      # Revalidate installed v2 symlinks before publishing their PATH view.
+      # A direct executable bypasses the package launcher entirely.
+      if [ "$_context_bin_rel" = link/bin ] &&
+         ! _pkg_v2_installed_command_validate "$m_PKG_DIR/$_context_scan_concrete" "$_context_scan_name"
+      then
+        _context_error context-command-invalid "$_context_scan_command"
+        return 9
+      fi
+
       for _context_scan_core in "${m_BIN_SYS_DIR-}" "${m_BIN_SYS_OSARCH_DIR-}"
       do
         [ -n "$_context_scan_core" ] || continue
