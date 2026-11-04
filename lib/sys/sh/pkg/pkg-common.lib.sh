@@ -151,33 +151,33 @@ _pkg_v2_root_target_validate()
 # This cannot guard a PATH symlink against later filesystem mutation.
 _pkg_v2_installed_command_validate()
 {
-  [ "$#" -eq 2 ] || return 2
+  [ "$#" -eq 2 ] || return 1
   pkg_v2_installed_concrete=$1
   pkg_v2_installed_name=$2
-  pkg_name_valid "$pkg_v2_installed_name" || return 1
-  [ -d "$pkg_v2_installed_concrete" ] && [ ! -L "$pkg_v2_installed_concrete" ] || return 1
+  pkg_name_valid "$pkg_v2_installed_name" || return 2
+  [ -d "$pkg_v2_installed_concrete" ] && [ ! -L "$pkg_v2_installed_concrete" ] || return 3
   [ -d "$pkg_v2_installed_concrete/root" ] &&
-    [ ! -L "$pkg_v2_installed_concrete/root" ] || return 1
+    [ ! -L "$pkg_v2_installed_concrete/root" ] || return 4
   [ -d "$pkg_v2_installed_concrete/link/bin" ] &&
-    [ ! -L "$pkg_v2_installed_concrete/link/bin" ] || return 1
+    [ ! -L "$pkg_v2_installed_concrete/link/bin" ] || return 5
 
   pkg_v2_installed_link="$pkg_v2_installed_concrete/link/bin/$pkg_v2_installed_name"
-  [ -L "$pkg_v2_installed_link" ] || return 1
-  pkg_v2_installed_target="$(command -p -- readlink "$pkg_v2_installed_link")" || return 1
+  [ -L "$pkg_v2_installed_link" ] || return 6
+  pkg_v2_installed_target="$(command -p -- readlink "$pkg_v2_installed_link")" || return 7
 
   case "$pkg_v2_installed_target" in
     "../../cmd/$pkg_v2_installed_name")
       [ -d "$pkg_v2_installed_concrete/cmd" ] &&
-        [ ! -L "$pkg_v2_installed_concrete/cmd" ] || return 1
+        [ ! -L "$pkg_v2_installed_concrete/cmd" ] || return 8
       [ -f "$pkg_v2_installed_concrete/cmd/$pkg_v2_installed_name" ] &&
         [ ! -L "$pkg_v2_installed_concrete/cmd/$pkg_v2_installed_name" ] &&
-        [ -x "$pkg_v2_installed_concrete/cmd/$pkg_v2_installed_name" ] || return 1
+        [ -x "$pkg_v2_installed_concrete/cmd/$pkg_v2_installed_name" ] || return 9
       ;;
     ../../root/*)
-      _pkg_v2_root_target_validate "$pkg_v2_installed_target" "$pkg_v2_installed_concrete/root" || return 1
+      _pkg_v2_root_target_validate "$pkg_v2_installed_target" "$pkg_v2_installed_concrete/root" || return 10
       ;;
     *)
-      return 1
+      return 11
       ;;
   esac
 }

@@ -82,6 +82,8 @@ RETURN STATUS
     15   previous context-owned CLASSPATH block unavailable or modified
     16   PATH is readonly in the invoking shell
     17   CLASSPATH is readonly in the invoking shell
+    18   v2 installed command link target no longer satisfies its validated
+         concrete-local direct or wrapper layout
 
 LIMITATIONS
     This is the first package-command and library selection increment of the broader
