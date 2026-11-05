@@ -24,6 +24,14 @@ DESCRIPTION
     range anchor is used as the concrete version.
 
 FUNCTIONS
+    pkg_depend_plan <catalog-root> <package-spec>...
+        Resolve dependencies with the caller's existing immutable catalog root,
+        returning a shell-quoted operand sequence suitable for POSIX
+        eval/set -- consumption. Omit explicit roots unless also dependencies.
+        This library interface neither initializes a second catalog snapshot
+        nor installs packages. Caller owns catalog lifecycle and validates
+        the supplied real selected catalog root.
+
     pkg_depend <package-spec>...
         Public pkg depend command implementation. Validate all request syntax before
         catalog initialization, create one invocation-private catalog snapshot,
