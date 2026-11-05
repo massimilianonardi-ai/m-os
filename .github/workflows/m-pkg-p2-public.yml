@@ -72,6 +72,7 @@ jobs:
           esac
           actual=$(./m sh -c '
             . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
+            loadsyslib "osarch" || exit 2
             loadsyslib "pkg/pkg-install" || exit 2
             target=$1
             _pkg_install_init || exit 3
@@ -79,10 +80,7 @@ jobs:
             eval "set -- $contexts"
             [ "$#" -eq 1 ] || exit 5
             [ "$1" = "mk@v0.1.0|$target" ] || exit 6
-            printf "P2-DEBUG context=%s catalog=%s\n" "$1" "$pkg_install_catalog_work" >&2
-            set -x
             concrete_plan=$(pkg_depend_plan "$pkg_install_catalog_work" "$@") || exit 7
-            set +x
             eval "set -- $concrete_plan"
             [ "$#" -eq 1 ] || exit 8
             printf "%s\\n" "$1"
