@@ -94,19 +94,39 @@ jobs:
 
           # A local real HTTPS server verifies transport (not m-managed CA).
           # Only this test process opts into the disposable test certificate.
-          cat > "$work/https.cnf" <<'EOF_CERT'
+          cat > "$work/ca.cnf" <<'EOF_CA'
           [req]
           distinguished_name = subject
           prompt = no
-          x509_extensions = extensions
+          x509_extensions = ca_ext
+          [subject]
+          CN = m-a3-disposable-root
+          [ca_ext]
+          basicConstraints = critical,CA:TRUE
+          keyUsage = critical,keyCertSign,cRLSign
+          EOF_CA
+          cat > "$work/server.cnf" <<'EOF_SERVER'
+          [req]
+          distinguished_name = subject
+          prompt = no
           [subject]
           CN = localhost
-          [extensions]
-          basicConstraints = critical,CA:TRUE
-          keyUsage = critical,digitalSignature,keyCertSign
+          [server_ext]
+          basicConstraints = critical,CA:FALSE
+          keyUsage = critical,digitalSignature,keyEncipherment
+          extendedKeyUsage = serverAuth
           subjectAltName = IP:127.0.0.1
-          EOF_CERT
-          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1             -keyout "$work/https.key" -out "$work/https.pem"             -config "$work/https.cnf" >/dev/null 2>&1
+          EOF_SERVER
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -keyout "$work/ca.key" -out "$work/ca.pem" \
+            -config "$work/ca.cnf" >/dev/null 2>&1
+          openssl req -new -newkey rsa:2048 -nodes -sha256 \
+            -keyout "$work/server.key" -out "$work/server.csr" \
+            -config "$work/server.cnf" >/dev/null 2>&1
+          openssl x509 -req -in "$work/server.csr" \
+            -CA "$work/ca.pem" -CAkey "$work/ca.key" -CAcreateserial \
+            -days 1 -sha256 -out "$work/server.pem" \
+            -extfile "$work/server.cnf" -extensions server_ext >/dev/null 2>&1
           python3 -u -c '
           import http.server, pathlib, ssl, sys
           source, certificate, key, portfile = sys.argv[1:]
@@ -119,7 +139,7 @@ jobs:
           service.socket = ctx.wrap_socket(service.socket, server_side=True)
           pathlib.Path(portfile).write_text(str(service.server_port))
           service.serve_forever()
-          ' "$work/source" "$work/https.pem" "$work/https.key" "$work/port" >"$work/https.log" 2>&1 &
+          ' "$work/source" "$work/server.pem" "$work/server.key" "$work/port" >"$work/https.log" 2>&1 &
           server_pid=$!
           attempts=0
           until [ -s "$work/port" ]
@@ -140,9 +160,9 @@ jobs:
           [ -s "$work/err" ]
 
           # Exercise the genuine curl TLS backend with explicit test-local trust.
-          CURL_CA_BUNDLE="$work/https.pem" ./m http-fetch -t 5             -o "$work/fetched.txt" -- "$url"
+          CURL_CA_BUNDLE="$work/ca.pem" ./m http-fetch -t 5             -o "$work/fetched.txt" -- "$url"
           cmp "$work/source/value.txt" "$work/fetched.txt"
-          actual_length=$(CURL_CA_BUNDLE="$work/https.pem" ./m http-fetch -l -t 5 -- "$url")
+          actual_length=$(CURL_CA_BUNDLE="$work/ca.pem" ./m http-fetch -l -t 5 -- "$url")
           expected_length=$(wc -c < "$work/source/value.txt" | tr -d ' ')
           [ "$actual_length" = "$expected_length" ]
 
