@@ -130,8 +130,10 @@ jobs:
 
           status=0
           ./m srv start "$service" >/tmp/m-srv-stale-identity.log 2>&1 || status=$?
-          [ "$status" -eq 1 ] && kill -0 "$live_pid" || {
-            echo "FAIL: stale process identity treated as active service (status $status)" >&2
+          [ "$status" -eq 1 ] &&
+            grep -F 'live-runtime-state-invalid' /tmp/m-srv-stale-identity.log >/dev/null &&
+            kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
+            echo "FAIL: stale process identity was not rejected by the live-state gate (status $status)" >&2
             cat /tmp/m-srv-stale-identity.log >&2
             exit 1
           }
