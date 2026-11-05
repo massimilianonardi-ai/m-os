@@ -1,0 +1,122 @@
+name: m A2 shell language manual and diagnostic public validation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - m
+      - bin/sys/shell
+      - bin/sys/lang
+      - bin/sys/lang-set
+      - bin/sys/manual
+      - bin/sys/log
+      - bin/sys/pager
+      - lib/sys/sh/base.lib.sh
+      - lib/sys/sh/core.lib.sh
+      - res/sys/lang/**
+      - res/sys/manual/**
+      - .github/workflows/m-shell-resources-public.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  a2-shell-resources:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise real managed shell localization manual and diagnostics
+        shell: sh
+        run: |
+          set -eu
+          work=$(mktemp -d)
+          cleanup() {
+            ./m lang-set en_US >/dev/null 2>&1 || :
+            rm -rf -- "$work"
+          }
+          trap cleanup 0
+          trap 'exit 130' HUP INT TERM
+
+          # Exercise the native command and explicit library-loading boundaries.
+          SHELL=/bin/sh ./m shell -c '
+            test -n "$m_ROOT" &&
+            test -n "$m_LIB_DIR" &&
+            test -n "$m_STATE_SYS_DIR"
+          '
+          ./m sh -c '
+            . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
+            command -v loadlib >/dev/null || exit 1
+            command -v loadsyslib >/dev/null || exit 1
+            command -v context >/dev/null || exit 1
+          '
+          (
+            unset m_ROOT
+            if ./bin/sys/lang execution invalid-arguments >"$work/out" 2>"$work/err"
+            then
+              echo 'lang accepted an uninitialized host process' >&2
+              exit 1
+            fi
+            [ ! -s "$work/out" ] && [ -s "$work/err" ]
+          )
+
+          # Current/fallback language is selected data, never executable shell.
+          [ "$(./m lang-set)" = en_US ]
+          expected=$(cat res/sys/lang/en_US/execution/invalid-arguments)
+          [ "$(./m lang execution invalid-arguments)" = "$expected" ]
+          [ "$(./m lang no-such-domain no-such-message)" = no-such-domain.no-such-message ]
+
+          ./m lang-set it_IT
+          [ "$(./m lang-set)" = it_IT ]
+          expected_it=$(cat res/sys/lang/it_IT/execution/invalid-arguments)
+          [ "$(./m lang execution invalid-arguments)" = "$expected_it" ]
+          if ./m lang-set invalid_a2_locale >"$work/out" 2>"$work/err"
+          then
+            echo 'lang-set accepted an unconfigured locale' >&2
+            exit 1
+          fi
+          [ "$(./m lang-set)" = it_IT ]
+          ./m lang-set en_US
+          [ "$(./m lang-set)" = en_US ]
+
+          # Discover and inspect the actual distributed operational manual.
+          ./m manual > "$work/topics"
+          grep -Fx 'sys shell' "$work/topics" >/dev/null
+          grep -Fx 'sys lang-set' "$work/topics" >/dev/null
+          ./m manual --no-pager sys shell > "$work/manual"
+          cmp res/sys/manual/shell "$work/manual"
+          ./m manual --no-pager core.lib.sh > "$work/core"
+          cmp res/sys/manual/core.lib.sh "$work/core"
+          if ./m manual --no-pager sys absent-a2-topic >"$work/out" 2>"$work/err"
+          then
+            echo 'manual accepted a nonexistent exact topic' >&2
+            exit 1
+          else
+            [ "$?" -eq 2 ]
+          fi
+          [ ! -s "$work/out" ] && [ -s "$work/err" ]
+
+          # Diagnostic filtering must preserve stdout and reject invalid
+          # severity without accidentally emitting a normal message.
+          m_LOG_LEVEL=warn ./m log warn execution invalid-arguments operation a2             >"$work/log-out" 2>"$work/log-err"
+          [ ! -s "$work/log-out" ]
+          grep -F '[warn] [execution.invalid-arguments]' "$work/log-err" >/dev/null
+          m_LOG_LEVEL=off ./m log error execution invalid-arguments operation a2             >"$work/log-out" 2>"$work/log-err"
+          [ ! -s "$work/log-out" ] && [ ! -s "$work/log-err" ]
+          if ./m log a2-invalid execution invalid-arguments >"$work/out" 2>"$work/err"
+          then
+            echo 'log accepted an invalid severity' >&2
+            exit 1
+          else
+            [ "$?" -ne 0 ]
+          fi
+          [ ! -s "$work/out" ] && [ -s "$work/err" ]
+
+          echo 'PASS: real m A2 shell, language, manual, diagnostics'
