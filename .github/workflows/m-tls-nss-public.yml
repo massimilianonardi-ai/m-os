@@ -142,6 +142,9 @@ jobs:
                   sleep 0.1
                 done
                 browser_url="https://127.0.0.1:$(cat "$work/port")/index.html"
+                # Verify the real endpoint with a trusted independent client.
+                curl --fail --silent --show-error --cacert "$work/ca.pem" \
+                  "$browser_url" | grep -F 'A4_REAL_BROWSER_HTTPS_SENTINEL' >/dev/null
                 browser_bin=
                 for candidate in google-chrome google-chrome-stable chromium chromium-browser
                 do
@@ -160,6 +163,12 @@ jobs:
                     --user-data-dir="$work/browser-home/browser-profile" \
                     --dump-dom "$browser_url?phase=$1" \
                     >"$work/browser-dom" 2>"$work/browser-err" || :
+                  if [ ! -s "$work/browser-dom" ]
+                  then
+                    echo 'ERROR: browser produced no document; TLS result is unobservable' >&2
+                    cat "$work/browser-err" >&2
+                    exit 3
+                  fi
                 }
                 browser_reject() {
                   browser_render "$1"
