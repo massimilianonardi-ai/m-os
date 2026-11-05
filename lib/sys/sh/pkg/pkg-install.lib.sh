@@ -191,15 +191,30 @@ pkg_install()
   _pkg_install_list_requested="$(_pkg_install_resolve "$@")" ||
     fatal 1 pkg-install root-resolution-failed operation pkg-install
 
+  # Distinguish roots that existed before this invocation from roots
+  # materialized during its dependency-first installation.
   eval "set -- $_pkg_install_list_requested"
+  _pkg_install_preexisting_roots=
+  for _pkg_install_root
+  do
+    if [ -e "$m_PKG_DIR/$_pkg_install_root" ] || [ -L "$m_PKG_DIR/$_pkg_install_root" ]
+    then
+      [ -d "$m_PKG_DIR/$_pkg_install_root" ] && [ ! -L "$m_PKG_DIR/$_pkg_install_root" ] ||
+        fatal 1 pkg-install invalid-installed-concrete package "$_pkg_install_root"
+      _pkg_install_preexisting_roots="$_pkg_install_preexisting_roots $_pkg_install_root"
+    fi
+  done
+
   _pkg_install_list_dependencies="$(pkg_depend_plan "$pkg_install_catalog_work" "$@")" ||
     fatal 1 pkg-install dependency-planning-failed operation pkg-install
 
   # Dependency concretes and requested roots use the same catalog snapshot.
   eval "set -- $_pkg_install_list_dependencies"
+  _pkg_install_completed_dependencies=
   for _pkg_install_dependency
   do
     _pkg_install_one_checked "$_pkg_install_dependency" || return 1
+    _pkg_install_completed_dependencies="$_pkg_install_completed_dependencies $_pkg_install_dependency"
   done
 
   eval "set -- $_pkg_install_list_requested"
@@ -212,6 +227,17 @@ pkg_install()
       then
         fatal 1 pkg-install invalid-installed-concrete package "$_pkg_install_root"
       fi
+
+      # A root newly installed as another root's dependency is fulfilled,
+      # not a pre-existing explicit-root request or duplicate root error.
+      case " $_pkg_install_preexisting_roots " in
+        *" $_pkg_install_root "*) : ;;
+        *)
+          case " $_pkg_install_completed_dependencies " in
+            *" $_pkg_install_root "*) continue ;;
+          esac
+          ;;
+      esac
 
       pkg_concrete_read _pkg_install_name _pkg_install_version _pkg_install_osarch "$_pkg_install_root" ||
         fatal 1 pkg-install invalid-root-identity package "$_pkg_install_root"
