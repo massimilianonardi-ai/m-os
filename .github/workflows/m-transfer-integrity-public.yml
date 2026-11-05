@@ -139,6 +139,25 @@ jobs:
             [ "$?" -eq 3 ]
           fi
 
+          # A member with a safe name must still be rejected when an
+          # existing destination path component redirects to another directory.
+          mkdir -p "$work/outside-target"
+          ln -s "$work/outside-target" "$work/zip-out/redirect"
+          python3 -c '
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1], "w") as archive:
+              archive.writestr("redirect/would-escape.txt", "unsafe")
+          ' "$work/preexisting-link.zip"
+          if ./m extract zip "$work/preexisting-link.zip" "$work/zip-out" \
+            >"$work/out" 2>"$work/err"
+          then
+            echo 'extract followed a preexisting ZIP destination symlink' >&2
+            exit 1
+          else
+            [ "$?" -eq 5 ]
+          fi
+          [ ! -e "$work/outside-target/would-escape.txt" ]
+
           # A symlink destination is never a valid extraction target.
           ln -s "$work/source" "$work/symlink-destination"
           if ./m extract tar.gz "$work/example.tar.gz" "$work/symlink-destination" \
