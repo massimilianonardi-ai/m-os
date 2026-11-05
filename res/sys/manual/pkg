@@ -41,16 +41,19 @@ PACKAGE OPERANDS
 
 COMMANDS
     install <package-spec>...
-        Validate the complete request list before dependency planning. If any
-        package specification is syntactically invalid, fail before catalog
-        resolution or package installation. Otherwise discover recursive
-        dependencies with pkg depend, prepend the returned exact dependency
-        concretes to the original request list, and install the resulting sequence
-        dependency-first.
+        Validate every original operand before catalog initialization or
+        mutation. Invalid syntax aborts the entire batch with status 2.
 
-        The original requested package specifications remain requests and are
-        resolved by the installer when reached. Dependency operands are already
-        concrete. An already installed concrete is not reinstalled.
+        Resolve every requested root to an exact concrete against one catalog
+        snapshot, plan its recursive dependencies against that same snapshot,
+        and install the dependency concretes before those same exact roots.
+        A root cannot be reselected between planning and installation.
+
+        Installed dependency concretes are reused without replacement. An
+        explicitly requested already-installed root instead emits the
+        already-installed diagnostic including the selected default where
+        available, and makes the invocation fail with status 1. Remaining
+        requested roots are still attempted.
 
     uninstall <package-spec>...
         Remove one or more installed package versions. When a version is omitted,
