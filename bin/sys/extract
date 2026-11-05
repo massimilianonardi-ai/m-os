@@ -17,6 +17,47 @@ extract_require()
   fatal execution command-not-found operation extract command "$1" format "$extract_format"
 }
 
+# Inspect archive member paths as data before handing them to a host backend.
+# A symlink already present in a member's output path can escape -d/-C.
+# Archive-created links and concurrent destination mutations require separate
+# backend-specific validation and are not covered by this preflight.
+extract_archive_members_validate()
+(
+  [ "$#" -eq 1 ] || return 2
+  extract_archive_kind=$1
+
+  while IFS= read -r extract_archive_member
+  do
+    case "$extract_archive_member" in
+      ""|/*|..|../*|*/../*|*/..) return 4 ;;
+    esac
+    if [ "$extract_archive_kind" = zip ]
+    then
+      case "$extract_archive_member" in *\\*) return 4 ;; esac
+    fi
+
+    extract_archive_path=$extract_destination
+    extract_archive_remaining=$extract_archive_member
+    while [ -n "$extract_archive_remaining" ]
+    do
+      case "$extract_archive_remaining" in
+        */*)
+          extract_archive_component=${extract_archive_remaining%%/*}
+          extract_archive_remaining=${extract_archive_remaining#*/}
+          ;;
+        *)
+          extract_archive_component=$extract_archive_remaining
+          extract_archive_remaining=
+          ;;
+      esac
+
+      case "$extract_archive_component" in ""|.) continue ;; esac
+      extract_archive_path="$extract_archive_path/$extract_archive_component"
+      [ ! -L "$extract_archive_path" ] || return 5
+    done
+  done
+)
+
 extract_stream_target()
 {
   [ "$#" -eq 2 ] || return 2
@@ -39,9 +80,37 @@ extract_stream_target()
   printf -- '%s\n' "$extract_stream_name"
 }
 
+extract_tar_preflight()
+{
+  [ "$#" -eq 1 ] || return 10
+  extract_tar_members="$(TAR_OPTIONS= command -- tar -tf "$1")" || return 7
+  [ -n "$extract_tar_members" ] || return 0
+
+  printf -- '%s\n' "$extract_tar_members" |
+    extract_archive_members_validate tar
+  extract_tar_member_status=$?
+  case "$extract_tar_member_status" in
+    0) return 0 ;;
+    4) return 8 ;;
+    5) return 9 ;;
+    *) return 10 ;;
+  esac
+}
+
+extract_tar_fail()
+{
+  case "$1" in
+    7) fatal 7 archive tar-list-failed operation extract format "$extract_format" ;;
+    8) fatal 8 archive tar-member-unsafe operation extract format "$extract_format" ;;
+    9) fatal 9 archive tar-destination-link operation extract format "$extract_format" ;;
+    *) fatal 10 archive tar-preflight-failed operation extract format "$extract_format" ;;
+  esac
+}
+
 extract_tar_stream()
 {
   extract_require tar
+  extract_tar_preflight "$extract_artifact" || extract_tar_fail "$?"
   (
     cd -- "$extract_destination" || exit 1
     TAR_OPTIONS= command -- tar -xf -
@@ -86,6 +155,14 @@ extract_compressed_tar()
   then
     command -p -- rm -f -- "$extract_tmp" 2>/dev/null
     fatal execution execution-failed operation extract reason decompression-failed format "$extract_format"
+  fi
+
+  extract_tar_preflight "$extract_tmp"
+  extract_tar_check_status=$?
+  if [ "$extract_tar_check_status" -ne 0 ]
+  then
+    command -p -- rm -f -- "$extract_tmp" 2>/dev/null || :
+    extract_tar_fail "$extract_tar_check_status"
   fi
 
   exec 3< "$extract_tmp" || {
@@ -160,34 +237,7 @@ extract_zip()
     fatal 3 archive zip-list-failed operation extract format "$extract_format"
 
   printf -- '%s\n' "$extract_zip_members" |
-    while IFS= read -r extract_zip_member
-    do
-      case "$extract_zip_member" in
-        ""|/*|..|../*|*/../*|*/..|*\\*) exit 4 ;;
-      esac
-
-      # An existing symlink in the output path can redirect an otherwise
-      # harmless member outside the requested extraction destination.
-      extract_zip_path=$extract_destination
-      extract_zip_remaining=$extract_zip_member
-      while [ -n "$extract_zip_remaining" ]
-      do
-        case "$extract_zip_remaining" in
-          */*)
-            extract_zip_component=${extract_zip_remaining%%/*}
-            extract_zip_remaining=${extract_zip_remaining#*/}
-            ;;
-          *)
-            extract_zip_component=$extract_zip_remaining
-            extract_zip_remaining=
-            ;;
-        esac
-
-        case "$extract_zip_component" in ""|.) continue ;; esac
-        extract_zip_path="$extract_zip_path/$extract_zip_component"
-        [ ! -L "$extract_zip_path" ] || exit 5
-      done
-    done
+    extract_archive_members_validate zip
   extract_zip_preflight_status=$?
   case "$extract_zip_preflight_status" in
     0) : ;;
