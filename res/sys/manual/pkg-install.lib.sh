@@ -2,42 +2,34 @@ NAME
     pkg-install.lib.sh - orchestrate recursive package installation
 
 DESCRIPTION
-    pkg-install.lib.sh implements the public pkg install command. It validates the
-    complete original request list before catalog initialization, dependency
-    planning or package installation. Only after every request is syntactically
-    valid does it initialize one installation catalog snapshot and call pkg depend
-    with the untouched original request list.
+    pkg-install.lib.sh implements the public pkg install command. Complete
+    request-list syntax validation precedes catalog initialization, planning,
+    resolution and managed-store mutation. After validation, all requested
+    roots are resolved to exact concrete identities using one catalog snapshot.
 
-    Dependency concrete identities returned by pkg depend are prepended to the
-    original request list. The dependency entries are already concrete; original
-    roots deliberately retain their requested form and are resolved by
-    pkg_install_one against the same installation catalog snapshot when their turn
-    in the install sequence is reached. This preserves one dependency-planning
-    authority while still installing dependencies before requested roots.
+    pkg_depend_plan receives those exact roots and that same initialized
+    snapshot. Dependency concretes are installed first, followed by the same
+    resolved roots, without independently refreshing the catalog or reselecting
+    an unversioned root.
 
-    pkg install owns request installation, not dependency discovery. Each package
-    selected for installation is resolved to its package range, its artifact is
-    downloaded and extracted, provider conformance is validated, and the package
-    is integrated. An already installed concrete dependency is reused directly
-    without redundant catalog resolution.
+    Installed concrete dependencies are reused. An already-installed
+    explicitly requested root is reported rather than replaced, including the
+    configured current/default concrete identity when one exists. Other
+    requested roots continue to be attempted.
 
 FUNCTIONS
     pkg_install <package-spec>...
-        Validate every original package specification first. If any request is
-        syntactically invalid, fail before dependency planning and install nothing.
-        Otherwise initialize the catalog snapshot, invoke pkg depend exactly once
-        with the untouched original requests, prepend the returned dependency
-        concretes to those original requests, and install the resulting sequence.
-
-        A dependency-planning failure after valid request syntax is an execution
-        failure, not an invalid-arguments condition. Diagnostics emitted by
-        pkg depend remain visible before the top-level pkg-install
-        dependency-unresolvable failure.
+        Validate original requests, resolve all roots and plan recursive
+        dependencies against one immutable catalog snapshot, then install
+        dependency concretes before those exact roots. Return 0 for complete
+        success, 1 for execution failures (including already-installed
+        explicit roots), and 2 for invalid invocation or request syntax.
 
     pkg_install_one <package-spec>
-        Resolve one package specification against the current installation catalog
-        snapshot and install its concrete identity unless that concrete is already
-        installed.
+        Resolve one request against the current installation snapshot,
+        download/extract/validate/integrate it if absent, and reuse an already
+        installed valid concrete with status 0. The public pkg_install
+        entrypoint separately rejects already-installed explicit roots.
 
 DEPENDENCIES
     pkg-common.lib.sh
