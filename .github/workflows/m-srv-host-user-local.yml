@@ -50,6 +50,7 @@ jobs:
           driver=$tmp/integration-driver
           integrated=0
           registration_owned=0
+          pkg_store_created=0
           marker=
           case "$(uname -s)" in
             Linux) native_manifest="$HOME/.config/systemd/user/m-srv-$facility.service" ;;
@@ -70,6 +71,7 @@ jobs:
             if [ "$integrated" -eq 1 ]; then ./m "$driver" deintegrate "$package" 1 >/dev/null 2>&1 || :; fi
             if [ -n "$marker" ] && [ -f "$marker" ]; then rm -f -- "$marker" || :; fi
             rm -rf -- "$tmp"
+            if [ "$pkg_store_created" -eq 1 ]; then rmdir -- "$root/pkg" >/dev/null 2>&1 || :; fi
           }
           trap cleanup 0
           trap 'exit 130' HUP INT TERM
@@ -108,10 +110,17 @@ jobs:
           esac
           EOF_DRIVER
           chmod 700 "$driver"
-          ./m "$driver" integrate "$package" 1 "$range" "$payload" || {
+          if [ ! -e "$root/pkg" ] && [ ! -L "$root/pkg" ]; then
+            mkdir -- "$root/pkg" || { echo 'INFRASTRUCTURE: cannot prepare local package store' >&2; exit 3; }
+            pkg_store_created=1
+          fi
+          [ -d "$root/pkg" ] && [ ! -L "$root/pkg" ] || {
+            echo 'INFRASTRUCTURE: invalid local package store' >&2; exit 3;
+          }
+          if ! ./m "$driver" integrate "$package" 1 "$range" "$payload"; then
             echo 'INFRASTRUCTURE: local provider integration failed' >&2
             exit 3
-          }
+          fi
           integrated=1
           ./m pkg default "$package@1"
           ./m pkg provider default "$facility" "$package"
