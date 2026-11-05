@@ -80,6 +80,44 @@ jobs:
           ./m extract zip "$work/example.zip" "$work/zip-out"
           cmp "$work/source/value.txt" "$work/zip-out/value.txt"
 
+          # Archive input is genuinely hostile data, not a substituted
+          # extraction backend. Keep escape targets inside this test root.
+          python3 -c '
+          import io, sys, tarfile, zipfile
+          bad_tar, bad_zip = sys.argv[1:]
+          payload = b"a3-archive-traversal\n"
+          with tarfile.open(bad_tar, "w") as archive:
+              entry = tarfile.TarInfo("../a3-tar-escape")
+              entry.size = len(payload)
+              archive.addfile(entry, io.BytesIO(payload))
+          with zipfile.ZipFile(bad_zip, "w") as archive:
+              archive.writestr("../a3-zip-escape", payload)
+          ' "$work/traversal.tar" "$work/traversal.zip"
+
+          for format in tar zip
+          do
+            if ./m extract "$format" "$work/traversal.$format" "$work/bad-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract accepted %s path traversal\n' "$format" >&2
+              exit 1
+            fi
+            [ ! -e "$work/a3-$format-escape" ] || {
+              printf 'extract wrote outside %s destination\n' "$format" >&2
+              exit 1
+            }
+          done
+
+          # A symlink destination is never a valid extraction target.
+          ln -s "$work/source" "$work/symlink-destination"
+          if ./m extract tar.gz "$work/example.tar.gz" "$work/symlink-destination" \
+            >"$work/out" 2>"$work/err"
+          then
+            echo 'extract accepted a symlink destination' >&2
+            exit 1
+          fi
+          [ ! -e "$work/source/value-new.txt" ]
+
           gzip -c "$work/source/value.txt" > "$work/value.txt.gz"
           ./m extract gzip "$work/value.txt.gz" "$work/gzip-out"
           cmp "$work/source/value.txt" "$work/gzip-out/value.txt"
