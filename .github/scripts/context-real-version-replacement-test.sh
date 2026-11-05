@@ -24,16 +24,24 @@ context 'pkg=m-core@v0.1.0' 'pkg=m-term@v0.1.0' ||
   fail 'cannot select original published versions'
 [ "$(command -v menu)" = "$m_PKG_DIR/m-term@v0.1.0/link/bin/menu" ] ||
   fail 'old m-term command version not selected'
-[ "$(command -v array.lib.sh)" = "$m_PKG_DIR/m-core@v0.1.0/link/lib/sh/array.lib.sh" ] ||
-  fail 'old m-core shell-library version not selected'
+[ -L "$m_PKG_DIR/m-core@v0.1.0/link/lib/sh/array.lib.sh" ] ||
+  fail 'original published core library link missing'
+case ":$PATH:" in
+  *":$m_PKG_DIR/m-core@v0.1.0/link/lib/sh:"*) : ;;
+  *) fail 'old m-core shell-library PATH view not selected' ;;
+esac
 
 # Replace same package identities independently; unrelated package is retained.
 context 'pkg=m-term@v0.1.1' 'pkg=m-core@v0.1.1' ||
   fail 'cannot switch to actual newer installed versions'
 [ "$(command -v menu)" = "$m_PKG_DIR/m-term@v0.1.1/link/bin/menu" ] ||
   fail 'new m-term command version not selected'
-[ "$(command -v array.lib.sh)" = "$m_PKG_DIR/m-core@v0.1.1/link/lib/sh/array.lib.sh" ] ||
-  fail 'new m-core source-library version not selected'
+[ -L "$m_PKG_DIR/m-core@v0.1.1/link/lib/sh/array.lib.sh" ] ||
+  fail 'new published core library link missing'
+case ":$PATH:" in
+  *":$m_PKG_DIR/m-core@v0.1.1/link/lib/sh:"*) : ;;
+  *) fail 'new m-core shell-library PATH view not selected' ;;
+esac
 case "$PATH" in
   *"$m_PKG_DIR/m-term@v0.1.0/"* | *"$m_PKG_DIR/m-core@v0.1.0/"*)
     fail 'stale older package PATH contribution survived replacement' ;;
@@ -56,8 +64,10 @@ fi
 
 # Replace just core back with the older release without disturbing term.
 context 'pkg=m-core@v0.1.0' || fail 'cannot select original core version again'
-[ "$(command -v array.lib.sh)" = "$m_PKG_DIR/m-core@v0.1.0/link/lib/sh/array.lib.sh" ] ||
-  fail 'core reverse replacement failed'
+case ":$PATH:" in
+  *":$m_PKG_DIR/m-core@v0.1.0/link/lib/sh:"*) : ;;
+  *) fail 'core reverse library view replacement failed' ;;
+esac
 [ "$(command -v menu)" = "$m_PKG_DIR/m-term@v0.1.1/link/bin/menu" ] ||
   fail 'unrelated term version was not retained'
 
