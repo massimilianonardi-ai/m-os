@@ -1,0 +1,131 @@
+name: m portable srv safety without provider installation
+
+on:
+  push:
+    branches: [m-os-completion-s]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  srv-offline-safety:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise real public srv failure and stale-runtime paths
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+
+          service=m-srv-safety
+          state_dir="$(./m state-path user sys srv run)"
+          case "$state_dir" in
+            /*) : ;;
+            *) echo 'INFRASTRUCTURE: unexpected non-absolute state root' >&2; exit 3 ;;
+          esac
+          runtime_dir="$state_dir/$service"
+          [ ! -e "$runtime_dir" ] && [ ! -L "$runtime_dir" ] || {
+            echo 'INFRASTRUCTURE: service fixture path already exists' >&2
+            exit 3
+          }
+
+          live_pid=
+          cleanup() {
+            if [ -n "$live_pid" ]; then
+              kill "$live_pid" 2>/dev/null || :
+              wait "$live_pid" 2>/dev/null || :
+            fi
+            if [ -d "$runtime_dir" ] && [ ! -L "$runtime_dir" ]; then
+              rm -rf -- "$runtime_dir" || :
+            fi
+          }
+          trap cleanup 0
+          trap 'exit 130' HUP INT TERM
+
+          # No installed provider is required for idempotent stop.
+          ./m srv stop "$service"
+
+          status=0
+          ./m srv start "$service" >/tmp/m-srv-missing-default.log 2>&1 || status=$?
+          [ "$status" -eq 1 ] || {
+            echo "FAIL: missing service default returned $status, expected 1" >&2
+            cat /tmp/m-srv-missing-default.log >&2
+            exit 1
+          }
+
+          status=0
+          ./m srv stop 'bad/service' >/tmp/m-srv-invalid-name.log 2>&1 || status=$?
+          [ "$status" -eq 2 ] || {
+            echo "FAIL: invalid service name returned $status, expected 2" >&2
+            cat /tmp/m-srv-invalid-name.log >&2
+            exit 1
+          }
+
+          # A malformed stale runtime record must be cleaned up by real srv.
+          mkdir -p -- "$runtime_dir"
+          printf '%s\n' malformed > "$runtime_dir/pid"
+          ./m srv stop "$service"
+          [ ! -e "$runtime_dir" ] && [ ! -L "$runtime_dir" ] || {
+            echo 'FAIL: malformed stale runtime was not removed' >&2
+            exit 1
+          }
+
+          # A live unrelated host process with incomplete external metadata
+          # must not be signaled or mistaken for a service. No target component
+          # is replaced; this fixture models corrupted persisted runtime state.
+          sleep 90 &
+          live_pid=$!
+          kill -0 "$live_pid"
+          mkdir -p -- "$runtime_dir"
+          printf '%s\n' "$live_pid" > "$runtime_dir/pid"
+
+          status=0
+          ./m srv stop "$service" >/tmp/m-srv-live-invalid-stop.log 2>&1 || status=$?
+          [ "$status" -eq 1 ] && kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
+            echo "FAIL: live invalid runtime stop returned $status or disturbed process/state" >&2
+            cat /tmp/m-srv-live-invalid-stop.log >&2
+            exit 1
+          }
+
+          status=0
+          ./m srv start "$service" >/tmp/m-srv-live-invalid-start.log 2>&1 || status=$?
+          [ "$status" -eq 1 ] && kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
+            echo "FAIL: live invalid runtime start returned $status or disturbed process/state" >&2
+            cat /tmp/m-srv-live-invalid-start.log >&2
+            exit 1
+          }
+
+          kill "$live_pid"
+          wait "$live_pid" 2>/dev/null || :
+          live_pid=
+          ./m srv stop "$service"
+          [ ! -e "$runtime_dir" ] && [ ! -L "$runtime_dir" ] || {
+            echo 'FAIL: exited-process runtime was not cleaned up' >&2
+            exit 1
+          }
+
+          # S2's unauthorised system-operation boundary is testable without
+          # registering a host service; positive host-manager paths are separate.
+          [ "$(id -u)" -ne 0 ] || {
+            echo 'INFRASTRUCTURE: S2 non-root guard requires an unprivileged runner' >&2
+            exit 3
+          }
+          status=0
+          ./m srv host system install "$service" nobody >/tmp/m-srv-nonadmin.log 2>&1 || status=$?
+          [ "$status" -eq 1 ] || {
+            echo "FAIL: unprivileged host system install returned $status, expected 1" >&2
+            cat /tmp/m-srv-nonadmin.log >&2
+            exit 1
+          }
+
+          echo 'PASS: offline S1 public errors, stale state and unrelated live process protection'
+          echo 'PASS: S2 host-system non-admin denial (not host-supervisor positive validation)'
