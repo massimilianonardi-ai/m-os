@@ -1,0 +1,55 @@
+name: Real published package context C1
+
+on:
+  push:
+    branches: [context-c1-real-validation]
+    paths:
+      - '.github/workflows/m-context-real-packages.yml'
+      - '.github/scripts/context-real-packages-test.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-context:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout autonomous m source at triggering revision
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout real v2 package catalog
+        uses: actions/checkout@v4
+        with:
+          repository: massimilianonardi-ai/pkg-catalog
+          ref: pkg-schema-v2
+          path: catalog
+          persist-credentials: false
+      - name: Prepare real m and exact catalog source
+        shell: sh
+        run: |
+          set -eu
+          [ "$(git -C catalog rev-parse HEAD)" = ae3e2011462be46c0326179f2117b81b85e5df5e ] || {
+            echo 'Catalog feature branch advanced; reconcile revision before testing' >&2
+            exit 1
+          }
+          ./m osarch update
+          conf=$(./m state-path system sys pkg conf)
+          mkdir -p -- "$conf"
+          printf '%s\n' "$GITHUB_WORKSPACE/catalog" > "$conf/catalog"
+      - name: Install three genuine immutable first-party releases
+        shell: sh
+        run: |
+          set -eu
+          ./m pkg install 'm-core@v0.1.0' 'm-term@v0.1.0' 'm-rsudo@v0.1.0'
+      - name: Validate exact-package context in real m shell
+        shell: sh
+        run: |
+          set -eu
+          ./m sh .github/scripts/context-real-packages-test.sh
