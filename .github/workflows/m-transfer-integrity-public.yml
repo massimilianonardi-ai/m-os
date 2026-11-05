@@ -191,6 +191,47 @@ jobs:
             [ ! -e "$work/tar-outside/would-escape.txt" ]
           done
 
+          # A link introduced by the archive itself must not redirect a
+          # subsequent member outside its destination. Each case has a
+          # distinct disposable output tree; no host trust or user paths.
+          mkdir -p "$work/created-link-outside" "$work/created-tar-out" "$work/created-zip-out"
+          python3 -c '
+          import io, stat, sys, tarfile, zipfile
+          target, tarpath, zippath = sys.argv[1:]
+          payload = b"archive-created-link-rejection\n"
+          with tarfile.open(tarpath, "w") as archive:
+              link = tarfile.TarInfo("redirect")
+              link.type = tarfile.SYMTYPE
+              link.linkname = target
+              archive.addfile(link)
+              member = tarfile.TarInfo("redirect/escape.txt")
+              member.size = len(payload)
+              archive.addfile(member, io.BytesIO(payload))
+          with zipfile.ZipFile(zippath, "w") as archive:
+              link = zipfile.ZipInfo("redirect")
+              link.create_system = 3
+              link.external_attr = (stat.S_IFLNK | 0o777) << 16
+              archive.writestr(link, target)
+              archive.writestr("redirect/escape.txt", payload)
+          ' "$work/created-link-outside" "$work/created-link.tar" "$work/created-link.zip"
+          for format in tar zip
+          do
+            case "$format" in
+              tar) output="$work/created-tar-out" ;;
+              zip) output="$work/created-zip-out" ;;
+            esac
+            if ./m extract "$format" "$work/created-link.$format" "$output" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract accepted archive-created %s symlink traversal\n' "$format" >&2
+              exit 1
+            fi
+            [ ! -e "$work/created-link-outside/escape.txt" ] || {
+              printf 'extract escaped through archive-created %s symlink\n' "$format" >&2
+              exit 1
+            }
+          done
+
           # A symlink destination is never a valid extraction target.
           ln -s "$work/source" "$work/symlink-destination"
           if ./m extract tar.gz "$work/example.tar.gz" "$work/symlink-destination" \
