@@ -123,7 +123,7 @@ jobs:
           live_pid=$!
           mkdir -p -- "$runtime_dir"
           printf '%s\n' "$live_pid" > "$runtime_dir/pid"
-          printf '%s\n' "$" > "$runtime_dir/owner"
+          printf '%s\n' "$live_pid" > "$runtime_dir/owner"
           printf '%s\n' /bin/sleep > "$runtime_dir/command"
           printf '%s\n' stale-provider@1 > "$runtime_dir/provider"
           printf '%s\n' not-the-current-process > "$runtime_dir/started"
