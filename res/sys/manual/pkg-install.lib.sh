@@ -15,7 +15,9 @@ DESCRIPTION
     Installed concrete dependencies are reused. An already-installed
     explicitly requested root is reported rather than replaced, including the
     configured current/default concrete identity when one exists. Other
-    requested roots continue to be attempted.
+    requested roots continue to be attempted. A root first installed as a
+    dependency of another requested root in the same batch is fulfilled
+    and not classified as a pre-existing root.
 
 FUNCTIONS
     pkg_install <package-spec>...
