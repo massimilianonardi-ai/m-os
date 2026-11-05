@@ -34,7 +34,12 @@ jobs:
           set -eu
           work=$(mktemp -d)
           approved_sha=
+          https_pid=
           cleanup() {
+            if [ -n "$https_pid" ]; then
+              kill "$https_pid" 2>/dev/null || :
+              wait "$https_pid" 2>/dev/null || :
+            fi
             if [ -n "$approved_sha" ]; then
               ./m tls-ca remove "$approved_sha" >/dev/null 2>&1 || :
             fi
@@ -87,10 +92,118 @@ jobs:
               if command -v certutil >/dev/null 2>&1 &&
                  command -v flock >/dev/null 2>&1
               then
+                # The test CA signs a separate HTTPS server leaf; the
+                # private keys stay in this temporary test root.
+                cat > "$work/server.cnf" <<'EOF_SERVER'
+          [req]
+          distinguished_name = subject
+          prompt = no
+          [subject]
+          CN = localhost
+          [server_ext]
+          basicConstraints = critical,CA:FALSE
+          keyUsage = critical,digitalSignature,keyEncipherment
+          extendedKeyUsage = serverAuth
+          subjectAltName = IP:127.0.0.1
+          EOF_SERVER
+                openssl req -new -newkey rsa:2048 -nodes -sha256 \
+                  -keyout "$work/server.key" -out "$work/server.csr" \
+                  -config "$work/server.cnf" >/dev/null 2>&1
+                openssl x509 -req -in "$work/server.csr" \
+                  -CA "$work/ca.pem" -CAkey "$work/ca.key" -CAcreateserial \
+                  -days 1 -sha256 -out "$work/server.pem" \
+                  -extfile "$work/server.cnf" -extensions server_ext >/dev/null 2>&1
+                mkdir -p "$work/www"
+                printf '%s\n' 'A4_REAL_BROWSER_HTTPS_SENTINEL' > "$work/www/index.html"
+                python3 -u -c '
+          import http.server, pathlib, ssl, sys
+          directory, cert, key, portfile = sys.argv[1:]
+          class Handler(http.server.SimpleHTTPRequestHandler):
+              def __init__(self, *args, **kwargs):
+                  super().__init__(*args, directory=directory, **kwargs)
+              def end_headers(self):
+                  self.send_header("Cache-Control", "no-store")
+                  super().end_headers()
+          service = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+          context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          context.load_cert_chain(cert, key)
+          service.socket = context.wrap_socket(service.socket, server_side=True)
+          pathlib.Path(portfile).write_text(str(service.server_port))
+          service.serve_forever()
+          ' "$work/www" "$work/server.pem" "$work/server.key" "$work/port" \
+                  >"$work/https.log" 2>&1 &
+                https_pid=$!
+                attempts=0
+                until [ -s "$work/port" ]
+                do
+                  kill -0 "$https_pid" || { cat "$work/https.log" >&2; exit 3; }
+                  [ "$attempts" -lt 50 ] || exit 3
+                  attempts=$((attempts + 1))
+                  sleep 0.1
+                done
+                browser_url="https://127.0.0.1:$(cat "$work/port")/index.html"
+                # Verify the real endpoint with a trusted independent client.
+                curl --fail --silent --show-error --cacert "$work/ca.pem" \
+                  "$browser_url" | grep -F 'A4_REAL_BROWSER_HTTPS_SENTINEL' >/dev/null
+                browser_bin=
+                for candidate in google-chrome google-chrome-stable chromium chromium-browser
+                do
+                  if command -v "$candidate" >/dev/null 2>&1
+                  then
+                    browser_bin=$candidate
+                    break
+                  fi
+                done
+                browser_render() {
+                  # No certificate-error override or disabled verification.
+                  HOME="$work/browser-home" "$browser_bin" \
+                    --headless --no-first-run --no-default-browser-check \
+                    --disable-background-networking --disable-extensions \
+                    --disable-gpu --disable-dev-shm-usage \
+                    --user-data-dir="$work/browser-home/browser-profile" \
+                    --dump-dom "$browser_url?phase=$1" \
+                    >"$work/browser-dom" 2>"$work/browser-err" || :
+                  if [ ! -s "$work/browser-dom" ]
+                  then
+                    echo 'ERROR: browser produced no document; TLS result is unobservable' >&2
+                    cat "$work/browser-err" >&2
+                    exit 3
+                  fi
+                }
+                browser_reject() {
+                  browser_render "$1"
+                  if grep -Fq 'A4_REAL_BROWSER_HTTPS_SENTINEL' "$work/browser-dom"
+                  then
+                    echo 'Browser accepted CA without current NSS authorization' >&2
+                    exit 1
+                  fi
+                }
+                browser_accept() {
+                  browser_render "$1"
+                  if ! grep -Fq 'A4_REAL_BROWSER_HTTPS_SENTINEL' "$work/browser-dom"
+                  then
+                    echo 'ERROR: browser failed to load CA-authorized HTTPS content' >&2
+                    cat "$work/browser-err" >&2
+                    exit 3
+                  fi
+                }
+                if [ -n "$browser_bin" ]
+                then
+                  browser_reject before-projection
+                else
+                  echo 'PENDING: host Chrome/Chromium browser integration'
+                fi
+
                 ./m tls-nss-sync "$work/browser-home"
-                db="$work/browser-home/.local/share/pki/nssdb"
+                if [ -d "$work/browser-home/.pki/nssdb" ]
+                then
+                  db="$work/browser-home/.pki/nssdb"
+                else
+                  db="$work/browser-home/.local/share/pki/nssdb"
+                fi
                 [ -f "$db/cert9.db" ]
                 certutil -L -d "sql:$db" -n "m-tls-$approved_sha" >/dev/null
+                if [ -n "$browser_bin" ]; then browser_accept approved; fi
 
                 # A genuinely separate NSS entry must survive all managed
                 # synchronization and revocation operations.
@@ -128,7 +241,8 @@ jobs:
                 fi
                 [ ! -e "$work/browser-home/.m/tls-nss-owned" ]
                 certutil -L -d "sql:$db" -n "a4-unrelated" >/dev/null
-                echo 'PASS: real m A4 CA lifecycle, NSS isolation, tamper rejection, revocation'
+                if [ -n "$browser_bin" ]; then browser_reject revoked; fi
+                echo 'PASS: real m A4 CA/NSS authority, preservation, revocation (browser conditional)'
               else
                 echo 'PENDING: Linux NSS positive projection requires certutil and flock'
                 ./m tls-ca remove "$approved_sha"

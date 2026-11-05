@@ -80,6 +80,75 @@ jobs:
           ./m extract zip "$work/example.zip" "$work/zip-out"
           cmp "$work/source/value.txt" "$work/zip-out/value.txt"
 
+          # Archive input is genuinely hostile data, not a substituted
+          # extraction backend. Keep escape targets inside this test root.
+          python3 -c '
+          import io, sys, tarfile, zipfile
+          bad_tar, bad_zip = sys.argv[1:]
+          payload = b"a3-archive-traversal\n"
+          with tarfile.open(bad_tar, "w") as archive:
+              entry = tarfile.TarInfo("../a3-tar-escape")
+              entry.size = len(payload)
+              archive.addfile(entry, io.BytesIO(payload))
+          with zipfile.ZipFile(bad_zip, "w") as archive:
+              archive.writestr("../a3-zip-escape", payload)
+          ' "$work/traversal.tar" "$work/traversal.zip"
+
+          for format in tar zip
+          do
+            if ./m extract "$format" "$work/traversal.$format" "$work/bad-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract accepted %s path traversal\n' "$format" >&2
+              exit 1
+            else
+              status=$?
+              if [ "$format" = zip ]; then [ "$status" -eq 4 ]; fi
+            fi
+            [ ! -e "$work/a3-$format-escape" ] || {
+              printf 'extract wrote outside %s destination\n' "$format" >&2
+              exit 1
+            }
+          done
+
+          # All ZIP-family aliases must reject the same unsafe archive names.
+          python3 -c '
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1], "w") as archive:
+              archive.writestr("safe/../a3-escape", "no")
+              archive.writestr("/a3-absolute", "no")
+          ' "$work/invalid-paths.zip"
+          for format in zip jar war
+          do
+            if ./m extract "$format" "$work/invalid-paths.zip" "$work/bad-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract accepted unsafe %s archive names\n' "$format" >&2
+              exit 1
+            else
+              [ "$?" -eq 4 ]
+            fi
+          done
+          printf 'invalid zip payload\n' > "$work/not-a-zip.zip"
+          if ./m extract zip "$work/not-a-zip.zip" "$work/bad-out" \
+            >"$work/out" 2>"$work/err"
+          then
+            echo 'extract accepted malformed ZIP input' >&2
+            exit 1
+          else
+            [ "$?" -eq 3 ]
+          fi
+
+          # A symlink destination is never a valid extraction target.
+          ln -s "$work/source" "$work/symlink-destination"
+          if ./m extract tar.gz "$work/example.tar.gz" "$work/symlink-destination" \
+            >"$work/out" 2>"$work/err"
+          then
+            echo 'extract accepted a symlink destination' >&2
+            exit 1
+          fi
+          [ ! -e "$work/source/value-new.txt" ]
+
           gzip -c "$work/source/value.txt" > "$work/value.txt.gz"
           ./m extract gzip "$work/value.txt.gz" "$work/gzip-out"
           cmp "$work/source/value.txt" "$work/gzip-out/value.txt"

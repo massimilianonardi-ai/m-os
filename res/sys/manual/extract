@@ -46,6 +46,11 @@ DESCRIPTION
     deriving its name from the artifact basename and compression suffix. The
     output pathname must not already exist.
 
+    For zip, jar and war archives, unsafe member names are rejected before
+    extraction: absolute paths, parent-directory traversal and backslash
+    pathnames are not accepted. This check does not replace separate validation
+    of archive links, existing destination entries or other backends.
+
     Backend utilities are selected according to the requested format and host
     capabilities. Missing required backends cause failure.
 
@@ -65,5 +70,7 @@ ENVIRONMENT
 EXIT STATUS
     0   Success.
     2   Invalid invocation or unsupported format.
+    3   ZIP member enumeration failed.
+    4   ZIP member pathname rejected as unsafe.
     Other non-zero status indicates artifact, destination, backend or extraction
         failure.
