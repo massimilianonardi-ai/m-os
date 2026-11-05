@@ -1,0 +1,156 @@
+name: m A3 real HTTPS digest and extraction validation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - m
+      - bin/sys/http-fetch
+      - bin/sys/digest
+      - bin/sys/extract
+      - res/sys/manual/http-fetch
+      - res/sys/manual/digest
+      - res/sys/manual/extract
+      - .github/workflows/m-transfer-integrity-public.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  a3-transfer-integrity:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise real TLS transport independent digest and extraction error paths
+        shell: sh
+        run: |
+          set -eu
+          work=$(mktemp -d)
+          server_pid=
+          cleanup() {
+            if [ -n "$server_pid" ]; then
+              kill "$server_pid" 2>/dev/null || :
+              wait "$server_pid" 2>/dev/null || :
+            fi
+            rm -rf -- "$work"
+          }
+          trap cleanup 0
+          trap 'exit 130' HUP INT TERM
+          mkdir -p "$work/source" "$work/tar-out" "$work/zip-out" "$work/gzip-out" "$work/bad-out"
+          printf 'real public m transport and archive test\n' > "$work/source/value.txt"
+
+          # Compare public digest results to an independent hash implementation.
+          for algorithm in sha256 sha512 md5
+          do
+            actual=$(./m digest -a "$algorithm" -- "$work/source/value.txt")
+            expected=$(python3 -c '
+          import hashlib, sys
+          with open(sys.argv[2], "rb") as source:
+              print(hashlib.new(sys.argv[1], source.read()).hexdigest())
+          ' "$algorithm" "$work/source/value.txt")
+            [ "$actual" = "$expected" ]
+            actual_stream=$(./m digest -a "$algorithm" < "$work/source/value.txt")
+            [ "$actual_stream" = "$expected" ]
+          done
+          if ./m digest -a sha1 -- "$work/source/value.txt" >"$work/out" 2>"$work/err"
+          then
+            echo 'digest unexpectedly accepted unsupported sha1' >&2
+            exit 1
+          else
+            [ "$?" -eq 2 ]
+          fi
+
+          tar -czf "$work/example.tar.gz" -C "$work/source" value.txt
+          ./m extract tar.gz "$work/example.tar.gz" "$work/tar-out"
+          cmp "$work/source/value.txt" "$work/tar-out/value.txt"
+
+          python3 -c '
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[2], "w") as archive:
+              archive.write(sys.argv[1], "value.txt")
+          ' "$work/source/value.txt" "$work/example.zip"
+          ./m extract zip "$work/example.zip" "$work/zip-out"
+          cmp "$work/source/value.txt" "$work/zip-out/value.txt"
+
+          gzip -c "$work/source/value.txt" > "$work/value.txt.gz"
+          ./m extract gzip "$work/value.txt.gz" "$work/gzip-out"
+          cmp "$work/source/value.txt" "$work/gzip-out/value.txt"
+
+          printf 'not-a-gzip-stream\n' > "$work/broken.gz"
+          if ./m extract gzip "$work/broken.gz" "$work/bad-out" >"$work/out" 2>"$work/err"
+          then
+            echo 'extract accepted corrupt gzip input' >&2
+            exit 1
+          fi
+          [ ! -e "$work/bad-out/broken" ] && [ -s "$work/err" ]
+
+          # A local real HTTPS server verifies transport (not m-managed CA).
+          # Only this test process opts into the disposable test certificate.
+          cat > "$work/https.cnf" <<'EOF_CERT'
+          [req]
+          distinguished_name = subject
+          prompt = no
+          x509_extensions = extensions
+          [subject]
+          CN = localhost
+          [extensions]
+          basicConstraints = critical,CA:TRUE
+          keyUsage = critical,digitalSignature,keyCertSign
+          subjectAltName = IP:127.0.0.1
+          EOF_CERT
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1             -keyout "$work/https.key" -out "$work/https.pem"             -config "$work/https.cnf" >/dev/null 2>&1
+          python3 -u -c '
+          import http.server, pathlib, ssl, sys
+          source, certificate, key, portfile = sys.argv[1:]
+          class Handler(http.server.SimpleHTTPRequestHandler):
+              def __init__(self, *args, **kwargs):
+                  super().__init__(*args, directory=source, **kwargs)
+          service = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+          ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          ctx.load_cert_chain(certificate, key)
+          service.socket = ctx.wrap_socket(service.socket, server_side=True)
+          pathlib.Path(portfile).write_text(str(service.server_port))
+          service.serve_forever()
+          ' "$work/source" "$work/https.pem" "$work/https.key" "$work/port" >"$work/https.log" 2>&1 &
+          server_pid=$!
+          attempts=0
+          until [ -s "$work/port" ]
+          do
+            kill -0 "$server_pid" || { cat "$work/https.log" >&2; exit 3; }
+            [ "$attempts" -lt 50 ] || { cat "$work/https.log" >&2; exit 3; }
+            attempts=$((attempts + 1))
+            sleep 0.1
+          done
+          url="https://127.0.0.1:$(cat "$work/port")/value.txt"
+
+          # Default public trust must reject the test-only certificate.
+          if ./m http-fetch -t 5 -o "$work/rejected" -- "$url" >"$work/out" 2>"$work/err"
+          then
+            echo 'http-fetch accepted an unauthorized self-signed TLS server' >&2
+            exit 1
+          fi
+          [ -s "$work/err" ]
+
+          # Exercise the genuine curl TLS backend with explicit test-local trust.
+          CURL_CA_BUNDLE="$work/https.pem" ./m http-fetch -t 5             -o "$work/fetched.txt" -- "$url"
+          cmp "$work/source/value.txt" "$work/fetched.txt"
+          actual_length=$(CURL_CA_BUNDLE="$work/https.pem" ./m http-fetch -l -t 5 -- "$url")
+          expected_length=$(wc -c < "$work/source/value.txt" | tr -d ' ')
+          [ "$actual_length" = "$expected_length" ]
+
+          if ./m http-fetch -H "X-Invalid:$(printf '\r')unsafe" -- "$url"             >"$work/out" 2>"$work/err"
+          then
+            echo 'http-fetch accepted CR in a request header' >&2
+            exit 1
+          else
+            [ "$?" -eq 2 ]
+          fi
+          echo 'PASS: real m A3 HTTPS verification, digest and raw extraction'
