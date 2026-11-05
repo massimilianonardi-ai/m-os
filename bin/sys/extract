@@ -163,10 +163,38 @@ extract_zip()
     while IFS= read -r extract_zip_member
     do
       case "$extract_zip_member" in
-        ""|/*|..|../*|*/../*|*/..|*\\*) exit 1 ;;
+        ""|/*|..|../*|*/../*|*/..|*\\*) exit 4 ;;
       esac
-    done ||
-    fatal 4 archive zip-member-unsafe operation extract format "$extract_format"
+
+      # An existing symlink in the output path can redirect an otherwise
+      # harmless member outside the requested extraction destination.
+      extract_zip_path=$extract_destination
+      extract_zip_remaining=$extract_zip_member
+      while [ -n "$extract_zip_remaining" ]
+      do
+        case "$extract_zip_remaining" in
+          */*)
+            extract_zip_component=${extract_zip_remaining%%/*}
+            extract_zip_remaining=${extract_zip_remaining#*/}
+            ;;
+          *)
+            extract_zip_component=$extract_zip_remaining
+            extract_zip_remaining=
+            ;;
+        esac
+
+        case "$extract_zip_component" in ""|.) continue ;; esac
+        extract_zip_path="$extract_zip_path/$extract_zip_component"
+        [ ! -L "$extract_zip_path" ] || exit 5
+      done
+    done
+  extract_zip_preflight_status=$?
+  case "$extract_zip_preflight_status" in
+    0) : ;;
+    4) fatal 4 archive zip-member-unsafe operation extract format "$extract_format" ;;
+    5) fatal 5 archive zip-destination-link operation extract format "$extract_format" ;;
+    *) fatal 6 archive zip-preflight-failed operation extract format "$extract_format" ;;
+  esac
 
   UNZIP= UNZIPOPT= command -- unzip -qq -d "$extract_destination" "$extract_artifact" ||
     fatal execution execution-failed operation extract reason extraction-failed format "$extract_format"
