@@ -24,13 +24,21 @@ DESCRIPTION
     range anchor is used as the concrete version.
 
 FUNCTIONS
-    pkg_depend_plan <catalog-root> <package-spec>...
-        Resolve dependencies with the caller's existing immutable catalog root,
-        returning a shell-quoted operand sequence suitable for POSIX
-        eval/set -- consumption. Omit explicit roots unless also dependencies.
-        This library interface neither initializes a second catalog snapshot
-        nor installs packages. Caller owns catalog lifecycle and validates
-        the supplied real selected catalog root.
+    pkg_depend_plan <catalog-root> <exact-concrete>...
+        Resolve dependencies of already-selected exact concrete roots using
+        the caller's existing immutable catalog snapshot. Roots are accepted
+        as exact package identities, without a second repository version
+        lookup or replacement by a mutable current/latest selection. The
+        planner validates the selected catalog stream/class and installed
+        concrete or matching catalog range before planning.
+
+        Return a shell-quoted operand sequence suitable for controlled POSIX
+        eval/set -- consumption. Omit explicit roots unless they are also
+        dependencies. This function does not initialize a catalog snapshot
+        or install packages; the caller owns the snapshot lifecycle.
+
+        The public pkg_depend command separately accepts original package
+        requests and uses its own invocation-private snapshot.
 
     pkg_depend <package-spec>...
         Public pkg depend command implementation. Validate all request syntax before
