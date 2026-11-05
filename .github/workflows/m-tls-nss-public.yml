@@ -1,0 +1,144 @@
+name: m A4 managed CA and NSS projection validation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - m
+      - bin/sys/tls-ca
+      - bin/sys/tls-nss-sync
+      - lib/sys/sh/osarch.lib.sh
+      - res/sys/manual/tls-ca
+      - res/sys/manual/tls-nss-sync
+      - .github/workflows/m-tls-nss-public.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  a4-managed-trust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise public CA authority and isolated Linux NSS reconciliation
+        shell: sh
+        run: |
+          set -eu
+          work=$(mktemp -d)
+          approved_sha=
+          cleanup() {
+            if [ -n "$approved_sha" ]; then
+              ./m tls-ca remove "$approved_sha" >/dev/null 2>&1 || :
+            fi
+            rm -rf -- "$work"
+          }
+          trap cleanup 0
+          trap 'exit 130' HUP INT TERM
+          mkdir -p "$work/browser-home"
+
+          # Trust authority is in the disposable checkout's system state,
+          # never the runner's OS/browser global trust store.
+          [ -z "$(./m tls-ca list)" ]
+          ./m tls-nss-sync "$work/browser-home" || {
+            if [ "$(uname -s)" = Darwin ]; then :; else exit 1; fi
+          }
+          if [ "$(uname -s)" = Linux ]; then
+            [ ! -e "$work/browser-home/.m" ]
+          fi
+
+          cat > "$work/ca.cnf" <<'EOF_CERT'
+          [req]
+          distinguished_name = subject
+          prompt = no
+          x509_extensions = ca_extensions
+          [subject]
+          CN = m-a4-disposable-test-ca
+          [ca_extensions]
+          basicConstraints = critical,CA:TRUE
+          keyUsage = critical,keyCertSign,cRLSign
+          EOF_CERT
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1             -keyout "$work/ca.key" -out "$work/ca.pem"             -config "$work/ca.cnf" >/dev/null 2>&1
+
+          cat "$work/ca.pem" "$work/ca.key" > "$work/key-bearing.pem"
+          if ./m tls-ca add "$work/key-bearing.pem" >"$work/out" 2>"$work/err"
+          then
+            echo 'tls-ca accepted private key material' >&2
+            exit 1
+          else
+            [ "$?" -eq 10 ]
+          fi
+          [ -z "$(./m tls-ca list)" ]
+
+          approved_sha=$(./m tls-ca add "$work/ca.pem")
+          [ "${#approved_sha}" -eq 64 ]
+          [ "$(./m tls-ca list)" = "$approved_sha" ]
+          [ "$(./m tls-ca add "$work/ca.pem")" = "$approved_sha" ]
+
+          case "$(uname -s)" in
+            Linux)
+              if command -v certutil >/dev/null 2>&1 &&
+                 command -v flock >/dev/null 2>&1
+              then
+                ./m tls-nss-sync "$work/browser-home"
+                db="$work/browser-home/.local/share/pki/nssdb"
+                [ -f "$db/cert9.db" ]
+                certutil -L -d "sql:$db" -n "m-tls-$approved_sha" >/dev/null
+                ./m tls-nss-sync "$work/browser-home"
+
+                # Invalid ownership metadata is rejected, not adopted.
+                printf 'invalid\n' > "$work/browser-home/.m/tls-nss-owned"
+                if ./m tls-nss-sync "$work/browser-home" >"$work/out" 2>"$work/err"
+                then
+                  echo 'tls-nss-sync accepted a tampered ownership record' >&2
+                  exit 1
+                else
+                  [ "$?" -eq 7 ]
+                fi
+                [ -s "$work/err" ]
+                certutil -L -d "sql:$db" -n "m-tls-$approved_sha" >/dev/null
+
+                printf '%s\n' "$approved_sha" > "$work/browser-home/.m/tls-nss-owned"
+                ./m tls-ca remove "$approved_sha"
+                approved_sha=
+                ./m tls-nss-sync "$work/browser-home"
+                if certutil -L -d "sql:$db" -n "m-tls-$(cat "$work/browser-home/.m/tls-nss-owned" 2>/dev/null || :)"                   >/dev/null 2>&1
+                then
+                  echo 'NSS still has the managed CA after revocation' >&2
+                  exit 1
+                fi
+                [ ! -e "$work/browser-home/.m/tls-nss-owned" ]
+                echo 'PASS: real m A4 CA lifecycle, NSS import, tamper rejection, revocation'
+              else
+                echo 'PENDING: Linux NSS positive projection requires certutil and flock'
+                ./m tls-ca remove "$approved_sha"
+                approved_sha=
+                [ -z "$(./m tls-ca list)" ]
+                echo 'PASS: real m A4 CA authority only'
+              fi
+              ;;
+            Darwin)
+              if ./m tls-nss-sync "$work/browser-home" >"$work/out" 2>"$work/err"
+              then
+                echo 'tls-nss-sync unexpectedly supported macOS' >&2
+                exit 1
+              else
+                [ "$?" -eq 4 ]
+              fi
+              ./m tls-ca remove "$approved_sha"
+              approved_sha=
+              [ -z "$(./m tls-ca list)" ]
+              echo 'PASS: real m A4 CA authority and macOS NSS non-applicability'
+              ;;
+            *)
+              echo 'Unrecognized CI host' >&2
+              exit 1
+              ;;
+          esac
