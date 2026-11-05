@@ -115,6 +115,10 @@ STATE
     selected concrete provider identity and a snapshot of the process start time.
     For new records, start and stop compare the recorded start time with the
     currently observed process before treating a live PID as the managed service.
+    The current process-start inspection supports Linux and macOS native ps
+    backends; its lstart field is a host capability, not a POSIX ps field.
+    If the host does not provide a supported start-time inspection, new starts
+    fail with status 3 instead of publishing an unverifiable live process.
     A mismatch is a lifecycle failure and must not signal the unrelated process.
     Legacy records without a process start-time snapshot retain their prior
     compatibility behavior; such records cannot establish process identity
