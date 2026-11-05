@@ -147,6 +147,18 @@ jobs:
             return 1
           }
           last_pid() { awk '$1 == "start" { pid=$2 } END { print pid }' "$marker"; }
+          wait_pid_gone() {
+            old_pid=$1
+            count=0
+            while [ "$count" -lt 15 ]; do
+              if ! ps -p "$old_pid" -o pid= 2>/dev/null | awk -v p="$old_pid" '$1 == p { found = 1 } END { exit found ? 0 : 1 }'; then
+                return 0
+              fi
+              sleep 1
+              count=$((count + 1))
+            done
+            return 1
+          }
           ./m srv host user start "$facility"
           wait_started 1 || { echo 'FAIL: user manager did not start local provider' >&2; exit 1; }
           pid1=$(last_pid)
@@ -155,7 +167,11 @@ jobs:
           wait_started 2 || { echo 'FAIL: user restart did not launch replacement' >&2; exit 1; }
           pid2=$(last_pid)
           [ "$pid1" != "$pid2" ] || { echo 'FAIL: restart reused original PID' >&2; exit 1; }
+          wait_pid_gone "$pid1" || { echo 'FAIL: restarted host service left previous provider running' >&2; exit 1; }
+          grep -F "term $pid1" "$marker" >/dev/null || { echo 'FAIL: restart did not deliver SIGTERM to prior provider' >&2; exit 1; }
           ./m srv host user stop "$facility"
+          wait_pid_gone "$pid2" || { echo 'FAIL: stop left hosted provider running' >&2; exit 1; }
+          grep -F "term $pid2" "$marker" >/dev/null || { echo 'FAIL: stop did not deliver SIGTERM to hosted provider' >&2; exit 1; }
           [ -f "$native_manifest" ] || { echo 'FAIL: stop removed registration' >&2; exit 1; }
           ./m srv host user uninstall "$facility"
           registration_owned=0
