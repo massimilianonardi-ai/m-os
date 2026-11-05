@@ -112,7 +112,13 @@ STATE
 
     Runtime records created by older revisions without provider metadata remain
     readable for stop and stale-state cleanup. Current starts always persist the
-    selected concrete provider identity.
+    selected concrete provider identity and a snapshot of the process start time.
+    For new records, start and stop compare the recorded start time with the
+    currently observed process before treating a live PID as the managed service.
+    A mismatch is a lifecycle failure and must not signal the unrelated process.
+    Legacy records without a process start-time snapshot retain their prior
+    compatibility behavior; such records cannot establish process identity
+    against PID reuse until the service is stopped and started by this revision.
 
 HOST USER SUPERVISION
     On Linux, srv resolves the calling account's UID and home from host account
