@@ -151,7 +151,7 @@ jobs:
             old_pid=$1
             count=0
             while [ "$count" -lt 15 ]; do
-              if ! ps -p "$old_pid" -o pid= 2>/dev/null | awk -v p="$old_pid" '$1 == p { found = 1 } END { exit found ? 0 : 1 }'; then
+              if ps -p "$old_pid" -o pid= 2>/dev/null | awk -v p="$old_pid" '$1 == p { found = 1 } END { exit found ? 1 : 0 }'; then
                 return 0
               fi
               sleep 1
@@ -168,10 +168,10 @@ jobs:
           pid2=$(last_pid)
           [ "$pid1" != "$pid2" ] || { echo 'FAIL: restart reused original PID' >&2; exit 1; }
           wait_pid_gone "$pid1" || { echo 'FAIL: restarted host service left previous provider running' >&2; exit 1; }
-          grep -F "term $pid1" "$marker" >/dev/null || { echo 'FAIL: restart did not deliver SIGTERM to prior provider' >&2; exit 1; }
+          grep -Fx "term $pid1" "$marker" >/dev/null || { echo 'FAIL: restart did not deliver SIGTERM to prior provider' >&2; exit 1; }
           ./m srv host user stop "$facility"
           wait_pid_gone "$pid2" || { echo 'FAIL: stop left hosted provider running' >&2; exit 1; }
-          grep -F "term $pid2" "$marker" >/dev/null || { echo 'FAIL: stop did not deliver SIGTERM to hosted provider' >&2; exit 1; }
+          grep -Fx "term $pid2" "$marker" >/dev/null || { echo 'FAIL: stop did not deliver SIGTERM to hosted provider' >&2; exit 1; }
           [ -f "$native_manifest" ] || { echo 'FAIL: stop removed registration' >&2; exit 1; }
           ./m srv host user uninstall "$facility"
           registration_owned=0
