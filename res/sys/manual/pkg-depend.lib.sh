@@ -26,8 +26,10 @@ DESCRIPTION
 FUNCTIONS
     pkg_depend_plan <catalog-root> <exact-concrete>|<target-osarch>...
         Each operand is one exact concrete identity and its already-selected
-        dependency-consumer target osarch separated by a vertical bar. Both
-        components are mandatory; the concrete's package identity is unchanged.
+        dependency-consumer target osarch separated by a vertical bar. Pass
+        each complete record as one quoted shell argument: the vertical bar
+        itself is a shell metacharacter. Both components are mandatory; the
+        concrete's package identity is unchanged.
         This matters for a platform-independent concrete from catalog "all":
         it has no !osarch identity suffix but still plans provider dependencies
         for the target osarch of the original request.
