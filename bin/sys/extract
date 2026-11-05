@@ -151,7 +151,25 @@ extract_stream()
 extract_zip()
 {
   extract_require unzip
-  UNZIP= UNZIPOPT= command -- unzip -qq -d "$extract_destination" "$extract_artifact" || fatal execution execution-failed operation extract reason extraction-failed format "$extract_format"
+
+  # Info-ZIP may silently normalize '..' members and return success. Reject
+  # unsafe member names before it can materialize anything in the destination.
+  extract_zip_members="$(UNZIP= UNZIPOPT= command -- unzip -Z -1 -- "$extract_artifact")" ||
+    fatal 3 archive zip-list-failed operation extract format "$extract_format"
+  [ -n "$extract_zip_members" ] ||
+    fatal 3 archive zip-list-failed operation extract format "$extract_format"
+
+  printf -- '%s\n' "$extract_zip_members" |
+    while IFS= read -r extract_zip_member
+    do
+      case "$extract_zip_member" in
+        ""|/*|..|../*|*/../*|*/..|*\\*) exit 1 ;;
+      esac
+    done ||
+    fatal 4 archive zip-member-unsafe operation extract format "$extract_format"
+
+  UNZIP= UNZIPOPT= command -- unzip -qq -d "$extract_destination" "$extract_artifact" ||
+    fatal execution execution-failed operation extract reason extraction-failed format "$extract_format"
 }
 
 extract_7z_command()
