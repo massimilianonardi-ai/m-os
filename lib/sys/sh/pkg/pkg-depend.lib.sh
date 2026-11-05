@@ -50,7 +50,7 @@ _pkg_depend_request_resolve()
       return
       ;;
     exact)
-      pkg_concrete_read pkg_depend_pkg pkg_depend_version pkg_depend_requested_osarch "$pkg_depend_request" || return 2
+      pkg_concrete_read pkg_depend_pkg pkg_depend_version pkg_depend_requested_osarch "$pkg_depend_request" || return 3
 
       if [ -n "$pkg_depend_requested_osarch" ]
       then
@@ -58,17 +58,17 @@ _pkg_depend_request_resolve()
       else
         pkg_depend_target=$pkg_depend_default_target
       fi
-      pkg_osarch_valid "$pkg_depend_target" || return 1
+      pkg_osarch_valid "$pkg_depend_target" || return 4
 
-      pkg_catalog_stream_resolve pkg_depend_stream pkg_depend_identity_osarch "$pkg_depend_catalog" "$pkg_depend_pkg" "$pkg_depend_target" || return 1
-      [ "$pkg_depend_requested_osarch" = "$pkg_depend_identity_osarch" ] || return 1
+      pkg_catalog_stream_resolve pkg_depend_stream pkg_depend_identity_osarch "$pkg_depend_catalog" "$pkg_depend_pkg" "$pkg_depend_target" || return 5
+      [ "$pkg_depend_requested_osarch" = "$pkg_depend_identity_osarch" ] || return 6
 
       pkg_depend_concrete=$pkg_depend_request
       if [ -e "$m_PKG_DIR/$pkg_depend_concrete" ] || [ -L "$m_PKG_DIR/$pkg_depend_concrete" ]
       then
-        [ -d "$m_PKG_DIR/$pkg_depend_concrete" ] && [ ! -L "$m_PKG_DIR/$pkg_depend_concrete" ] || return 1
+        [ -d "$m_PKG_DIR/$pkg_depend_concrete" ] && [ ! -L "$m_PKG_DIR/$pkg_depend_concrete" ] || return 7
       else
-        pkg_catalog_range_resolve pkg_depend_range "$pkg_depend_catalog" "$pkg_depend_concrete" || return 1
+        pkg_catalog_range_resolve pkg_depend_range "$pkg_depend_catalog" "$pkg_depend_concrete" || return 8
       fi
       return 0
       ;;
