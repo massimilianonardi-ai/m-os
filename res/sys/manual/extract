@@ -50,8 +50,13 @@ DESCRIPTION
     extraction: absolute paths, parent-directory traversal and backslash
     pathnames are not accepted. Existing symbolic links in the target path of
     any ZIP-family member are rejected before extraction to avoid redirecting
-    output outside the requested destination. This preflight does not cover
-    archive-created links, concurrent filesystem changes or other backends.
+    output outside the requested destination.
+
+    TAR and compressed TAR archives also receive member-path preflight checks
+    before their tar backend is invoked, including rejection of absolute or
+    parent-traversing members and existing symbolic links in target paths.
+    These checks do not cover archive-created links, concurrent filesystem
+    changes or other extraction backends.
 
     Backend utilities are selected according to the requested format and host
     capabilities. Missing required backends cause failure.
@@ -76,5 +81,9 @@ EXIT STATUS
     4   ZIP member pathname rejected as unsafe.
     5   ZIP member target uses an existing symbolic link.
     6   ZIP member preflight failed unexpectedly.
+    7   TAR member enumeration failed.
+    8   TAR member pathname rejected as unsafe.
+    9   TAR member target uses an existing symbolic link.
+    10  TAR member preflight failed unexpectedly.
     Other non-zero status indicates artifact, destination, backend or extraction
         failure.
