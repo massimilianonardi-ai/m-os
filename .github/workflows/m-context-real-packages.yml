@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/m-context-real-packages.yml'
       - '.github/scripts/context-real-packages-test.sh'
+  pull_request:
+    branches: [pkg-schema-v2]
   workflow_dispatch:
 
 permissions:
@@ -23,6 +25,7 @@ jobs:
       - name: Checkout autonomous m source at triggering revision
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Checkout real v2 package catalog
         uses: actions/checkout@v4
