@@ -91,7 +91,18 @@ jobs:
                 db="$work/browser-home/.local/share/pki/nssdb"
                 [ -f "$db/cert9.db" ]
                 certutil -L -d "sql:$db" -n "m-tls-$approved_sha" >/dev/null
+
+                # A genuinely separate NSS entry must survive all managed
+                # synchronization and revocation operations.
+                sed 's/m-a4-disposable-test-ca/m-a4-unrelated-ca/' \
+                  "$work/ca.cnf" > "$work/unrelated.cnf"
+                openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+                  -keyout "$work/unrelated.key" -out "$work/unrelated.pem" \
+                  -config "$work/unrelated.cnf" >/dev/null 2>&1
+                certutil -A -d "sql:$db" -n "a4-unrelated" -t 'C,,' \
+                  -i "$work/unrelated.pem"
                 ./m tls-nss-sync "$work/browser-home"
+                certutil -L -d "sql:$db" -n "a4-unrelated" >/dev/null
 
                 # Invalid ownership metadata is rejected, not adopted.
                 printf 'invalid\n' > "$work/browser-home/.m/tls-nss-owned"
@@ -116,7 +127,8 @@ jobs:
                   exit 1
                 fi
                 [ ! -e "$work/browser-home/.m/tls-nss-owned" ]
-                echo 'PASS: real m A4 CA lifecycle, NSS import, tamper rejection, revocation'
+                certutil -L -d "sql:$db" -n "a4-unrelated" >/dev/null
+                echo 'PASS: real m A4 CA lifecycle, NSS isolation, tamper rejection, revocation'
               else
                 echo 'PENDING: Linux NSS positive projection requires certutil and flock'
                 ./m tls-ca remove "$approved_sha"
