@@ -34,6 +34,10 @@ printf '%s\n' "$catalog" > "$conf/catalog"
 ./m osarch show
 ./m pkg install nodejs
 ./m node --version
+# The following also exercises the independently released technical tools:
+./m pkg install mk jsc
+./m pkg default mk
+./m pkg default jsc
 ```
 
 This selects the existing `pkg-catalog` working-tree branch via the
@@ -46,8 +50,11 @@ local configuration; it does **not** publish a new default for other users.
 
 The catalog's `v1/` definitions remain available for packages without
 a `v2/` definition. Packages with a v2 definition (`jq`, `nodejs`,
-`ollama` at this branch) use that complete v2 definition, never a mixture
-of v1 and v2 descriptors. Only the specific hosted v1/v2 acceptance
+`ollama`, `mk` and `jsc` at this branch) use that complete v2 definition,
+never a mixture of v1 and v2 descriptors. The new `mk`/`jsc` v2
+catalog entries reuse their already-released `m-mk`/`m-jsc` source
+archives and preserve their `nodejs =26` dependency; this new migration
+has not yet completed a live installation test. Only the specific hosted v1/v2 acceptance
 scenarios already recorded in `rumiai-dev` have passed; this example
 is **not** evidence of an execution on the operator's host.
 
