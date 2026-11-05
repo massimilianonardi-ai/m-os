@@ -55,6 +55,32 @@ fi
 [ "$PATH" = "$selected_path" ] && [ "${m_CONTEXT_PACKAGES-}" = "$selected_concretes" ] ||
   fail 'missing concrete changed current context'
 
+# A caller PATH edit must survive subsequent context selections. The most
+# recently selected real concrete still wins its context-owned search block.
+PATH="$m_ROOT:$PATH"
+context 'pkg=m-term@v0.1.0' || fail 'cannot update context after host PATH edit'
+case ":$PATH:" in
+  *":$m_ROOT:"*) : ;;
+  *) fail 'host PATH edit disappeared from selected context' ;;
+esac
+case "$PATH" in
+  "$m_PKG_DIR/m-term@v0.1.0/link/bin:"*) : ;;
+  *) fail 'later real package selection did not take PATH precedence' ;;
+esac
+selected_path=$PATH
+selected_concretes=${m_CONTEXT_PACKAGES-}
+
+# Removing an owned PATH block must fail without changing an active selection.
+# Restore the caller edit and active search block afterwards to test reset.
+PATH="$m_ROOT:$initial_path"
+if context 'pkg=m-rsudo@v0.1.0'; then
+  fail 'missing previously owned PATH block was accepted'
+fi
+[ "$PATH" = "$m_ROOT:$initial_path" ] &&
+[ "${m_CONTEXT_PACKAGES-}" = "$selected_concretes" ] ||
+  fail 'lost owned PATH block changed shell state'
+PATH=$selected_path
+
 # A child m shell must load and apply its own shell-local context function.
 "$m_ROOT/m" sh -ec '
   . "$m_LIB_DIR/sys/sh/core.lib.sh"
@@ -64,7 +90,17 @@ fi
 ' || fail 'nested m shell cannot reinitialize/use context'
 
 context || fail 'no-argument reset failed'
-[ "$PATH" = "$initial_path" ] || fail 'reset did not restore host PATH'
+[ "$PATH" = "$m_ROOT:$initial_path" ] || fail 'reset discarded a legitimate host PATH edit'
 [ "${CLASSPATH+x}" != x ] || fail 'reset did not preserve unset CLASSPATH'
 [ -z "${m_CONTEXT_PACKAGES-}" ] || fail 'reset retained package selection'
+
+# The current sh-only real packages supply no Java JAR view, but context
+# must still preserve the distinct set-empty host CLASSPATH state.
+CLASSPATH=
+export CLASSPATH
+context 'pkg=m-core@v0.1.0' || fail 'selection with set-empty CLASSPATH failed'
+context || fail 'reset with set-empty CLASSPATH failed'
+[ "${CLASSPATH+x}" = x ] && [ -z "$CLASSPATH" ] ||
+  fail 'reset did not preserve set-empty CLASSPATH'
+[ "$PATH" = "$m_ROOT:$initial_path" ] || fail 'second reset changed host PATH'
 printf '%s\n' 'PASS: genuine v2 package context, POSIX consumer, idempotence, failure atomicity, nested shell and reset'
