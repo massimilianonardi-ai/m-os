@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: massimilianonardi-ai/pkg-catalog
-          ref: pkg-schema-v2
+          ref: ed599dcd09a286eb3e0d21b4cc8f04adaada556c
           path: catalog
           persist-credentials: false
       - name: Prepare real m and exact catalog source
@@ -39,7 +39,7 @@ jobs:
         run: |
           set -eu
           [ "$(git -C catalog rev-parse HEAD)" = ed599dcd09a286eb3e0d21b4cc8f04adaada556c ] || {
-            echo 'Catalog feature branch advanced; reconcile revision before testing' >&2
+            echo 'Unexpected catalog checkout revision for C1 test' >&2
             exit 1
           }
           ./m osarch update
