@@ -137,6 +137,20 @@ jobs:
             cat /tmp/m-srv-stale-identity.log >&2
             exit 1
           }
+
+          # Even an explicit ownership override must never signal the
+          # unrelated live process behind a valid-looking stale PID.
+          status=0
+          ./m srv stop -f "$service" >/tmp/m-srv-stale-force-stop.log 2>&1 || status=$?
+          sleep 1
+          [ "$status" -eq 1 ] &&
+            grep -F 'live-runtime-state-invalid' /tmp/m-srv-stale-force-stop.log >/dev/null &&
+            kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
+            echo "FAIL: stale PID forced stop disturbed the unrelated process/state (status $status)" >&2
+            cat /tmp/m-srv-stale-force-stop.log >&2
+            exit 1
+          }
+
           kill "$live_pid"
           wait "$live_pid" 2>/dev/null || :
           live_pid=
