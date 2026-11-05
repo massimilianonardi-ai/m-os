@@ -117,6 +117,29 @@ jobs:
             exit 1
           }
 
+          # An apparently complete but stale record must not make an
+          # unrelated live process appear to be an existing srv instance.
+          sleep 90 &
+          live_pid=$!
+          mkdir -p -- "$runtime_dir"
+          printf '%s\n' "$live_pid" > "$runtime_dir/pid"
+          printf '%s\n' "$" > "$runtime_dir/owner"
+          printf '%s\n' /bin/sleep > "$runtime_dir/command"
+          printf '%s\n' stale-provider@1 > "$runtime_dir/provider"
+          printf '%s\n' not-the-current-process > "$runtime_dir/started"
+
+          status=0
+          ./m srv start "$service" >/tmp/m-srv-stale-identity.log 2>&1 || status=$?
+          [ "$status" -eq 1 ] && kill -0 "$live_pid" || {
+            echo "FAIL: stale process identity treated as active service (status $status)" >&2
+            cat /tmp/m-srv-stale-identity.log >&2
+            exit 1
+          }
+          kill "$live_pid"
+          wait "$live_pid" 2>/dev/null || :
+          live_pid=
+          ./m srv stop "$service"
+
           # S2's unauthorised system-operation boundary is testable without
           # registering a host service; positive host-manager paths are separate.
           [ "$(id -u)" -ne 0 ] || {
