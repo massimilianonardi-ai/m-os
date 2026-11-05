@@ -48,7 +48,11 @@ jobs:
           ./m pkg depend mk@v0.1.0 jsc@v0.1.0 > p2-deps.txt
           [ "$(wc -l < p2-deps.txt | tr -d ' ')" -eq 1 ]
           grep '^nodejs@v26' p2-deps.txt
-          ./m pkg install mk@v0.1.0 jsc@v0.1.0
+          # The same concrete is both an explicit root and the dependency
+          # of mk/jsc. Installing it dependency-first fulfills that root;
+          # it must not be misreported as preexisting.
+          node_requested=$(cat p2-deps.txt)
+          ./m pkg install "$node_requested" mk@v0.1.0 jsc@v0.1.0
           [ "$(./m pkg default mk)" = mk@v0.1.0 ]
           [ "$(./m pkg default jsc)" = jsc@v0.1.0 ]
           node_concrete=$(./m pkg default nodejs)
