@@ -1,0 +1,125 @@
+name: m A1 bootstrap and state public validation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - m
+      - bin/sys/osarch
+      - bin/sys/state-path
+      - lib/sys/sh/core.lib.sh
+      - lib/sys/sh/base.lib.sh
+      - lib/sys/sh/osarch.lib.sh
+      - .github/workflows/m-bootstrap-state-public.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  a1-bootstrap-state:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise real bootstrap, state resolver and osarch failure paths
+        shell: sh
+        run: |
+          set -eu
+          root=$(pwd -P)
+          work=$(mktemp -d)
+          cleanup() {
+            rm -rf -- "$work"
+            rm -f -- state/user/current
+            rmdir state/user/profile/a1 state/user/profile state/user 2>/dev/null || :
+          }
+          trap cleanup 0
+          trap 'exit 130' HUP INT TERM
+
+          # The clean technical bootstrap must neither need a managed
+          # package nor derive its own root from the caller's CWD.
+          ./m sh -c '
+            [ "$m_ROOT" = "$1" ] &&
+            [ "$m_BOOTSTRAP_BIN" = "$1/m" ] &&
+            [ -n "$m_STATE_DIR" ]
+          ' sh "$root"
+          ln -s "$root/m" "$work/m-entry"
+          (
+            cd -- "$work"
+            ./m-entry sh -c '[ "$m_ROOT" = "$1" ]' sh "$root"
+          )
+          PATH="$work:$PATH" m-entry sh -c '[ "$m_ROOT" = "$1" ]' sh "$root"
+
+          # Commands requiring the initialized runtime reject direct
+          # execution from an ordinary host process.
+          (
+            unset m_ROOT
+            if "$root/bin/sys/state-path" system sys shell conf >"$work/out" 2>"$work/err"
+            then
+              printf '%s\n' 'state-path accepted missing m_ROOT' >&2
+              exit 1
+            fi
+            [ ! -s "$work/out" ]
+            [ -s "$work/err" ]
+          )
+
+          # Pure state-path resolution, including package State Instances,
+          # must never materialize directories or resolve user binding targets.
+          system_path=$(./m state-path system sys shell conf)
+          [ "$system_path" = "$root/state/system/current/sys/shell/conf" ]
+          default_path=$(./m state-path user pkg a1probe home)
+          [ "$default_path" = "$root/state/user/default/pkg/a1probe/home" ]
+          [ ! -e "$default_path" ]
+          instance_path=$(./m state-path user pkg a1probe conf session)
+          [ "$instance_path" = "$root/state/user/default/pkg/a1probe@!session/conf" ]
+          [ ! -e "$instance_path" ]
+
+          mkdir -p state/user/profile/a1
+          ln -s profile/a1 state/user/current
+          bound_path=$(./m state-path user pkg a1probe home)
+          [ "$bound_path" = "$root/state/user/current/pkg/a1probe/home" ]
+          [ ! -e "$bound_path" ]
+          rm -- state/user/current
+
+          invalid_state_path() {
+            if ./m state-path "$@" >"$work/out" 2>"$work/err"
+            then
+              printf 'Unexpected state-path success: %s\n' "$*" >&2
+              exit 1
+            else
+              status=$?
+              [ "$status" -eq 2 ] || {
+                printf 'Unexpected state-path status %s: %s\n' "$status" "$*" >&2
+                exit 1
+              }
+            fi
+            [ ! -s "$work/out" ] && [ -s "$work/err" ]
+          }
+          invalid_state_path other sys shell conf
+          invalid_state_path user pkg ../escape conf
+          invalid_state_path user pkg a1probe invalid-area
+          invalid_state_path user sys shell home session
+          invalid_state_path user pkg a1probe conf ../escape
+
+          # Platform mutation is explicit. An unsupported selection must
+          # fail before changing the four active selector identities.
+          ./m osarch update
+          selected=$(./m osarch)
+          [ -n "$selected" ]
+          ./m osarch show >"$work/osarch-show"
+          grep "osarch: $selected" "$work/osarch-show" >/dev/null
+          if ./m osarch set invalid-a1 >"$work/out" 2>"$work/err"
+          then
+            printf '%s\n' 'osarch accepted an unsupported identity' >&2
+            exit 1
+          fi
+          [ "$(./m osarch)" = "$selected" ]
+          ./m osarch set "$selected"
+          [ "$(./m osarch)" = "$selected" ]
+          echo 'PASS: real m A1 bootstrap, symlink/PATH, state identity and osarch negative paths'
