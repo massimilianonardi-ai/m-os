@@ -119,6 +119,27 @@ pkg_catalog_init()
   _pkg_catalog_assign "$pkg_catalog_output_head" "$pkg_catalog_head"
 }
 
+# Prefer a complete v2 package definition when that exact package exists;
+# never mix streams belonging to different catalog schema generations.
+_pkg_catalog_package_definition_root()
+{
+  [ "$#" -eq 2 ] || return 2
+  pkg_catalog_definition_root=$1
+  pkg_catalog_definition_package=$2
+
+  case "$pkg_catalog_definition_root" in
+    */v1)
+      pkg_catalog_v2_root="${pkg_catalog_definition_root%/v1}/v2"
+      if [ -e "$pkg_catalog_v2_root/pkg/$pkg_catalog_definition_package" ] ||
+         [ -L "$pkg_catalog_v2_root/pkg/$pkg_catalog_definition_package" ]
+      then
+        valid_dir "$pkg_catalog_v2_root/pkg/$pkg_catalog_definition_package" || return 1
+        pkg_catalog_definition_root=$pkg_catalog_v2_root
+      fi
+      ;;
+  esac
+}
+
 pkg_catalog_stream_resolve()
 {
   [ "$#" -eq 5 ] || return 2
@@ -135,7 +156,8 @@ pkg_catalog_stream_resolve()
   pkg_osarch_valid "$pkg_catalog_target" || return 1
   [ -d "$pkg_catalog_root" ] && [ ! -L "$pkg_catalog_root" ] || return 1
 
-  pkg_catalog_package_dir="$pkg_catalog_root/pkg/$pkg_catalog_package"
+  _pkg_catalog_package_definition_root "$pkg_catalog_root" "$pkg_catalog_package" || return 1
+  pkg_catalog_package_dir="$pkg_catalog_definition_root/pkg/$pkg_catalog_package"
   pkg_catalog_target_stream="$pkg_catalog_package_dir/$pkg_catalog_target"
   pkg_catalog_generic_stream="$pkg_catalog_package_dir/all"
 
@@ -282,11 +304,12 @@ pkg_catalog_range_resolve()
   [ -d "$pkg_catalog_root" ] && [ ! -L "$pkg_catalog_root" ] || return 1
   pkg_concrete_read pkg_catalog_package pkg_catalog_version pkg_catalog_osarch "$pkg_catalog_concrete" || return 1
 
+  _pkg_catalog_package_definition_root "$pkg_catalog_root" "$pkg_catalog_package" || return 1
   if [ -n "$pkg_catalog_osarch" ]
   then
-    pkg_catalog_stream="$pkg_catalog_root/pkg/$pkg_catalog_package/$pkg_catalog_osarch"
+    pkg_catalog_stream="$pkg_catalog_definition_root/pkg/$pkg_catalog_package/$pkg_catalog_osarch"
   else
-    pkg_catalog_stream="$pkg_catalog_root/pkg/$pkg_catalog_package/all"
+    pkg_catalog_stream="$pkg_catalog_definition_root/pkg/$pkg_catalog_package/all"
   fi
 
   [ -d "$pkg_catalog_stream" ] && [ ! -L "$pkg_catalog_stream" ] || return 1

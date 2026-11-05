@@ -34,6 +34,29 @@ FUNCTIONS
         pkg depend remain visible before the top-level pkg-install
         dependency-unresolvable failure.
 
+    pkg_install_validate <package-spec>...
+        Check the syntax of a nonempty list of package requests without
+        consulting a catalog or changing package state. Return success only
+        when every operand is syntactically valid; otherwise return nonzero.
+        This does not check artifact availability or dependency satisfaction.
+
+    pkg_install_resolve_one <package-spec>
+        Resolve one request into an exact concrete identity and print it on
+        success. An already installed matching concrete, or an installed
+        current concrete for an unversioned request, may satisfy resolution
+        without upstream discovery. Otherwise consult the selected catalog
+        stream and its repository adapter. Return nonzero on failure.
+        Requires an initialized package-install context, including its
+        selected catalog snapshot and target m_OSARCH.
+
+    pkg_install_resolve <package-spec>...
+        Resolve a nonempty request list through pkg_install_resolve_one and
+        print the resulting exact concrete identities as one shell-quoted,
+        space-separated argument sequence. This is shell argument text, not
+        a newline-delimited list or an installed-package inventory.
+        Return nonzero if any request cannot be resolved or quoted.
+        Requires the same initialized package-install context.
+
     pkg_install_one <package-spec>
         Resolve one package specification against the current installation catalog
         snapshot and install its concrete identity unless that concrete is already

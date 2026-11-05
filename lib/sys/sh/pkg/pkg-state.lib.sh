@@ -177,17 +177,53 @@ $pkg_state_area/$pkg_state_path"
 
 _pkg_state_direct_links_validate()
 {
-  [ "$#" -eq 2 ] || return 2
+  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || return 2
   pkg_state_range=$1
   pkg_state_root=$2
+  pkg_state_schema=${3-v1}
   [ -d "$pkg_state_range/link" ] || return 0
   [ -n "$pkg_state_mappings" ] || return 0
 
-  for pkg_state_link_file in "$pkg_state_range/link"/*
+  if [ "$pkg_state_schema" = v2 ]
+  then
+    set -- "$pkg_state_range/link/bin/"* "$pkg_state_range/link/target/"* \
+      "$pkg_state_range/link/lib/sh/"* "$pkg_state_range/link/lib/java/"*
+  else
+    [ "$pkg_state_schema" = v1 ] || return 2
+    set -- "$pkg_state_range/link/"*
+  fi
+
+  for pkg_state_link_file
   do
     [ -e "$pkg_state_link_file" ] || [ -L "$pkg_state_link_file" ] || continue
-    _pkg_integration_link_target_read "$pkg_state_link_file" || return 1
-    pkg_state_link_target=$pkg_integration_link_target
+    if [ "$pkg_state_schema" = v2 ]
+    then
+      _pkg_integration_v2_descriptor_read "$pkg_state_link_file" || return 1
+      case "$pkg_state_link_file" in
+        "$pkg_state_range/link/lib/"*)
+          pkg_state_link_prefix=../../../root/
+          pkg_state_link_mode=readable
+          ;;
+        *)
+          pkg_state_link_prefix=../../root/
+          pkg_state_link_mode=executable
+          ;;
+      esac
+      case "$pkg_v2_target" in
+        ../../cmd/*)
+          case "$pkg_state_link_file" in
+            "$pkg_state_range/link/bin/"*) continue ;;
+            *) return 1 ;;
+          esac
+          ;;
+      esac
+      _pkg_v2_root_target_validate \
+        "$pkg_v2_target" "$pkg_state_root" "$pkg_state_link_prefix" "$pkg_state_link_mode" || return 1
+      pkg_state_link_target=$pkg_v2_relative
+    else
+      _pkg_integration_link_target_read "$pkg_state_link_file" || return 1
+      pkg_state_link_target=$pkg_integration_link_target
+    fi
     readpathce pkg_state_link_resolved "$pkg_state_root/$pkg_state_link_target" || return 1
 
     while IFS= read -r pkg_state_mapping
@@ -222,11 +258,16 @@ EOF_MAPPINGS
 
 _pkg_state_validate()
 {
-  [ "$#" -eq 3 ] || return 2
+  [ "$#" -ge 3 ] && [ "$#" -le 4 ] || return 2
   pkg_state_range=$1
   pkg_state_root=$2
   pkg_state_pkg=$3
-  pkg_state_var="$pkg_state_range/var"
+  pkg_state_schema=${4-v1}
+  case "$pkg_state_schema" in
+    v1) pkg_state_var="$pkg_state_range/var" ;;
+    v2) pkg_state_var="$pkg_state_range/state-map" ;;
+    *) return 2 ;;
+  esac
   pkg_state_paths=
   pkg_state_mappings=
 
@@ -264,7 +305,7 @@ _pkg_state_validate()
   done
 
   [ -z "$pkg_state_mappings" ] || [ "$pkg_state_pkg" != sys ] || return 1
-  _pkg_state_direct_links_validate "$pkg_state_range" "$pkg_state_root"
+  _pkg_state_direct_links_validate "$pkg_state_range" "$pkg_state_root" "$pkg_state_schema"
 }
 
 _pkg_state_created_dir_add()
@@ -522,16 +563,17 @@ EOF_DIRS
 
 _pkg_state_materialize()
 {
-  [ "$#" -eq 3 ] || return 2
+  [ "$#" -ge 3 ] && [ "$#" -le 4 ] || return 2
   pkg_state_range=$1
   pkg_state_concrete=$2
   pkg_state_pkg=$3
+  pkg_state_schema=${4-v1}
   pkg_state_created_dirs=
   pkg_state_created_objects=
   pkg_state_materialized=
   pkg_state_synthesized=
 
-  _pkg_state_validate "$pkg_state_range" "$pkg_state_concrete/root" "$pkg_state_pkg" || return 1
+  _pkg_state_validate "$pkg_state_range" "$pkg_state_concrete/root" "$pkg_state_pkg" "$pkg_state_schema" || return 1
   [ -n "$pkg_state_mappings" ] || return 0
 
   while IFS= read -r pkg_state_mapping

@@ -24,14 +24,22 @@ FUNCTIONS
         Arguments are evaluated left-to-right. A later selection for the same
         package name replaces the earlier one; selections for other package
         names are retained across calls. The most recently selected package
-        directory appears first in the context-owned PATH block. Where present,
-        the concrete's lib/sh directory joins PATH, and its lib/java directory
-        contributes one literal wildcard entry (<directory>/*) to CLASSPATH.
+        directory appears first in the context-owned PATH block. A v1 concrete
+        contributes cmd and lib/sh/lib/java views; a v2 concrete contributes
+        link/bin and link/lib/sh/link/lib/java views. Each selected concrete's
+        shell libraries join PATH and its Java JAR view contributes one literal
+        wildcard entry (<directory>/*) to CLASSPATH.
 
         An osarch-qualified concrete must match the current m_OSARCH.
         A generic concrete has no osarch suffix. The installed concrete and
-        any published cmd, lib/sh and lib/java view directories must be real
-        directories. Library-only installed concretes are supported.
+        any published schema-specific command or library view directories must
+        be real directories. Library-only installed concretes are supported;
+        missing command views do not require invented links.
+
+        A v2 command link is revalidated at selection time: direct targets must
+        remain executable within that concrete's root, and wrapper targets
+        must refer to its matching cmd entry. Invalid links prevent activation
+        without changing PATH, CLASSPATH or the previous selection.
 
         Commands from two selected package directories must not collide with
         each other or with the protected m sys/sys-osarch commands. Collision
@@ -61,11 +69,11 @@ RETURN STATUS
     2    unsupported/invalid context operand
     3    invalid package concrete identity
     4    explicit package osarch incompatible with active m_OSARCH
-    5    selected concrete or cmd directory unavailable
+    5    selected concrete unavailable
     6    previous PATH-owned command block no longer identifiable
     7    package store path cannot be represented as a PATH entry
     8    selected concrete disappeared before the PATH application
-    9    invalid or non-executable package command
+    9    invalid concrete schema or non-executable command view
     10   package command collides with a protected m core command
     11   selected packages expose a colliding command name
     12   invalid selected library view directory
@@ -74,6 +82,8 @@ RETURN STATUS
     15   previous context-owned CLASSPATH block unavailable or modified
     16   PATH is readonly in the invoking shell
     17   CLASSPATH is readonly in the invoking shell
+    18   v2 installed command link target no longer satisfies its validated
+         concrete-local direct or wrapper layout
 
 LIMITATIONS
     This is the first package-command and library selection increment of the broader
@@ -85,8 +95,14 @@ LIMITATIONS
     wildcard expansion order within one directory is unspecified.
     Provider environment/service coherence and child-context propagation
     are still handled by their existing owners, not by this function.
+    In particular v2 contract-keyed provider environment values are
+    materialized by pkg and applied by the existing pkg-provider machinery;
+    activating context does not apply a second facility environment.
     The function makes no claim to an atomic filesystem snapshot during
-    concurrent package uninstallation or publication.
+    concurrent package uninstallation or publication. Activation-time
+    validation cannot prevent subsequent external mutation of a direct
+    command symlink already placed on PATH; package-local materialization
+    remains the immutable installation owned by pkg.
 
 DEPENDENCIES
     m_ROOT, m_PKG_DIR, optionally m_OSARCH, m_BIN_SYS_DIR and
