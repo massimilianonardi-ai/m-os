@@ -1,0 +1,160 @@
+name: m native host-user lifecycle with isolated local service provider
+
+on:
+  push:
+    branches: [m-os-completion-s]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-user-local:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise real user manager through local test-owned package integration
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          [ "$(id -u)" -ne 0 ] || { echo 'INFRASTRUCTURE: non-root host-user runner required' >&2; exit 3; }
+          case "$(uname -s)" in
+            Linux)
+              command -v systemctl >/dev/null 2>&1 || { echo 'SKIP: no systemctl'; exit 0; }
+              systemctl --user show-environment >/dev/null 2>&1 || { echo 'SKIP: no active systemd user manager'; exit 0; }
+              ;;
+            Darwin)
+              command -v launchctl >/dev/null 2>&1 || { echo 'SKIP: no launchctl'; exit 0; }
+              launchctl print "gui/$(id -u)" >/dev/null 2>&1 || { echo 'SKIP: no launchd user GUI domain'; exit 0; }
+              ;;
+            *) echo 'SKIP: no supported host user supervisor'; exit 0 ;;
+          esac
+
+          package=m-srv-ci-provider
+          facility=m-srv-ci-service
+          service_cmd=m-srv-ci-service-run
+          root=$(pwd -P)
+          tmp=$(mktemp -d "${RUNNER_TEMP:-/tmp}/m-srv-ci.XXXXXXXX") || exit 3
+          range=$tmp/range
+          payload=$tmp/payload
+          driver=$tmp/integration-driver
+          integrated=0
+          registration_owned=0
+          marker=
+          case "$(uname -s)" in
+            Linux) native_manifest="$HOME/.config/systemd/user/m-srv-$facility.service" ;;
+            Darwin) native_manifest="$HOME/Library/LaunchAgents/m.srv.$facility.plist" ;;
+          esac
+          [ ! -e "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
+            echo 'INFRASTRUCTURE: test service registration already exists' >&2
+            exit 3
+          }
+          [ ! -e "$root/pkg/$package@1" ] && [ ! -L "$root/pkg/$package@1" ] || {
+            echo 'INFRASTRUCTURE: test-owned package identity already exists' >&2
+            exit 3
+          }
+          cleanup() {
+            if [ "$registration_owned" -eq 1 ]; then ./m srv host user uninstall "$facility" >/dev/null 2>&1 || :; fi
+            ./m pkg provider default -u -- "$facility" >/dev/null 2>&1 || :
+            ./m pkg default -u -- "$package" >/dev/null 2>&1 || :
+            if [ "$integrated" -eq 1 ]; then ./m "$driver" deintegrate "$package" 1 >/dev/null 2>&1 || :; fi
+            if [ -n "$marker" ] && [ -f "$marker" ]; then rm -f -- "$marker" || :; fi
+            rm -rf -- "$tmp"
+          }
+          trap cleanup 0
+          trap 'exit 130' HUP INT TERM
+
+          mkdir -p "$range/cmd" "$range/link" "$range/facility-service/$facility" "$payload/bin"
+          printf '%s\n' tar.gz > "$range/format"
+          printf '%s\n' "$facility 1" > "$range/facility"
+          printf '%s\n' bin/service-target > "$range/link/$service_cmd"
+          printf '%s\n' "$service_cmd" > "$range/facility-service/$facility/start"
+          cat > "$range/cmd/$service_cmd" <<'EOF_COMMAND'
+          #!/bin/sh
+          [ -n "${m_ROOT:-}" ] || exit 1
+          . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 2
+          loadsyslib "pkg/pkg-launch" || exit 3
+          launcher m-srv-ci-provider "$@"
+          EOF_COMMAND
+          cat > "$payload/bin/service-target" <<'EOF_TARGET'
+          #!/bin/sh
+          marker=$HOME/m-srv-ci-user-events
+          on_term() { printf 'term %s\n' "$$" >> "$marker"; exit 0; }
+          trap on_term TERM
+          trap 'exit 0' HUP INT
+          printf 'start %s\n' "$$" >> "$marker"
+          while :; do sleep 1; done
+          EOF_TARGET
+          chmod 700 "$payload/bin/service-target"
+          cat > "$driver" <<'EOF_DRIVER'
+          #!/bin/sh
+          [ -n "${m_ROOT:-}" ] || exit 1
+          . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 2
+          loadsyslib "pkg/pkg-integration" || exit 3
+          case "$1" in
+            integrate) shift; pkg_integrate "$@" ;;
+            deintegrate) shift; pkg_deintegrate "$@" ;;
+            *) exit 2 ;;
+          esac
+          EOF_DRIVER
+          chmod 700 "$driver"
+          ./m "$driver" integrate "$package" 1 "$range" "$payload" || {
+            echo 'INFRASTRUCTURE: local provider integration failed' >&2
+            exit 3
+          }
+          integrated=1
+          ./m pkg default "$package@1"
+          ./m pkg provider default "$facility" "$package"
+          package_home=$(./m state-path user pkg "$package" home)
+          marker=$package_home/m-srv-ci-user-events
+          [ ! -e "$marker" ] || { echo 'INFRASTRUCTURE: pre-existing test marker' >&2; exit 3; }
+
+          ./m srv host user install "$facility"
+          registration_owned=1
+          [ -f "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
+            echo 'FAIL: native host registration not persisted' >&2; exit 1;
+          }
+          [ ! -e "$marker" ] || { echo 'FAIL: install launched service unexpectedly' >&2; exit 1; }
+          wait_started() {
+            expected=$1
+            count=0
+            while [ "$count" -lt 20 ]; do
+              if [ -f "$marker" ] && awk -v n="$expected" '$1 == "start" { i++ } END { exit i >= n ? 0 : 1 }' "$marker"; then
+                return 0
+              fi
+              sleep 1
+              count=$((count + 1))
+            done
+            return 1
+          }
+          last_pid() { awk '$1 == "start" { pid=$2 } END { print pid }' "$marker"; }
+          ./m srv host user start "$facility"
+          wait_started 1 || { echo 'FAIL: user manager did not start local provider' >&2; exit 1; }
+          pid1=$(last_pid)
+          ps -p "$pid1" -o pid= >/dev/null || { echo 'FAIL: first hosted process not alive' >&2; exit 1; }
+          ./m srv host user restart "$facility"
+          wait_started 2 || { echo 'FAIL: user restart did not launch replacement' >&2; exit 1; }
+          pid2=$(last_pid)
+          [ "$pid1" != "$pid2" ] || { echo 'FAIL: restart reused original PID' >&2; exit 1; }
+          ./m srv host user stop "$facility"
+          [ -f "$native_manifest" ] || { echo 'FAIL: stop removed registration' >&2; exit 1; }
+          ./m srv host user uninstall "$facility"
+          registration_owned=0
+          [ ! -e "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
+            echo 'FAIL: uninstall retained native registration' >&2; exit 1;
+          }
+          if ./m srv host user start "$facility" >/dev/null 2>&1; then
+            echo 'FAIL: start without registration unexpectedly succeeded' >&2
+            exit 1
+          fi
+          echo 'PASS: real native host-user lifecycle with isolated local provider (not published release validation)'
