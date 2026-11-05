@@ -116,7 +116,11 @@ _pkg_install_resolve()
   for pkg_install_request
   do
     pkg_install_concrete="$(_pkg_install_resolve_one "$pkg_install_request")" || exit 2
-    pkg_install_quoted="$(quote "$pkg_install_concrete")" || exit 3
+    pkg_request_read pkg_install_name pkg_install_requested_version pkg_install_requested_osarch "$pkg_install_request" || exit 4
+    pkg_install_target=$m_OSARCH
+    [ -z "$pkg_install_requested_osarch" ] || pkg_install_target=$pkg_install_requested_osarch
+    pkg_osarch_valid "$pkg_install_target" || exit 5
+    pkg_install_quoted="$(quote "$pkg_install_concrete|$pkg_install_target")" || exit 3
 
     printf -- '%s' "${_pkg_install_resolve_separator}${pkg_install_quoted}"
     _pkg_install_resolve_separator=" "
@@ -195,8 +199,30 @@ pkg_install()
   _pkg_install_init ||
     fatal 1 pkg-install initialization-failed operation pkg-install
 
-  _pkg_install_list_requested="$(_pkg_install_resolve "$@")" ||
+  _pkg_install_list_contexts="$(_pkg_install_resolve "$@")" ||
     fatal 1 pkg-install root-resolution-failed operation pkg-install
+
+  # Keep the requested target with each exact root. In particular, an
+  # osarch-independent "all" concrete has no !osarch identity suffix, while
+  # its provider dependencies still use the originally requested target.
+  eval "set -- $_pkg_install_list_contexts"
+  _pkg_install_list_requested=
+  _pkg_install_separator=
+  for _pkg_install_context
+  do
+    _pkg_install_root=${_pkg_install_context%%|*}
+    _pkg_install_target=${_pkg_install_context#*|}
+    [ "$_pkg_install_root" != "$_pkg_install_context" ] ||
+      fatal 1 pkg-install invalid-root-context context "$_pkg_install_context"
+    pkg_concrete_read _pkg_install_name _pkg_install_version _pkg_install_osarch "$_pkg_install_root" ||
+      fatal 1 pkg-install invalid-root-concrete package "$_pkg_install_root"
+    pkg_osarch_valid "$_pkg_install_target" ||
+      fatal 1 pkg-install invalid-root-target target "$_pkg_install_target"
+    _pkg_install_quoted="$(quote "$_pkg_install_root")" ||
+      fatal 1 pkg-install root-quoting-failed package "$_pkg_install_root"
+    _pkg_install_list_requested="$_pkg_install_list_requested$_pkg_install_separator$_pkg_install_quoted"
+    _pkg_install_separator=" "
+  done
 
   # Distinguish roots that existed before this invocation from roots
   # materialized during its dependency-first installation.
@@ -212,6 +238,7 @@ pkg_install()
     fi
   done
 
+  eval "set -- $_pkg_install_list_contexts"
   _pkg_install_list_dependencies="$(pkg_depend_plan "$pkg_install_catalog_work" "$@")" ||
     fatal 1 pkg-install dependency-planning-failed operation pkg-install
 
