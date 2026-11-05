@@ -1,0 +1,53 @@
+name: m-os P2 real public package integration
+
+on:
+  push:
+    branches: [m-os-completion-p2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pkg-p2-public:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Public invalid-batch gate and real dependency-first install
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          [ ! -d pkg ]
+
+          # A malformed operand at either end of a mixed batch must not
+          # initialize the catalog or mutate the managed package store.
+          if ./m pkg install '@bad' mk@v0.1.0 >/dev/null 2>&1; then exit 11; fi
+          [ ! -d pkg ]
+          if ./m pkg install mk@v0.1.0 '@bad' >/dev/null 2>&1; then exit 12; fi
+          [ ! -d pkg ]
+
+          # Actual published packages through the real public m/pkg path.
+          ./m pkg depend mk@v0.1.0 jsc@v0.1.0 > p2-deps.txt
+          [ "$(wc -l < p2-deps.txt | tr -d ' ')" -eq 1 ]
+          grep '^nodejs@v26' p2-deps.txt
+          ./m pkg install mk@v0.1.0 jsc@v0.1.0
+          [ "$(./m pkg default mk)" = mk@v0.1.0 ]
+          [ "$(./m pkg default jsc)" = jsc@v0.1.0 ]
+          node_concrete=$(./m pkg default nodejs)
+          case "$node_concrete" in nodejs@v26*) : ;; *) exit 13 ;; esac
+          ./m node -p '6*7' > p2-actual.txt
+          [ "$(cat p2-actual.txt)" = 42 ]
+
+          # An explicitly requested installed root now fails; its current
+          # concrete and default remain unchanged.
+          if ./m pkg install mk@v0.1.0 >/dev/null 2>&1; then exit 14; fi
+          [ "$(./m pkg default mk)" = mk@v0.1.0 ]
+          echo 'PASS: P2 real public package planner/install/repeat-root contract'
