@@ -7,10 +7,12 @@ DESCRIPTION
     resolution and managed-store mutation. After validation, all requested
     roots are resolved to exact concrete identities using one catalog snapshot.
 
-    pkg_depend_plan receives those exact roots and that same initialized
-    snapshot. Dependency concretes are installed first, followed by the same
-    resolved roots, without independently refreshing the catalog or reselecting
-    an unversioned root.
+    pkg_depend_plan receives each exact root together with its original
+    target osarch and that same initialized snapshot. For a platform-independent
+    "all" root, the dependency-consumer target is preserved independently of
+    its suffix-free concrete identity. Dependency concretes are installed
+    first, followed by the same resolved roots, without independently refreshing
+    the catalog or reselecting an unversioned root.
 
     Installed concrete dependencies are reused. An already-installed
     explicitly requested root is reported rather than replaced, including the
