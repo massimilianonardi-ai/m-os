@@ -3,6 +3,8 @@ name: m real provider-backed srv lifecycle
 on:
   push:
     branches: [master, m-os-completion-s]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
