@@ -53,7 +53,9 @@ COMMANDS
         explicitly requested already-installed root instead emits the
         already-installed diagnostic including the selected default where
         available, and makes the invocation fail with status 1. Remaining
-        requested roots are still attempted.
+        requested roots are still attempted. A root newly installed as
+        another requested root's dependency in this same batch is fulfilled,
+        not misclassified as pre-existing.
 
     uninstall <package-spec>...
         Remove one or more installed package versions. When a version is omitted,
