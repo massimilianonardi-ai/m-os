@@ -269,7 +269,7 @@ srv_start()
     fatal 1 execution execution-failed operation srv reason exited-during-start service "$srv_name" log "$srv_log_file"
   }
   srv_pid_start_identity_get "$srv_pid" ||
-    fatal 1 execution execution-failed operation srv reason process-identity-unavailable service "$srv_name" pid "$srv_pid"
+    fatal 3 srv start-process-identity-unavailable service "$srv_name" pid "$srv_pid"
   srv_recorded_start_identity=$srv_process_start_identity
 
   srv_runtime_publish || fatal 1 execution execution-failed operation srv reason state-publish-failed service "$srv_name"
