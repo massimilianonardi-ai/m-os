@@ -169,12 +169,19 @@ _pkg_install_one_checked()
   [ "$_pkg_install_status" -eq 0 ] && return 0
 
   case "$_pkg_install_status" in
+    1) fatal 1 pkg-install invalid-internal-request package "$1" status "$_pkg_install_status" ;;
+    2) fatal 1 pkg-install concrete-resolution-failed package "$1" status "$_pkg_install_status" ;;
+    3) fatal 1 pkg-install invalid-installed-concrete package "$1" status "$_pkg_install_status" ;;
+    7) fatal 1 pkg-install range-resolution-failed package "$1" status "$_pkg_install_status" ;;
+    9) fatal 1 pkg-install repository-type-failed package "$1" status "$_pkg_install_status" ;;
+    10) fatal 1 pkg-install staging-create-failed package "$1" status "$_pkg_install_status" ;;
+    11) fatal 1 pkg-install staging-setup-failed package "$1" status "$_pkg_install_status" ;;
     12) fatal 1 pkg-install download-failed package "$1" status "$_pkg_install_status" ;;
     13) fatal 1 pkg-install extraction-failed package "$1" status "$_pkg_install_status" ;;
     17) fatal 1 pkg-install provider-validation-failed package "$1" status "$_pkg_install_status" ;;
     18) fatal 1 pkg-install integration-failed package "$1" status "$_pkg_install_status" ;;
     19) fatal 1 pkg-install default-selection-failed package "$1" status "$_pkg_install_status" ;;
-    *) fatal 1 pkg-install concrete-install-failed package "$1" status "$_pkg_install_status" ;;
+    *) fatal 1 pkg-install unexpected-install-status package "$1" status "$_pkg_install_status" ;;
   esac
 )
 
