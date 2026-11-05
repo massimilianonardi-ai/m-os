@@ -187,6 +187,8 @@ EXIT STATUS
     1     A lifecycle operation failed, including unavailable or invalid provider
           selection/service realization.
     2     The invocation, host scope/action, or service name is invalid.
+    3     A newly launched service process identity could not be observed, so
+          the service is not published as a managed running instance.
 
 EXAMPLES
     Start a service named web:
