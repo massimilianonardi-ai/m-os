@@ -52,12 +52,10 @@ _pkg_depend_request_resolve()
     exact)
       pkg_concrete_read pkg_depend_pkg pkg_depend_version pkg_depend_requested_osarch "$pkg_depend_request" || return 3
 
-      if [ -n "$pkg_depend_requested_osarch" ]
-      then
-        pkg_depend_target=$pkg_depend_requested_osarch
-      else
-        pkg_depend_target=$pkg_depend_default_target
-      fi
+      # The concrete identity may be osarch-independent (catalog "all").
+      # Its dependency-consumer target then comes from the caller's exact
+      # root context, not from the local host or an identity suffix.
+      pkg_depend_target=$pkg_depend_default_target
       pkg_osarch_valid "$pkg_depend_target" || return 4
 
       pkg_catalog_stream_resolve pkg_depend_stream pkg_depend_identity_osarch "$pkg_depend_catalog" "$pkg_depend_pkg" "$pkg_depend_target" || return 5
@@ -771,7 +769,23 @@ _pkg_depend_plan()
 
   for pkg_depend_request
   do
-    _pkg_depend_request_resolve "$pkg_depend_catalog" "$pkg_depend_request" "$m_OSARCH" "$pkg_depend_root_mode"
+    pkg_depend_root_request=$pkg_depend_request
+    pkg_depend_root_target=$m_OSARCH
+    if [ "$pkg_depend_root_mode" = exact ]
+    then
+      case "$pkg_depend_request" in
+        *'|'*) : ;;
+        *) return 2 ;;
+      esac
+      pkg_depend_root_request=${pkg_depend_request%%|*}
+      pkg_depend_root_target=${pkg_depend_request#*|}
+      case "$pkg_depend_root_target" in
+        *'|'*) return 2 ;;
+      esac
+      pkg_osarch_valid "$pkg_depend_root_target" || return 2
+    fi
+
+    _pkg_depend_request_resolve "$pkg_depend_catalog" "$pkg_depend_root_request" "$pkg_depend_root_target" "$pkg_depend_root_mode"
     pkg_depend_request_status=$?
     if [ "$pkg_depend_request_status" -ne 0 ]
     then
