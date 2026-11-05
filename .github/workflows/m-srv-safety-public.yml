@@ -3,6 +3,8 @@ name: m portable srv safety without provider installation
 on:
   push:
     branches: [m-os-completion-s]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -90,6 +92,7 @@ jobs:
 
           status=0
           ./m srv stop "$service" >/tmp/m-srv-live-invalid-stop.log 2>&1 || status=$?
+          sleep 1
           [ "$status" -eq 1 ] && kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
             echo "FAIL: live invalid runtime stop returned $status or disturbed process/state" >&2
             cat /tmp/m-srv-live-invalid-stop.log >&2
@@ -98,6 +101,7 @@ jobs:
 
           status=0
           ./m srv start "$service" >/tmp/m-srv-live-invalid-start.log 2>&1 || status=$?
+          sleep 1
           [ "$status" -eq 1 ] && kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
             echo "FAIL: live invalid runtime start returned $status or disturbed process/state" >&2
             cat /tmp/m-srv-live-invalid-start.log >&2
@@ -121,8 +125,8 @@ jobs:
           }
           status=0
           ./m srv host system install "$service" nobody >/tmp/m-srv-nonadmin.log 2>&1 || status=$?
-          [ "$status" -eq 1 ] || {
-            echo "FAIL: unprivileged host system install returned $status, expected 1" >&2
+          [ "$status" -eq 1 ] && grep -F 'host-administration-required' /tmp/m-srv-nonadmin.log >/dev/null || {
+            echo "FAIL: unprivileged host system install did not reject at the admin gate (status $status)" >&2
             cat /tmp/m-srv-nonadmin.log >&2
             exit 1
           }
