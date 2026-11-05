@@ -44,40 +44,6 @@ jobs:
           [ "$status" -eq 2 ] || exit 12
           [ ! -d pkg ]
 
-          # A generic "all" consumer keeps its explicitly requested target
-          # for provider dependency planning even though its concrete root
-          # identity has no !osarch suffix. This bounded library-level probe
-          # uses the real catalog, resolver and planner; the public install
-          # below remains the independent composed-path acceptance.
-          case "$(./m osarch)" in
-            linux-*) other=macos-arm64 ;;
-            macos-*) other=linux-x86_64 ;;
-            *) exit 17 ;;
-          esac
-          expected=$(./m pkg depend "mk@v0.1.0!$other")
-          case "$expected" in
-            nodejs@v26*"!$other") : ;;
-            *) exit 18 ;;
-          esac
-          actual=$(./m sh -c '
-            . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
-            loadsyslib "pkg/pkg-install" || exit 2
-            target=$1
-            _pkg_install_init || exit 3
-            contexts=$(_pkg_install_resolve "mk@v0.1.0!$target") || exit 4
-            eval "set -- $contexts"
-            [ "$#" -eq 1 ] || exit 5
-            [ "$1" = "mk@v0.1.0|$target" ] || exit 6
-            printf 'DEBUG P2 exact contexts: %s; catalog: %s\n' "$1" "$pkg_install_catalog_work" >&2
-            set -x
-            concrete_plan=$(pkg_depend_plan "$pkg_install_catalog_work" "$@") || exit 7
-            set +x
-            eval "set -- $concrete_plan"
-            [ "$#" -eq 1 ] || exit 8
-            printf '%s\n' "$1"
-          ' _ "$other")
-          [ "$actual" = "$expected" ] || exit 19
-
           # Actual published packages through the real public m/pkg path.
           ./m pkg depend mk@v0.1.0 jsc@v0.1.0 > p2-deps.txt
           [ "$(wc -l < p2-deps.txt | tr -d ' ')" -eq 1 ]
@@ -93,6 +59,35 @@ jobs:
           case "$node_concrete" in nodejs@v26*) : ;; *) exit 13 ;; esac
           ./m node -p '6*7' > p2-actual.txt
           [ "$(cat p2-actual.txt)" = 42 ]
+
+          # After a genuine public installation, a generic "all" consumer keeps its explicitly requested target
+          # for provider dependency planning even though its concrete root
+          # identity has no !osarch suffix. This bounded library-level probe
+          # uses the real installed concrete, catalog and planner. No foreign
+          # platform artifact is installed on the hosted test machine.
+          case "$(./m osarch)" in
+            linux-*) other=macos-arm64 ;;
+            macos-*) other=linux-x86_64 ;;
+            *) exit 17 ;;
+          esac
+          actual=$(./m sh -c '
+            . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
+            loadsyslib "pkg/pkg-install" || exit 2
+            target=$1
+            _pkg_install_init || exit 3
+            contexts=$(_pkg_install_resolve "mk@v0.1.0!$target") || exit 4
+            eval "set -- $contexts"
+            [ "$#" -eq 1 ] || exit 5
+            [ "$1" = "mk@v0.1.0|$target" ] || exit 6
+            concrete_plan=$(pkg_depend_plan "$pkg_install_catalog_work" "$@") || exit 7
+            eval "set -- $concrete_plan"
+            [ "$#" -eq 1 ] || exit 8
+            printf '%s\n' "$1"
+          ' _ "$other")
+          case "$actual" in
+            nodejs@v26*"!$other") : ;;
+            *) printf 'Unexpected target-aware provider: %s\n' "$actual" >&2; exit 19 ;;
+          esac
 
           # An explicitly requested installed root now fails; its current
           # concrete and default remain unchanged.
