@@ -38,7 +38,7 @@ jobs:
         shell: sh
         run: |
           set -eu
-          [ "$(git -C catalog rev-parse HEAD)" = ae3e2011462be46c0326179f2117b81b85e5df5e ] || {
+          [ "$(git -C catalog rev-parse HEAD)" = ed599dcd09a286eb3e0d21b4cc8f04adaada556c ] || {
             echo 'Catalog feature branch advanced; reconcile revision before testing' >&2
             exit 1
           }
