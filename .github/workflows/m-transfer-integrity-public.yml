@@ -103,7 +103,10 @@ jobs:
               exit 1
             else
               status=$?
-              if [ "$format" = zip ]; then [ "$status" -eq 4 ]; fi
+              case "$format" in
+                zip) [ "$status" -eq 4 ] ;;
+                tar) [ "$status" -eq 8 ] ;;
+              esac
             fi
             [ ! -e "$work/a3-$format-escape" ] || {
               printf 'extract wrote outside %s destination\n' "$format" >&2
@@ -157,6 +160,36 @@ jobs:
             [ "$?" -eq 5 ]
           fi
           [ ! -e "$work/outside-target/would-escape.txt" ]
+
+          # TAR (including a compressed TAR) also must not follow an
+          # existing destination symlink when the member name looks safe.
+          mkdir -p "$work/tar-outside"
+          ln -s "$work/tar-outside" "$work/tar-out/redirect"
+          python3 -c '
+          import io, sys, tarfile
+          payload = b"do-not-write-outside\n"
+          with tarfile.open(sys.argv[1], "w") as archive:
+              item = tarfile.TarInfo("redirect/would-escape.txt")
+              item.size = len(payload)
+              archive.addfile(item, io.BytesIO(payload))
+          ' "$work/preexisting-tar-link.tar"
+          gzip -c "$work/preexisting-tar-link.tar" > "$work/preexisting-tar-link.tar.gz"
+          for format in tar tar.gz
+          do
+            case "$format" in
+              tar) artifact="$work/preexisting-tar-link.tar" ;;
+              tar.gz) artifact="$work/preexisting-tar-link.tar.gz" ;;
+            esac
+            if ./m extract "$format" "$artifact" "$work/tar-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract followed a preexisting %s destination symlink\n' "$format" >&2
+              exit 1
+            else
+              [ "$?" -eq 9 ]
+            fi
+            [ ! -e "$work/tar-outside/would-escape.txt" ]
+          done
 
           # A symlink destination is never a valid extraction target.
           ln -s "$work/source" "$work/symlink-destination"
