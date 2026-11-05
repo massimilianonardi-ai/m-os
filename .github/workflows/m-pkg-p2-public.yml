@@ -3,6 +3,8 @@ name: m-os P2 real public package integration
 on:
   push:
     branches: [m-os-completion-p2]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
