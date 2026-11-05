@@ -24,13 +24,19 @@ DESCRIPTION
     range anchor is used as the concrete version.
 
 FUNCTIONS
-    pkg_depend_plan <catalog-root> <exact-concrete>...
-        Resolve dependencies of already-selected exact concrete roots using
-        the caller's existing immutable catalog snapshot. Roots are accepted
-        as exact package identities, without a second repository version
-        lookup or replacement by a mutable current/latest selection. The
-        planner validates the selected catalog stream/class and installed
-        concrete or matching catalog range before planning.
+    pkg_depend_plan <catalog-root> <exact-concrete>|<target-osarch>...
+        Each operand is one exact concrete identity and its already-selected
+        dependency-consumer target osarch separated by a vertical bar. Both
+        components are mandatory; the concrete's package identity is unchanged.
+        This matters for a platform-independent concrete from catalog "all":
+        it has no !osarch identity suffix but still plans provider dependencies
+        for the target osarch of the original request.
+
+        Resolve dependencies of these exact root/target contexts against
+        the caller's immutable catalog snapshot, without another repository
+        version lookup or mutable current/latest selection. The planner
+        validates the selected stream/class and installed concrete or matching
+        catalog range before planning.
 
         Return a shell-quoted operand sequence suitable for controlled POSIX
         eval/set -- consumption. Omit explicit roots unless they are also
