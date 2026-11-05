@@ -37,10 +37,18 @@ srv_pid_start_identity_get()
   [ "$#" -eq 1 ] || return 2
   srv_pid_valid "$1" || return 1
 
-  srv_process_start_identity="$(
-    LC_ALL=C TZ=UTC0 command -p -- ps -p "$1" -o lstart= 2>/dev/null |
-      command -p -- awk 'NR == 1 { $1 = $1; print }'
-  )" || return 1
+  # POSIX ps has no process creation-time field. Keep this extension at
+  # the host capability boundary; never infer a match on an unknown backend.
+  srv_process_start_host="$(command -p -- uname -s 2>/dev/null)" || return 1
+  case "$srv_process_start_host" in
+    Linux | Darwin)
+      srv_process_start_identity="$(
+        LC_ALL=C TZ=UTC0 command -p -- ps -p "$1" -o lstart= 2>/dev/null |
+          command -p -- awk 'NR == 1 { $1 = $1; print }'
+      )" || return 1
+      ;;
+    *) return 1 ;;
+  esac
   [ -n "$srv_process_start_identity" ]
 }
 
