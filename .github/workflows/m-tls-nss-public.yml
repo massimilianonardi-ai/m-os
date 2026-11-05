@@ -106,10 +106,11 @@ jobs:
                 certutil -L -d "sql:$db" -n "m-tls-$approved_sha" >/dev/null
 
                 printf '%s\n' "$approved_sha" > "$work/browser-home/.m/tls-nss-owned"
-                ./m tls-ca remove "$approved_sha"
+                revoked_sha=$approved_sha
+                ./m tls-ca remove "$revoked_sha"
                 approved_sha=
                 ./m tls-nss-sync "$work/browser-home"
-                if certutil -L -d "sql:$db" -n "m-tls-$(cat "$work/browser-home/.m/tls-nss-owned" 2>/dev/null || :)"                   >/dev/null 2>&1
+                if certutil -L -d "sql:$db" -n "m-tls-$revoked_sha" >/dev/null 2>&1
                 then
                   echo 'NSS still has the managed CA after revocation' >&2
                   exit 1
