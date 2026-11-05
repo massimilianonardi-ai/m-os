@@ -66,6 +66,17 @@ jobs:
           grep 'already-installed' p2-existing.out
           [ "$(./m pkg default mk)" = mk@v0.1.0 ]
 
+          # One already-installed root must not prevent a later fresh root
+          # from installing successfully; the batch itself still fails.
+          ./m pkg uninstall jsc@v0.1.0
+          set +e
+          ./m pkg install mk@v0.1.0 jsc@v0.1.0 > p2-mixed-roots.out 2>&1
+          status=$?
+          set -e
+          [ "$status" -eq 1 ] || exit 16
+          grep 'already-installed' p2-mixed-roots.out
+          [ "$(./m pkg default jsc)" = jsc@v0.1.0 ]
+
           # After genuine uninstall, a symlink posing as an installed
           # concrete must be rejected before the artifact/install loop.
           ./m pkg uninstall jsc@v0.1.0 mk@v0.1.0
