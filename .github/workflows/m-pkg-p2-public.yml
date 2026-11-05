@@ -75,20 +75,14 @@ jobs:
             loadsyslib "pkg/pkg-install" || exit 2
             target=$1
             _pkg_install_init || exit 3
-            printf 'P2-TRACE pre-resolve target=%s platform=%s catalog=%s package=%s\n' "$target" "$m_OSARCH" "$pkg_install_catalog_work" "$m_PKG_DIR" >&2
-            set -x
             contexts=$(_pkg_install_resolve "mk@v0.1.0!$target") || exit 4
-            set +x
             eval "set -- $contexts"
             [ "$#" -eq 1 ] || exit 5
             [ "$1" = "mk@v0.1.0|$target" ] || exit 6
-            printf 'P2-TRACE target=%s root-context=%s catalog=%s\n' "$target" "$1" "$pkg_install_catalog_work" >&2
-            set -x
             concrete_plan=$(pkg_depend_plan "$pkg_install_catalog_work" "$@") || exit 7
-            set +x
             eval "set -- $concrete_plan"
             [ "$#" -eq 1 ] || exit 8
-            printf '%s\n' "$1"
+            printf "%s\\n" "$1"
           ' _ "$other")
           case "$actual" in
             nodejs@v26*"!$other") : ;;
