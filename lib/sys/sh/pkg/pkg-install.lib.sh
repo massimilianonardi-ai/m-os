@@ -80,7 +80,7 @@ _pkg_install_resolve_one()
 
     if [ -e "$m_PKG_DIR/$pkg_install_concrete" ] || [ -L "$m_PKG_DIR/$pkg_install_concrete" ]
     then
-      [ -d "$m_PKG_DIR/$pkg_install_concrete" ] && [ ! -L "$m_PKG_DIR/$pkg_install_concrete" ] || exit 5
+      [ -d "$m_PKG_DIR/$pkg_install_concrete" ] && [ ! -L "$m_PKG_DIR/$pkg_install_concrete" ] || exit 6
       printf -- '%s\n' "$pkg_install_concrete"
       exit 0
     fi
