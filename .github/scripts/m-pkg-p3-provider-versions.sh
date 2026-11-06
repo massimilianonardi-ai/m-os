@@ -105,7 +105,7 @@ then
   echo 'FAIL: unversioned selector ignored changed package default compatibility' >&2
   exit 48
 fi
-[ "$(command -p readlink bin/ext/web-control)" = '../../pkg/electron-web-control@v0.1.4/facility-cmd/web-control/web-control' ] || exit 49
+[ "$(./m pkg requirement resolve web-control '=2')" = electron-web-control@v0.1.4 ] || exit 49
 ./m pkg provider default web-control electron-web-control@v0.1.4 || exit 50
 
 ./m pkg uninstall electron-web-control@v0.1.0 || exit 31

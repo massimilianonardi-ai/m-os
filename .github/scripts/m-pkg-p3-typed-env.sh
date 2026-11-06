@@ -13,7 +13,13 @@ work=
 
 cleanup()
 {
-  if [ -n "$controller_pid" ]; then kill -TERM "$controller_pid" >/dev/null 2>&1 || :; fi
+  if [ -n "$controller_pid" ]
+  then
+    kill -TERM "$controller_pid" >/dev/null 2>&1 || :
+  elif [ -n "$consumer_pid" ]
+  then
+    kill -TERM -- "-$consumer_pid" >/dev/null 2>&1 || kill -TERM "$consumer_pid" >/dev/null 2>&1 || :
+  fi
   if [ -n "$consumer_pid" ]; then wait "$consumer_pid" 2>/dev/null || :; consumer_pid=; fi
   ./m pkg uninstall "$consumer" "$concrete" >/dev/null 2>&1 || :
   if [ -n "$work" ]; then rm -rf "$work"; fi
