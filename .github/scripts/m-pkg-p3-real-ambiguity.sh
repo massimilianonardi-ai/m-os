@@ -57,6 +57,42 @@ do
     exit 1
   fi
 done
+
+# Public reads report both an absent selector and an invalid selector as
+# failure. Inspect the exact state paths too, so cleanup never treats corrupt
+# files or symlinks as empty configuration.
+system_conf=$(./m state-path system sys pkg conf)
+consumer_conf=$(./m state-path system pkg "$consumer" conf)
+[ -n "$system_conf" ] && [ -n "$consumer_conf" ]
+for directory in \
+  "$system_conf" \
+  "$system_conf/provider" \
+  "$system_conf/provider/default" \
+  "$consumer_conf" \
+  "$consumer_conf/binding"
+do
+  if [ -e "$directory" ] || [ -L "$directory" ]
+  then
+    [ -d "$directory" ] && [ ! -L "$directory" ] || {
+      echo "FAIL: unexpected provider configuration directory $directory" >&2
+      exit 1
+    }
+  fi
+done
+for selector in \
+  "$system_conf/provider/default/web-control" \
+  "$system_conf/provider/default/electron" \
+  "$system_conf/provider/default/chromium" \
+  "$system_conf/provider/default/nodejs" \
+  "$consumer_conf/binding/web-control" \
+  "$consumer_conf/binding/nodejs"
+do
+  if [ -e "$selector" ] || [ -L "$selector" ]
+  then
+    echo "FAIL: pre-existing provider configuration entry $selector" >&2
+    exit 1
+  fi
+done
 [ "$(./m pkg requirement list "$consumer")" = 'nodejs =26
 web-control >2' ]
 
