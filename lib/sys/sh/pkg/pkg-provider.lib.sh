@@ -1423,6 +1423,14 @@ _pkg_provider_global_plan_selector()
   pkg_provider_global_plan_version=$pkg_provider_selector_version
   pkg_provider_global_plan_osarch=$pkg_provider_selector_osarch
 
+  # An exact provider must publish its own facility commands even when
+  # its package class has no mutable default selection.
+  pkg_provider_global_plan_require_default=1
+  if [ -n "$pkg_provider_global_plan_version" ]
+  then
+    pkg_provider_global_plan_require_default=0
+  fi
+
   if [ -n "$pkg_provider_global_plan_osarch" ]
   then
     if [ -n "$pkg_provider_global_plan_version" ]
@@ -1434,11 +1442,11 @@ _pkg_provider_global_plan_selector()
     return $?
   fi
 
-  _pkg_provider_global_plan_class "$pkg_provider_global_facility" "$pkg_provider_global_plan_pkg" "$pkg_provider_global_plan_version" "" 1 || return 1
+  _pkg_provider_global_plan_class "$pkg_provider_global_facility" "$pkg_provider_global_plan_pkg" "$pkg_provider_global_plan_version" "" "$pkg_provider_global_plan_require_default" || return 1
   for pkg_provider_global_each_osarch in \
     linux-arm64 linux-x86_64 macos-arm64 macos-x86_64 windows-arm64 windows-x86_64
   do
-    _pkg_provider_global_plan_class "$pkg_provider_global_facility" "$pkg_provider_global_plan_pkg" "$pkg_provider_global_plan_version" "$pkg_provider_global_each_osarch" 1 || return 1
+    _pkg_provider_global_plan_class "$pkg_provider_global_facility" "$pkg_provider_global_plan_pkg" "$pkg_provider_global_plan_version" "$pkg_provider_global_each_osarch" "$pkg_provider_global_plan_require_default" || return 1
   done
 }
 
