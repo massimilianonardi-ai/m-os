@@ -123,3 +123,7 @@ jobs:
           [ "$status" -eq 1 ] || exit 15
           grep 'root-resolution-failed' p2-bad-store.out
           echo 'PASS: P2 real public package planner/install, repeat-root and corrupt-store rejection'
+
+      - name: P2 public ambiguity, historical installed root and planning cleanup
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p2-negatives.sh
