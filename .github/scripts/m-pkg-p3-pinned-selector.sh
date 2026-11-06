@@ -18,7 +18,7 @@ cleanup()
 trap cleanup 0
 trap 'exit 3' HUP INT TERM
 
-command -p -- mkdir -p -- "$store" || exit 4
+command -p -- mkdir -p -- "$store/root" || exit 4
 printf 'web-control 1\n' > "$store/facility"
 
 ./m pkg provider default web-control "$concrete" || exit 5
