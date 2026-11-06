@@ -262,4 +262,4 @@ jobs:
             echo 'FAIL: start without registration unexpectedly succeeded' >&2
             exit 1
           fi
-          echo 'PASS: real native host-user lifecycle with isolated local provider (not published release validation)'
+          echo 'PASS: native host-user lifecycle with two real local provider versions, reselection and termination (not published release validation)'
