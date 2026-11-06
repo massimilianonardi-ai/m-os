@@ -57,7 +57,10 @@ DESCRIPTION
     parent-traversing members and existing symbolic links in target paths.
     Hard-link target paths are additionally checked against existing symbolic
     links in the destination when the tar backend identifies hard-link records
-    in its verbose listing. Ambiguous hard-link listings fail closed.
+    in its verbose listing. GNU tar entries are distinguished by their
+    hard-link type marker, avoiding confusion with ordinary filenames that
+    contain " link to ". Other tar backends use conservative listing-suffix
+    matching and may reject ambiguous filenames. Inspection uses the C locale.
     These checks are not an atomic extraction sandbox: they do not cover
     archive-created links, concurrent filesystem changes or other extraction
     backends. Host-specific TAR listing behavior requires validation.
