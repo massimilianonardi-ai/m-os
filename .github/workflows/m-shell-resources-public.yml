@@ -38,11 +38,16 @@ jobs:
         run: |
           set -eu
           work=$(mktemp -d)
+          ambiguity_fixture=0
           cleanup() {
             ./m lang-set en_US >/dev/null 2>&1 || :
             if [ ! -L res/sys/lang/current ]; then
               rm -f -- res/sys/lang/current
               ln -s en_US res/sys/lang/current
+            fi
+            if [ "$ambiguity_fixture" -eq 1 ]; then
+              rm -f -- res/sys/manual/a2-ambiguous res/ai/manual/a2-ambiguous
+              rmdir res/ai/manual res/ai 2>/dev/null || :
             fi
             rm -rf -- "$work"
           }
@@ -148,6 +153,58 @@ jobs:
             exit 1
           else
             [ "$?" -eq 2 ]
+          fi
+          [ ! -s "$work/out" ] && [ -s "$work/err" ]
+
+          # Exact unqualified duplicates report status 3 and both owner names.
+          [ ! -e res/sys/manual/a2-ambiguous ] && [ ! -L res/sys/manual/a2-ambiguous ]
+          [ ! -e res/ai/manual/a2-ambiguous ] && [ ! -L res/ai/manual/a2-ambiguous ]
+          ambiguity_fixture=1
+          mkdir -p res/ai/manual
+          printf '%s\n' 'NAME' '    a2 ambiguity fixture' > res/sys/manual/a2-ambiguous
+          printf '%s\n' 'NAME' '    a2 ambiguity fixture' > res/ai/manual/a2-ambiguous
+          if ./m manual --no-pager a2-ambiguous >"$work/out" 2>"$work/err"; then
+            echo 'manual accepted an ambiguous unqualified topic' >&2
+            exit 1
+          else
+            [ "$?" -eq 3 ]
+          fi
+          grep -F 'manual ai a2-ambiguous' "$work/err" >/dev/null
+          grep -F 'manual sys a2-ambiguous' "$work/err" >/dev/null
+          rm -f -- res/sys/manual/a2-ambiguous res/ai/manual/a2-ambiguous
+          rmdir res/ai/manual res/ai 2>/dev/null || :
+          ambiguity_fixture=0
+
+          # pager preserves operands/environment/status and prefers less,
+          # then falls back to more when less is absent from PATH.
+          mkdir -p "$work/pager-less" "$work/pager-more"
+          cat > "$work/pager-less/less" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "less:$#:$1:$2:$LESS" > "$PAGER_CAPTURE"
+          exit 23
+          EOF
+          cat > "$work/pager-more/more" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "more:$#:$1:$2" > "$PAGER_CAPTURE"
+          exit 24
+          EOF
+          chmod +x "$work/pager-less/less" "$work/pager-more/more"
+          if PAGER_CAPTURE="$work/pager-capture" LESS='-F keep' PATH="$work/pager-less" ./m pager 'one two' three; then
+            exit 1
+          else
+            [ "$?" -eq 23 ]
+          fi
+          [ "$(cat "$work/pager-capture")" = 'less:2:one two:three:-F keep' ]
+          if PAGER_CAPTURE="$work/pager-capture" PATH="$work/pager-more" ./m pager first second; then
+            exit 1
+          else
+            [ "$?" -eq 24 ]
+          fi
+          [ "$(cat "$work/pager-capture")" = 'more:2:first:second' ]
+          if PAGER_CAPTURE="$work/pager-capture" LESS='-F keep' PATH="$work/pager-less" ./m manual sys shell >"$work/out" 2>"$work/err"; then
+            exit 1
+          else
+            [ "$?" -eq 4 ]
           fi
           [ ! -s "$work/out" ] && [ -s "$work/err" ]
 
