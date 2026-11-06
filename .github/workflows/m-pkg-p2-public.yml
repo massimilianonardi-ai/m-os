@@ -130,3 +130,6 @@ jobs:
       - name: P2 corrupt HTTP artifact digest and staging cleanup
         shell: sh
         run: /bin/sh .github/scripts/m-pkg-p2-corrupt-download.sh
+      - name: P2 public install corrupt HTTPS artifact cleanup
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p2-public-artifact-failure.sh
