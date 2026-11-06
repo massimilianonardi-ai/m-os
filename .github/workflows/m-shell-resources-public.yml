@@ -60,6 +60,10 @@ jobs:
             test -n "$m_LIB_DIR" &&
             test -n "$m_STATE_SYS_DIR"
           '
+          (
+            unset SHELL
+            ./m shell -c 'test -n "$m_ROOT" && test -n "$m_LIB_DIR"'
+          )
           ./m sh -c '
             . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
             command -v loadlib >/dev/null || exit 1
@@ -192,6 +196,10 @@ jobs:
           cat > "$work/pager-less/less" <<'EOF'
           #!/bin/sh
           printf '%s\n' "less:$#:$1:$2:$LESS" > "$PAGER_CAPTURE"
+          if [ "$#" -eq 0 ]; then
+            IFS= read -r pager_stdin || :
+            printf '%s\n' "stdin:$pager_stdin" >> "$PAGER_CAPTURE"
+          fi
           exit 23
           EOF
           cat > "$work/pager-more/more" <<'EOF'
@@ -206,12 +214,23 @@ jobs:
             [ "$?" -eq 23 ]
           fi
           [ "$(cat "$work/pager-capture")" = 'less:2:one two:three:-F keep' ]
+          if printf '%s\n' 'pager stdin payload' | PAGER_CAPTURE="$work/pager-capture" LESS='-F keep' PATH="$work/pager-less" ./m pager; then
+            exit 1
+          else
+            [ "$?" -eq 23 ]
+          fi
+          [ "$(cat "$work/pager-capture")" = "less:0:::-F keep
+          stdin:pager stdin payload" ]
           if PAGER_CAPTURE="$work/pager-capture" PATH="$work/pager-more" ./m pager first second; then
             exit 1
           else
             [ "$?" -eq 24 ]
           fi
           [ "$(cat "$work/pager-capture")" = 'more:2:first:second' ]
+          rm -f -- "$work/pager-capture"
+          PAGER_CAPTURE="$work/pager-capture" PATH="$work/pager-less" ./m manual --no-pager sys shell >"$work/manual-no-pager"
+          cmp res/sys/manual/shell "$work/manual-no-pager"
+          [ ! -e "$work/pager-capture" ]
           if PAGER_CAPTURE="$work/pager-capture" LESS='-F keep' PATH="$work/pager-less" ./m manual sys shell >"$work/out" 2>"$work/err"; then
             exit 1
           else
