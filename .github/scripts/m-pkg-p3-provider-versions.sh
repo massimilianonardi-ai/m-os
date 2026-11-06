@@ -48,13 +48,11 @@ printf '%s\n' "$catalog" > "$conf/catalog" || exit 8
 # These are genuine published releases of one provider package. Their
 # metadata deliberately declares different exact compatibility levels.
 ./m pkg install electron-web-control@v0.1.0 || exit 9
-./m pkg default -u -- electron-web-control || exit 10
-./m pkg install electron-web-control@v0.1.4 || exit 11
-if ./m pkg default electron-web-control >/dev/null 2>&1
-then
-  echo 'FAIL: installing a second concrete unexpectedly chose a package default' >&2
+./m pkg install electron-web-control@v0.1.4 || exit 10
+[ "$(./m pkg default electron-web-control)" = electron-web-control@v0.1.4 ] || {
+  echo 'FAIL: latest installed concrete was not selected as the package default' >&2
   exit 12
-fi
+}
 [ -d pkg/electron-web-control@v0.1.0 ] && [ ! -L pkg/electron-web-control@v0.1.0 ] || exit 13
 [ -d pkg/electron-web-control@v0.1.4 ] && [ ! -L pkg/electron-web-control@v0.1.4 ] || exit 14
 [ "$(command -p cat pkg/electron-web-control@v0.1.0/facility)" = 'web-control 1' ] || exit 15
