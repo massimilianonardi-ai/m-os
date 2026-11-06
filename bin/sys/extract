@@ -80,6 +80,39 @@ extract_stream_target()
   printf -- '%s\n' "$extract_stream_name"
 }
 
+# A tar hard-link member may refer to an existing file through a symbolic
+# link in the destination even when its own output member pathname is safe.
+# Inspect verbose hard-link targets, and fail closed on ambiguous metadata.
+# This is a backend-listing check, not a race-free extraction sandbox.
+extract_tar_links_validate()
+(
+  while IFS= read -r extract_tar_listing
+  do
+    case "$extract_tar_listing" in
+      h*)
+        case "$extract_tar_listing" in
+          *" link to "*) : ;;
+          *) return 14 ;;
+        esac
+        extract_tar_hardlink_target=${extract_tar_listing#* link to }
+        case "$extract_tar_hardlink_target" in
+          ""|*" link to "*|*\\*|*'*|*"\"*) return 14 ;;
+        esac
+
+        printf -- '%s\n' "$extract_tar_hardlink_target" |
+          extract_archive_members_validate tar
+        extract_tar_link_status=$?
+        case "$extract_tar_link_status" in
+          0) : ;;
+          4) return 11 ;;
+          5) return 12 ;;
+          *) return 14 ;;
+        esac
+        ;;
+    esac
+  done
+)
+
 extract_tar_preflight()
 {
   [ "$#" -eq 1 ] || return 10
@@ -90,11 +123,15 @@ extract_tar_preflight()
     extract_archive_members_validate tar
   extract_tar_member_status=$?
   case "$extract_tar_member_status" in
-    0) return 0 ;;
+    0) : ;;
     4) return 8 ;;
     5) return 9 ;;
     *) return 10 ;;
   esac
+
+  extract_tar_verbose="$(TAR_OPTIONS= command -- tar -tvf "$1")" || return 13
+  [ -n "$extract_tar_verbose" ] || return 13
+  printf -- '%s\n' "$extract_tar_verbose" | extract_tar_links_validate
 }
 
 extract_tar_fail()
@@ -103,6 +140,10 @@ extract_tar_fail()
     7) fatal 7 archive tar-list-failed operation extract format "$extract_format" ;;
     8) fatal 8 archive tar-member-unsafe operation extract format "$extract_format" ;;
     9) fatal 9 archive tar-destination-link operation extract format "$extract_format" ;;
+    11) fatal 11 archive tar-link-target-unsafe operation extract format "$extract_format" ;;
+    12) fatal 12 archive tar-link-target-symlink operation extract format "$extract_format" ;;
+    13) fatal 13 archive tar-verbose-list-failed operation extract format "$extract_format" ;;
+    14) fatal 14 archive tar-link-target-uninspectable operation extract format "$extract_format" ;;
     *) fatal 10 archive tar-preflight-failed operation extract format "$extract_format" ;;
   esac
 }
