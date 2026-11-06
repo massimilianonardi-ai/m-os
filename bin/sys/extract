@@ -89,11 +89,7 @@ extract_tar_links_validate()
   while IFS= read -r extract_tar_listing
   do
     case "$extract_tar_listing" in
-      h*)
-        case "$extract_tar_listing" in
-          *" link to "*) : ;;
-          *) return 14 ;;
-        esac
+      *" link to "*)
         extract_tar_hardlink_target=${extract_tar_listing#* link to }
         case "$extract_tar_hardlink_target" in
           ""|*" link to "*|*\\*|*"'"*|*'"'*) return 14 ;;
