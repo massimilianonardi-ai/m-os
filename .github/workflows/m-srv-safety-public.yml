@@ -117,6 +117,47 @@ jobs:
             exit 1
           }
 
+          # A complete legacy record without the started snapshot cannot
+          # establish whether a live PID still belongs to that service.
+          # In particular, -f is not permission to kill a recycled PID.
+          sleep 90 &
+          live_pid=$!
+          mkdir -p -- "$runtime_dir"
+          printf '%s\n' "$live_pid" > "$runtime_dir/pid"
+          printf '%s\n' "$live_pid" > "$runtime_dir/owner"
+          printf '%s\n' /bin/sleep > "$runtime_dir/command"
+          printf '%s\n' legacy-provider@1 > "$runtime_dir/provider"
+
+          status=0
+          ./m srv start "$service" >/tmp/m-srv-legacy-live-start.log 2>&1 || status=$?
+          [ "$status" -eq 1 ] &&
+            grep -F 'live-runtime-state-invalid' /tmp/m-srv-legacy-live-start.log >/dev/null &&
+            kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
+            echo "FAIL: legacy live PID was accepted by start (status $status)" >&2
+            cat /tmp/m-srv-legacy-live-start.log >&2
+            exit 1
+          }
+
+          status=0
+          ./m srv stop -f "$service" >/tmp/m-srv-legacy-live-force-stop.log 2>&1 || status=$?
+          sleep 1
+          [ "$status" -eq 1 ] &&
+            grep -F 'live-runtime-state-invalid' /tmp/m-srv-legacy-live-force-stop.log >/dev/null &&
+            kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
+            echo "FAIL: forced stop accepted an unverifiable legacy PID (status $status)" >&2
+            cat /tmp/m-srv-legacy-live-force-stop.log >&2
+            exit 1
+          }
+
+          kill "$live_pid"
+          wait "$live_pid" 2>/dev/null || :
+          live_pid=
+          ./m srv stop "$service"
+          [ ! -e "$runtime_dir" ] && [ ! -L "$runtime_dir" ] || {
+            echo 'FAIL: exited legacy PID state could not be cleaned' >&2
+            exit 1
+          }
+
           # An apparently complete but stale record must not make an
           # unrelated live process appear to be an existing srv instance.
           sleep 90 &
