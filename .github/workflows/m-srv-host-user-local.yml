@@ -209,6 +209,33 @@ jobs:
           fi
           integrated2=1
 
+          # A new hosted start uses the newly chosen concrete without
+          # reinstalling the persistent native registration.
+          ./m pkg default "$package@2"
+          ./m srv host user start "$facility"
+          count=0
+          while [ "$count" -lt 20 ]; do
+            if [ -f "$marker" ] &&
+              awk '$1 == "start2" { seen = 1 } END { exit seen ? 0 : 1 }' "$marker"; then
+              break
+            fi
+            sleep 1
+            count=$((count + 1))
+          done
+          [ "$count" -lt 20 ] || { echo 'FAIL: new hosted start did not select provider version 2' >&2; exit 1; }
+          pid3=$(awk '$1 == "start2" { pid=$2 } END { print pid }' "$marker")
+          [ -n "$pid3" ] && ps -p "$pid3" -o pid= >/dev/null || {
+            echo 'FAIL: provider version 2 was not running' >&2
+            exit 1
+          }
+
+          # Selector mutations must not retarget an already running instance.
+          ./m pkg default "$package@1"
+          ps -p "$pid3" -o pid= >/dev/null || {
+            echo 'FAIL: provider selection changed running host process' >&2
+            exit 1
+          }
+
           ./m srv host user uninstall "$facility"
           registration_owned=0
           [ ! -e "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
