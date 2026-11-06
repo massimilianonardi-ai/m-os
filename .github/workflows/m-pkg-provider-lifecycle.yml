@@ -3,6 +3,13 @@ name: m public pkg dependency provider and uninstall integration
 on:
   push:
     branches: [master]
+  pull_request:
+    paths:
+      - '.github/scripts/m-pkg-p3-provider-versions.sh'
+      - '.github/scripts/m-pkg-p3-real-ambiguity.sh'
+      - '.github/scripts/m-pkg-p3-typed-env.sh'
+      - '.github/workflows/m-pkg-provider-lifecycle.yml'
+      - 'lib/sys/sh/pkg/pkg-provider.lib.sh'
   workflow_dispatch:
 
 permissions:
@@ -147,3 +154,37 @@ jobs:
       - name: Verify pinned facility provider selection and public projection
         shell: sh
         run: /bin/sh .github/scripts/m-pkg-p3-pinned-selector.sh
+  pinned-provider-versions:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify real public provider version and compatibility selection
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p3-provider-versions.sh
+  authentic-provider-typed-env:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify real Chromium typed environment and public command
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p3-typed-env.sh
+  authentic-provider-ambiguity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify genuine same-compatibility ambiguity through a real consumer
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p3-real-ambiguity.sh
