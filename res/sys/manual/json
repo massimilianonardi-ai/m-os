@@ -73,7 +73,8 @@ ENVIRONMENT
         Directory for private staging; defaults to /tmp.
 
 DEPENDENCIES
-    POSIX sh, od, awk, mkdir, rm, rmdir and cat.
+    POSIX sh, od, awk, mkdir, rm, rmdir and cat. The command invokes
+    external utilities from the system utility path rather than caller PATH.
 
 EXIT STATUS
     0    Successful query/validation, or -e with true/non-null last result.
@@ -93,6 +94,7 @@ EXIT STATUS
     17   Standard-input read failure.
     18   Filter file unavailable.
     19   Filter file read failure.
+    21   Could not stage private query output or diagnostics.
     20   Filter staging failure.
     21   Result staging failure.
     129+ Termination by handled signal.

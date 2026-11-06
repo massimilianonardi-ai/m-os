@@ -60,7 +60,7 @@ json_main()
   while [ "$json_attempt" -lt 10 ]
   do
     json_temp=$json_temp_base/json-$$-$json_attempt
-    if (umask 077; mkdir -m 700 "$json_temp") 2>/dev/null
+    if (umask 077; command -p mkdir -m 700 "$json_temp") 2>/dev/null
     then
       break
     fi
@@ -71,7 +71,7 @@ json_main()
     printf '%s\n' 'json: temporary-directory-creation-failed' >&2
     return 7
   }
-  trap 'rm -f "$json_temp/bytes" "$json_temp/filter" "$json_temp/normalized"; rmdir "$json_temp"' 0
+  trap 'command -p rm -f "$json_temp/bytes" "$json_temp/filter" "$json_temp/normalized" "$json_temp/diagnostic"; command -p rmdir "$json_temp"' 0
   trap 'exit 129' 1
   trap 'exit 130' 2
   trap 'exit 131' 3
@@ -98,6 +98,10 @@ json_main()
     printf '%s\n' 'json: result-staging-failed' >&2
     return 21
   }
+  : > "$json_temp/diagnostic" || {
+    printf '%s\n' 'json: result-staging-failed' >&2
+    return 21
+  }
   [ "$#" -gt 0 ] || set -- -
   json_seen_result=0
   json_last_status=4
@@ -120,6 +124,10 @@ json_main()
       }
     fi
 
+    : > "$json_temp/diagnostic" || {
+      printf '%s\n' 'json: result-staging-failed' >&2
+      return 21
+    }
     LC_ALL=C command -p awk \
       -v compact_output="$json_compact" \
       -v raw_output="$json_raw" \
@@ -131,13 +139,13 @@ json_main()
 
 function fail(status, identity)
 {
-  printf "json: %s at byte %.0f\n", identity, byte_offset | "cat >&2"
+  printf "json: %s at byte %.0f\n", identity, byte_offset > diagnostic_file
   exit status
 }
 
 function filter_fail(identity)
 {
-  printf "json: filter-%s at character %d\n", identity, filter_pos | "cat >&2"
+  printf "json: filter-%s at character %d\n", identity, filter_pos > diagnostic_file
   exit 3
 }
 
@@ -986,6 +994,8 @@ function serialize_node(root,    sp,id,t,child,raw,open_char,close_char)
 ## POSIX awk needs an explicit continued line to vertically align BEGIN braces.
 BEGIN \
 {
+  diagnostic_file=ARGV[3]
+  ARGV[3]=""
   byte_offset=0
   lookahead=-2
   part_count=0
@@ -1017,7 +1027,7 @@ BEGIN \
   }
   exit 0
 }
-' "$json_temp/filter" "$json_temp/bytes" >> "$json_temp/normalized"
+' "$json_temp/filter" "$json_temp/bytes" "$json_temp/diagnostic" >> "$json_temp/normalized"
     json_status=$?
     case "$json_status" in
       0|1|4)
@@ -1033,7 +1043,10 @@ BEGIN \
           return "$json_status"
         fi
         ;;
-      *) return "$json_status";;
+      *)
+        command -p cat < "$json_temp/diagnostic" >&2 || :
+        return "$json_status"
+        ;;
     esac
   done
   if [ "$json_check" -eq 0 ]
