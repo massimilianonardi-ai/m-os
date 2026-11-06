@@ -50,6 +50,7 @@ jobs:
           driver=$tmp/integration-driver
           integrated=0
           registration_owned=0
+          portable_started=0
           pkg_store_created=0
           marker=
           case "$(uname -s)" in
@@ -65,6 +66,7 @@ jobs:
             exit 3
           }
           cleanup() {
+            if [ "$portable_started" -eq 1 ]; then ./m srv stop -f "$facility" >/dev/null 2>&1 || :; fi
             if [ "$registration_owned" -eq 1 ]; then ./m srv host user uninstall "$facility" >/dev/null 2>&1 || :; fi
             ./m pkg provider default -u -- "$facility" >/dev/null 2>&1 || :
             ./m pkg default -u -- "$package" >/dev/null 2>&1 || :
@@ -159,6 +161,19 @@ jobs:
             done
             return 1
           }
+          # Prove portable srv with an actual local provider on both hosts:
+          # the host manager has not started anything in this sequence.
+          portable_started=1
+          ./m srv start "$facility"
+          wait_started 1 || { echo 'FAIL: portable srv did not launch local provider' >&2; exit 1; }
+          portable_pid=$(last_pid)
+          ps -p "$portable_pid" -o pid= >/dev/null || { echo 'FAIL: portable srv process absent' >&2; exit 1; }
+          ./m srv stop -f "$facility"
+          portable_started=0
+          wait_pid_gone "$portable_pid" || { echo 'FAIL: portable srv did not stop local provider' >&2; exit 1; }
+          grep -Fx "term $portable_pid" "$marker" >/dev/null || { echo 'FAIL: portable srv stop missed SIGTERM' >&2; exit 1; }
+          : > "$marker"
+
           ./m srv host user start "$facility"
           wait_started 1 || { echo 'FAIL: user manager did not start local provider' >&2; exit 1; }
           pid1=$(last_pid)
