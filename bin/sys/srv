@@ -196,8 +196,8 @@ srv_runtime_read()
     esac
   fi
 
-  # Older records have no start identity. Keep their existing stop/cleanup
-  # behavior; new records must match the actual process, not merely its PID.
+  # A live process requires recorded start identity; old records without
+  # it remain eligible only for stale cleanup after the recorded PID exits.
   if [ -e "$srv_runtime_dir/started" ] || [ -L "$srv_runtime_dir/started" ]
   then
     [ -f "$srv_runtime_dir/started" ] && \
@@ -210,6 +210,14 @@ srv_runtime_read()
     then
       srv_pid_start_identity_get "$srv_pid" || return 1
       [ "$srv_process_start_identity" = "$srv_recorded_start_identity" ] || return 1
+    fi
+  else
+    # Legacy records cannot distinguish a still-live service process from
+    # an unrelated process that recycled its PID. Do not accept either as
+    # managed; callers may still remove the state once that PID is dead.
+    if srv_pid_exists "$srv_pid"
+    then
+      return 1
     fi
   fi
 }
