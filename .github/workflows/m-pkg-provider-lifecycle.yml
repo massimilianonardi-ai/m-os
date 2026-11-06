@@ -133,3 +133,17 @@ jobs:
           [ "$(cat "$work/second-node.txt")" = 42 ]
 
           echo 'PASS: public pkg dependencies, provider settings, runtime and uninstall/reinstall'
+  pinned-provider-selector:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify pinned facility provider selection and public projection
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p3-pinned-selector.sh
