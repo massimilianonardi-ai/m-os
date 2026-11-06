@@ -13,7 +13,6 @@ if ./m pkg provider default web-control >/dev/null 2>&1; then exit 2; fi
 cleanup()
 {
   ./m pkg provider default -u -- web-control >/dev/null 2>&1 || :
-  command -p -- rm -f -- bin/ext/web-control >/dev/null 2>&1 || :
   command -p -- rm -rf -- "$store"
 }
 trap cleanup 0
