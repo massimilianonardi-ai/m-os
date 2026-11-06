@@ -199,7 +199,7 @@ jobs:
           ln -s "$work/hardlink-outside" "$work/hardlink-out/redirect"
           python3 -c '
           import io, sys, tarfile
-          benign, hostile = sys.argv[1:]
+          benign, hostile, name_only = sys.argv[1:]
           payload = b"benign-hardlink\n"
           with tarfile.open(benign, "w") as archive:
               member = tarfile.TarInfo("original")
@@ -214,10 +214,22 @@ jobs:
               alias.type = tarfile.LNKTYPE
               alias.linkname = "redirect/secret"
               archive.addfile(alias)
-          ' "$work/benign-hardlink.tar" "$work/hostile-hardlink.tar"
+          with tarfile.open(name_only, "w") as archive:
+              plain = tarfile.TarInfo("report link to /not-a-hardlink")
+              plain.size = len(payload)
+              archive.addfile(plain, io.BytesIO(payload))
+          ' "$work/benign-hardlink.tar" "$work/hostile-hardlink.tar" "$work/filename-link-to.tar"
           mkdir -p "$work/benign-hardlink-out"
           ./m extract tar "$work/benign-hardlink.tar" "$work/benign-hardlink-out"
           cmp "$work/benign-hardlink-out/original" "$work/benign-hardlink-out/alias"
+
+          # A regular GNU tar member with a path resembling link metadata
+          # must not be rejected as an unsafe hard-link target.
+          mkdir -p "$work/filename-link-to-out"
+          ./m extract tar "$work/filename-link-to.tar" "$work/filename-link-to-out"
+          cmp "$work/benign-hardlink-out/original" \
+            "$work/filename-link-to-out/report link to /not-a-hardlink"
+
           gzip -c "$work/hostile-hardlink.tar" > "$work/hostile-hardlink.tar.gz"
           for format in tar tar.gz
           do
