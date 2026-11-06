@@ -106,6 +106,7 @@ jobs:
           while :; do sleep 1; done
           EOF_TARGET
           chmod 700 "$payload/bin/service-target"
+          cp "$payload/bin/service-target" "$tmp/service-target-template"
           cat > "$driver" <<'EOF_DRIVER'
           #!/bin/sh
           [ -n "${m_ROOT:-}" ] || exit 1
@@ -201,7 +202,7 @@ jobs:
           payload2="$tmp/payload-2"
           mkdir -p "$payload2/bin"
           sed 's/term %s/term2 %s/; s/start %s/start2 %s/' \
-            "$payload/bin/service-target" > "$payload2/bin/service-target"
+            "$tmp/service-target-template" > "$payload2/bin/service-target"
           chmod 700 "$payload2/bin/service-target"
           if ! ./m "$driver" integrate "$package" 2 "$range" "$payload2"; then
             echo 'INFRASTRUCTURE: second local concrete integration failed' >&2
