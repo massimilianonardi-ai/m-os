@@ -191,6 +191,52 @@ jobs:
             [ ! -e "$work/tar-outside/would-escape.txt" ]
           done
 
+          # Hard-link sources are paths too. A safe output member name can
+          # otherwise create an alias to a file reached via a preexisting
+          # destination symlink. Check plain and compressed TAR independently.
+          mkdir -p "$work/hardlink-outside" "$work/hardlink-out"
+          printf 'protected-hardlink-source\n' > "$work/hardlink-outside/secret"
+          ln -s "$work/hardlink-outside" "$work/hardlink-out/redirect"
+          python3 -c '
+          import io, sys, tarfile
+          benign, hostile = sys.argv[1:]
+          payload = b"benign-hardlink\n"
+          with tarfile.open(benign, "w") as archive:
+              member = tarfile.TarInfo("original")
+              member.size = len(payload)
+              archive.addfile(member, io.BytesIO(payload))
+              alias = tarfile.TarInfo("alias")
+              alias.type = tarfile.LNKTYPE
+              alias.linkname = "original"
+              archive.addfile(alias)
+          with tarfile.open(hostile, "w") as archive:
+              alias = tarfile.TarInfo("alias")
+              alias.type = tarfile.LNKTYPE
+              alias.linkname = "redirect/secret"
+              archive.addfile(alias)
+          ' "$work/benign-hardlink.tar" "$work/hostile-hardlink.tar"
+          mkdir -p "$work/benign-hardlink-out"
+          ./m extract tar "$work/benign-hardlink.tar" "$work/benign-hardlink-out"
+          cmp "$work/benign-hardlink-out/original" "$work/benign-hardlink-out/alias"
+          gzip -c "$work/hostile-hardlink.tar" > "$work/hostile-hardlink.tar.gz"
+          for format in tar tar.gz
+          do
+            case "$format" in
+              tar) artifact="$work/hostile-hardlink.tar" ;;
+              tar.gz) artifact="$work/hostile-hardlink.tar.gz" ;;
+            esac
+            if ./m extract "$format" "$artifact" "$work/hardlink-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract followed a hard-link source through %s\n' "$format" >&2
+              exit 1
+            else
+              [ "$?" -eq 12 ]
+            fi
+            [ ! -e "$work/hardlink-out/alias" ]
+            [ "$(cat "$work/hardlink-outside/secret")" = protected-hardlink-source ]
+          done
+
           # A link introduced by the archive itself must not redirect a
           # subsequent member outside its destination. Each case has a
           # distinct disposable output tree; no host trust or user paths.
