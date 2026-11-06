@@ -24,6 +24,30 @@ DESCRIPTION
     range anchor is used as the concrete version.
 
 FUNCTIONS
+    pkg_depend_plan <catalog-root> <exact-concrete>|<target-osarch>...
+        Each operand is one exact concrete identity and its already-selected
+        dependency-consumer target osarch separated by a vertical bar. Pass
+        each complete record as one quoted shell argument: the vertical bar
+        itself is a shell metacharacter. Both components are mandatory; the
+        concrete's package identity is unchanged.
+        This matters for a platform-independent concrete from catalog "all":
+        it has no !osarch identity suffix but still plans provider dependencies
+        for the target osarch of the original request.
+
+        Resolve dependencies of these exact root/target contexts against
+        the caller's immutable catalog snapshot, without another repository
+        version lookup or mutable current/latest selection. The planner
+        validates the selected stream/class and installed concrete or matching
+        catalog range before planning.
+
+        Return a shell-quoted operand sequence suitable for controlled POSIX
+        eval/set -- consumption. Omit explicit roots unless they are also
+        dependencies. This function does not initialize a catalog snapshot
+        or install packages; the caller owns the snapshot lifecycle.
+
+        The public pkg_depend command separately accepts original package
+        requests and uses its own invocation-private snapshot.
+
     pkg_depend <package-spec>...
         Public pkg depend command implementation. Validate all request syntax before
         catalog initialization, create one invocation-private catalog snapshot,

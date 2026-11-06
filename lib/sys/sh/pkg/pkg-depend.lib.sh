@@ -49,6 +49,27 @@ _pkg_depend_request_resolve()
       pkg_catalog_request_resolve pkg_depend_concrete pkg_depend_target "$pkg_depend_catalog" "$pkg_depend_request" "$pkg_depend_default_target"
       return
       ;;
+    exact)
+      pkg_concrete_read pkg_depend_pkg pkg_depend_version pkg_depend_requested_osarch "$pkg_depend_request" || return 3
+
+      # The concrete identity may be osarch-independent (catalog "all").
+      # Its dependency-consumer target then comes from the caller's exact
+      # root context, not from the local host or an identity suffix.
+      pkg_depend_target=$pkg_depend_default_target
+      pkg_osarch_valid "$pkg_depend_target" || return 4
+
+      pkg_catalog_stream_resolve pkg_depend_stream pkg_depend_identity_osarch "$pkg_depend_catalog" "$pkg_depend_pkg" "$pkg_depend_target" || return 5
+      [ "$pkg_depend_requested_osarch" = "$pkg_depend_identity_osarch" ] || return 6
+
+      pkg_depend_concrete=$pkg_depend_request
+      if [ -e "$m_PKG_DIR/$pkg_depend_concrete" ] || [ -L "$m_PKG_DIR/$pkg_depend_concrete" ]
+      then
+        [ -d "$m_PKG_DIR/$pkg_depend_concrete" ] && [ ! -L "$m_PKG_DIR/$pkg_depend_concrete" ] || return 7
+      else
+        pkg_catalog_range_resolve pkg_depend_range "$pkg_depend_catalog" "$pkg_depend_concrete" || return 8
+      fi
+      return 0
+      ;;
     selector)
       :
       ;;
@@ -731,11 +752,14 @@ EOF_PKG_DEPEND_VISIT_EDGES
   pkg_depend_order="$pkg_depend_order $1"
 }
 
-_pkg_depend_resolve()
+_pkg_depend_plan()
 (
-  [ "$#" -ge 2 ] || return 2
+  [ "$#" -ge 3 ] || return 2
   pkg_depend_catalog=$1
-  shift
+  pkg_depend_root_mode=$2
+  shift 2
+
+  case "$pkg_depend_root_mode" in request|exact) : ;; *) return 2 ;; esac
 
   [ -d "$pkg_depend_catalog" ] && [ ! -L "$pkg_depend_catalog" ] || return 1
   pkg_osarch_valid "$m_OSARCH" || return 1
@@ -745,7 +769,23 @@ _pkg_depend_resolve()
 
   for pkg_depend_request
   do
-    _pkg_depend_request_resolve "$pkg_depend_catalog" "$pkg_depend_request" "$m_OSARCH" request
+    pkg_depend_root_request=$pkg_depend_request
+    pkg_depend_root_target=$m_OSARCH
+    if [ "$pkg_depend_root_mode" = exact ]
+    then
+      case "$pkg_depend_request" in
+        *'|'*) : ;;
+        *) return 2 ;;
+      esac
+      pkg_depend_root_request=${pkg_depend_request%%|*}
+      pkg_depend_root_target=${pkg_depend_request#*|}
+      case "$pkg_depend_root_target" in
+        *'|'*) return 2 ;;
+      esac
+      pkg_osarch_valid "$pkg_depend_root_target" || return 2
+    fi
+
+    _pkg_depend_request_resolve "$pkg_depend_catalog" "$pkg_depend_root_request" "$pkg_depend_root_target" "$pkg_depend_root_mode"
     pkg_depend_request_status=$?
     if [ "$pkg_depend_request_status" -ne 0 ]
     then
@@ -807,6 +847,14 @@ EOF_PKG_DEPEND_ROOT_VISIT
   done
 )
 
+pkg_depend_plan()
+(
+  [ "$#" -ge 2 ] || return 2
+  pkg_depend_plan_catalog=$1
+  shift
+  _pkg_depend_plan "$pkg_depend_plan_catalog" exact "$@"
+)
+
 _pkg_depend_cleanup()
 {
   [ -z "${pkg_depend_work-}" ] || command -p -- rm -rf -- "$pkg_depend_work" 2>/dev/null || :
@@ -840,7 +888,7 @@ pkg_depend()
 
   pkg_catalog_init pkg_depend_catalog_work pkg_depend_catalog_head "$pkg_depend_work" "$pkg_depend_cache_root" || return 1
 
-  pkg_depend_result="$(_pkg_depend_resolve "$pkg_depend_catalog_work" "$@")" || return $?
+  pkg_depend_result="$(_pkg_depend_plan "$pkg_depend_catalog_work" request "$@")" || return $?
   eval "set -- $pkg_depend_result"
 
   for pkg_depend_concrete

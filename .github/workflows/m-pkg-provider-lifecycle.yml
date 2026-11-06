@@ -115,8 +115,9 @@ jobs:
           ./m jsc "$work/modules.json" "$work/recompiled.js"
           [ -s "$work/recompiled.js" ]
 
-          # Repeated installation is a real pkg no-op, not a source checkout.
-          ./m pkg install mk@v0.1.0
+          # Repeating an explicit installed root must fail without replacing it.
+          if ./m pkg install mk@v0.1.0 >/dev/null 2>&1; then exit 21; fi
+          [ "$(./m pkg default mk)" = mk@v0.1.0 ]
           ./m pkg uninstall jsc@v0.1.0 mk@v0.1.0
           if ./m pkg versions mk >/dev/null 2>&1; then exit 14; fi
           if ./m pkg versions jsc >/dev/null 2>&1; then exit 15; fi
