@@ -96,7 +96,7 @@ extract_tar_links_validate()
         esac
         extract_tar_hardlink_target=${extract_tar_listing#* link to }
         case "$extract_tar_hardlink_target" in
-          ""|*" link to "*|*\\*|*'*|*"\"*) return 14 ;;
+          ""|*" link to "*|*\\*|*"'"*|*'"'*) return 14 ;;
         esac
 
         printf -- '%s\n' "$extract_tar_hardlink_target" |
