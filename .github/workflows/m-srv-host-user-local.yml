@@ -137,8 +137,23 @@ jobs:
           marker=$package_home/m-srv-ci-user-events
           [ ! -e "$marker" ] || { echo 'INFRASTRUCTURE: pre-existing test marker' >&2; exit 3; }
 
-          ./m srv host user install "$facility"
+          # Host integration belongs to the real POSIX account, not to
+          # caller-redirectable HOME/XDG variables.
+          spoof_home="$tmp/spoof-home"
+          mkdir -p "$spoof_home"
+          HOME="$spoof_home" \
+          XDG_CONFIG_HOME="$tmp/spoof-config" \
+          XDG_RUNTIME_DIR="$tmp/spoof-runtime" \
+            ./m srv host user install "$facility"
           registration_owned=1
+          case "$(uname -s)" in
+            Linux) spoof_manifest="$spoof_home/.config/systemd/user/m-srv-$facility.service" ;;
+            Darwin) spoof_manifest="$spoof_home/Library/LaunchAgents/m.srv.$facility.plist" ;;
+          esac
+          [ ! -e "$spoof_manifest" ] && [ ! -L "$spoof_manifest" ] || {
+            echo 'FAIL: host user install registered under overridden HOME' >&2
+            exit 1
+          }
           [ -f "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
             echo 'FAIL: native host registration not persisted' >&2; exit 1;
           }
@@ -213,7 +228,10 @@ jobs:
           # A new hosted start uses the newly chosen concrete without
           # reinstalling the persistent native registration.
           ./m pkg default "$package@2"
-          ./m srv host user start "$facility"
+          HOME="$spoof_home" \
+          XDG_CONFIG_HOME="$tmp/spoof-config" \
+          XDG_RUNTIME_DIR="$tmp/spoof-runtime" \
+            ./m srv host user start "$facility"
           count=0
           while [ "$count" -lt 20 ]; do
             if [ -f "$marker" ] &&
