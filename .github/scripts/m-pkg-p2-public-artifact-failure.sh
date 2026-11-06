@@ -19,6 +19,7 @@ command -p -- mkdir -- "$target" || exit 4
 git archive "$source_revision" | command -p -- tar -xf - -C "$target" || exit 5
 git clone --quiet -- https://github.com/massimilianonardi-ai/pkg-catalog.git "$catalog" || exit 6
 git -C "$catalog" checkout --quiet "$catalog_revision" || exit 7
+git -C "$catalog" checkout --quiet -b p2-ci-fixture || exit 22
 
 package="$catalog/v1/pkg/p2bad/all"
 range="$package/n0001=v0.1.0"
