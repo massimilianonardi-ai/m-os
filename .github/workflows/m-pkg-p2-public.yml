@@ -127,3 +127,6 @@ jobs:
       - name: P2 public ambiguity, historical installed root and planning cleanup
         shell: sh
         run: /bin/sh .github/scripts/m-pkg-p2-negatives.sh
+      - name: P2 corrupt HTTP artifact digest and staging cleanup
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p2-corrupt-download.sh
