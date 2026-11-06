@@ -84,11 +84,11 @@ lang_set_switch()
   command -p -- mv -- "$lang_set_switch_new" "$lang_set_switch_current" || return 1
 }
 
-[ "$#" -le 1 ] || fatal execution invalid-arguments
+[ "$#" -le 1 ] || fatal 1 language argument-count-invalid operation lang-set count "$#"
 
 if [ "$#" -eq 0 ]
 then
-  lang_set_current="$(lang_set_selector_name "$m_LANG_DIR")" || fatal filesystem path-invalid path "$m_LANG_CURRENT_DIR"
+  lang_set_current="$(lang_set_selector_name "$m_LANG_DIR")" || fatal 3 language selector-invalid path "$m_LANG_CURRENT_DIR"
   printf -- '%s\n' "$lang_set_current"
   exit 0
 fi
@@ -119,10 +119,10 @@ do
       break
     fi
   done
-  [ "$lang_set_available" -eq 1 ] || fatal execution invalid-arguments language "$lang_set_requested"
+  [ "$lang_set_available" -eq 1 ] || fatal 2 language locale-unavailable locale "$lang_set_requested" owner "${lang_set_owner_dir##*/}"
 
   lang_set_selector_name "$lang_set_owner_lang_dir" >/dev/null || \
-    fatal filesystem path-invalid path "$lang_set_owner_lang_dir/current"
+    fatal 3 language selector-invalid path "$lang_set_owner_lang_dir/current"
 
   for lang_set_tmp in \
     "$lang_set_owner_lang_dir/.current.new.$$" \
@@ -130,12 +130,12 @@ do
   do
     if [ -e "$lang_set_tmp" ] || [ -L "$lang_set_tmp" ]
     then
-      fatal filesystem path-invalid path "$lang_set_tmp"
+      fatal 3 language selector-invalid path "$lang_set_tmp"
     fi
   done
 done
 
-[ "$lang_set_sys_seen" -eq 1 ] || fatal filesystem path-invalid path "$m_LANG_DIR"
+[ "$lang_set_sys_seen" -eq 1 ] || fatal 3 language selector-invalid path "$m_LANG_DIR"
 
 for lang_set_owner_dir in "$m_RES_DIR"/*
 do
@@ -145,17 +145,17 @@ do
 
   lang_set_previous="$(lang_set_selector_name "$lang_set_owner_lang_dir")" || {
     lang_set_cleanup_prepared
-    fatal filesystem path-invalid path "$lang_set_owner_lang_dir/current"
+    fatal 3 language selector-invalid path "$lang_set_owner_lang_dir/current"
   }
 
   command -p -- ln -s -- "$lang_set_previous" "$lang_set_owner_lang_dir/.current.old.$$" || {
     lang_set_cleanup_prepared
-    fatal execution execution-failed operation lang-set
+    fatal 4 language selector-preparation-failed operation lang-set owner "${lang_set_owner_dir##*/}" phase previous-link
   }
 
   command -p -- ln -s -- "$lang_set_requested" "$lang_set_owner_lang_dir/.current.new.$$" || {
     lang_set_cleanup_prepared
-    fatal execution execution-failed operation lang-set
+    fatal 4 language selector-preparation-failed operation lang-set owner "${lang_set_owner_dir##*/}" phase requested-link
   }
 done
 
@@ -166,15 +166,23 @@ do
   [ -d "$lang_set_owner_lang_dir" ] && [ ! -L "$lang_set_owner_lang_dir" ] || continue
   [ "$lang_set_owner_lang_dir" != "$m_LANG_DIR" ] || continue
 
-  lang_set_switch "$lang_set_owner_lang_dir" || {
-    lang_set_rollback || :
-    fatal execution execution-failed operation lang-set
-  }
+  lang_set_switch "$lang_set_owner_lang_dir"
+  lang_set_switch_status=$?
+  if [ "$lang_set_switch_status" -ne 0 ]; then
+    lang_set_rollback
+    lang_set_rollback_status=$?
+    [ "$lang_set_rollback_status" -eq 0 ] || fatal 6 language selector-rollback-failed operation lang-set owner "${lang_set_owner_dir##*/}" cause-status "$lang_set_switch_status"
+    fatal 5 language selector-update-failed operation lang-set owner "${lang_set_owner_dir##*/}" cause-status "$lang_set_switch_status"
+  fi
 done
 
-lang_set_switch "$m_LANG_DIR" || {
-  lang_set_rollback || :
-  fatal execution execution-failed operation lang-set
-}
+lang_set_switch "$m_LANG_DIR"
+lang_set_switch_status=$?
+if [ "$lang_set_switch_status" -ne 0 ]; then
+  lang_set_rollback
+  lang_set_rollback_status=$?
+  [ "$lang_set_rollback_status" -eq 0 ] || fatal 6 language selector-rollback-failed operation lang-set owner sys cause-status "$lang_set_switch_status"
+  fatal 5 language selector-update-failed operation lang-set owner sys cause-status "$lang_set_switch_status"
+fi
 
 lang_set_cleanup_prepared

@@ -28,7 +28,8 @@ ENVIRONMENT
 
 EXIT STATUS
     0   Message resolution/output completed.
-    Non-zero status indicates invalid invocation or output/runtime failure.
+    1   Invalid argument count or component identifier.
+    2   Output/runtime failure.
 
 SEE ALSO
     lang-set

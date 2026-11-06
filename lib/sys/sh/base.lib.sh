@@ -133,7 +133,9 @@ x}"
 
 lang()
 (
-  [ "$#" -eq 2 ] && case "${1}${2}" in [!a-z0-9]* | *[!a-z0-9._-]* | *[._-]) false;; esac || return 1
+  [ "$#" -eq 2 ] || return 1
+  case "$1" in "" | [!a-z0-9]* | *[!a-z0-9._-]* | *[._-]) return 1;; esac
+  case "$2" in "" | [!a-z0-9]* | *[!a-z0-9._-]* | *[._-]) return 1;; esac
 
   lang_message="$(command -p -- cat "$m_LANG_CURRENT_DIR/$1/$2" 2>/dev/null)" || \
   lang_message="$(command -p -- cat "$m_LANG_FALLBACK_DIR/$1/$2" 2>/dev/null)" || \
@@ -150,6 +152,31 @@ export -- m_LOG_LEVEL
 log()
 {
   (
+    # Validate every operand before severity filtering so invalid calls never
+    # become successful merely because their output would have been hidden.
+    (
+      [ "$#" -ge 3 ] || exit 1
+      case "$1" in
+        fatal|error|warn|info|debug|trace) :;;
+        *) exit 2;;
+      esac
+      case "$m_LOG_LEVEL" in
+        off|none|fatal|error|warn|info|debug|trace|all) :;;
+        *) exit 3;;
+      esac
+      case "$2" in ""|[!a-z0-9]*|*[!a-z0-9._-]*|*[._-]) exit 4;; esac
+      case "$3" in ""|[!a-z0-9]*|*[!a-z0-9._-]*|*[._-]) exit 5;; esac
+      shift 3
+      [ "$(( $# % 2 ))" -eq 0 ] || exit 6
+      while [ "$#" -gt 0 ]
+      do
+        case "$1" in ""|[!a-z0-9]*|*[!a-z0-9._-]*|*[._-]) exit 7;; esac
+        shift 2
+      done
+    )
+    log_validation_status=$?
+    [ "$log_validation_status" -eq 0 ] || exit "$log_validation_status"
+
     [ "$#" -ge 3 ] || exit 1
 
     log_severity="$1"

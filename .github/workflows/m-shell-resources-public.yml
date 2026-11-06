@@ -40,6 +40,10 @@ jobs:
           work=$(mktemp -d)
           cleanup() {
             ./m lang-set en_US >/dev/null 2>&1 || :
+            if [ ! -L res/sys/lang/current ]; then
+              rm -f -- res/sys/lang/current
+              ln -s en_US res/sys/lang/current
+            fi
             rm -rf -- "$work"
           }
           trap cleanup 0
@@ -73,6 +77,48 @@ jobs:
           [ "$(./m lang execution invalid-arguments)" = "$expected" ]
           [ "$(./m lang no-such-domain no-such-message)" = no-such-domain.no-such-message ]
 
+          # Component identifiers are independently validated. Fallback is
+          # resolved from data and catalog text is never evaluated.
+          for pair in 'a .b' '.a b' 'a- b_' 'a b.'
+          do
+            set -- $pair
+            if ./m lang "$1" "$2" >"$work/out" 2>"$work/err"; then
+              echo "lang accepted invalid component pair: $pair" >&2
+              exit 1
+            else
+              [ "$?" -eq 1 ]
+            fi
+            [ ! -s "$work/out" ]
+          done
+          mkdir -p res/sys/lang/en_US/a2fallback
+          printf '%s\n' 'fallback-only-message' > res/sys/lang/en_US/a2fallback/message
+          printf '%s\n' "\$(touch $work/catalog-executed)" > res/sys/lang/en_US/a2fallback/data
+          ./m lang-set it_IT
+          [ "$(./m lang a2fallback message)" = fallback-only-message ]
+          [ "$(./m lang a2fallback data)" = "\$(touch $work/catalog-executed)" ]
+          [ ! -e "$work/catalog-executed" ]
+          ./m lang-set en_US
+          rm -rf -- res/sys/lang/en_US/a2fallback
+
+          # lang-set distinguishes argument, selector and preparation errors.
+          if ./m lang-set en_US extra >"$work/out" 2>"$work/err"; then exit 1; else [ "$?" -eq 1 ]; fi
+          grep -F '[language.argument-count-invalid]' "$work/err" >/dev/null
+          mv res/sys/lang/current "$work/current-selector"
+          if ./m lang-set >"$work/out" 2>"$work/err"; then exit 1; else [ "$?" -eq 3 ]; fi
+          grep -F '[language.selector-invalid]' "$work/err" >/dev/null
+          mv "$work/current-selector" res/sys/lang/current
+          chmod 555 res/sys/lang
+          if ./m lang-set it_IT >"$work/out" 2>"$work/err"; then
+            chmod 755 res/sys/lang
+            exit 1
+          else
+            status=$?
+            chmod 755 res/sys/lang
+            [ "$status" -eq 4 ]
+          fi
+          grep -F '[language.selector-preparation-failed]' "$work/err" >/dev/null
+          [ "$(./m lang-set)" = en_US ]
+
           ./m lang-set it_IT
           [ "$(./m lang-set)" = it_IT ]
           expected_it=$(cat res/sys/lang/it_IT/execution/invalid-arguments)
@@ -81,6 +127,8 @@ jobs:
           then
             echo 'lang-set accepted an unconfigured locale' >&2
             exit 1
+          else
+            [ "$?" -eq 2 ]
           fi
           [ "$(./m lang-set)" = it_IT ]
           ./m lang-set en_US
@@ -110,12 +158,34 @@ jobs:
           grep -F '[warn] [execution.invalid-arguments]' "$work/log-err" >/dev/null
           m_LOG_LEVEL=off ./m log error execution invalid-arguments operation a2             >"$work/log-out" 2>"$work/log-err"
           [ ! -s "$work/log-out" ] && [ ! -s "$work/log-err" ]
+          invalid_log() {
+            expected_status=$1
+            shift
+            if m_LOG_LEVEL=off ./m log "$@" >"$work/out" 2>"$work/err"; then
+              echo "log accepted invalid filtered invocation: $*" >&2
+              exit 1
+            else
+              [ "$?" -eq "$expected_status" ] || {
+                echo "log returned wrong status for invalid filtered invocation: $*" >&2
+                exit 1
+              }
+            fi
+          }
+          invalid_log 4 info Bad msg
+          invalid_log 5 info domain Bad.
+          invalid_log 6 info domain message lone
+          invalid_log 7 info domain message BadField value
+          if m_LOG_LEVEL=unexpected ./m log info execution invalid-arguments >"$work/out" 2>"$work/err"; then
+            exit 1
+          else
+            [ "$?" -eq 3 ]
+          fi
           if ./m log a2-invalid execution invalid-arguments >"$work/out" 2>"$work/err"
           then
             echo 'log accepted an invalid severity' >&2
             exit 1
           else
-            [ "$?" -ne 0 ]
+            [ "$?" -eq 2 ]
           fi
           [ ! -s "$work/out" ] && [ -s "$work/err" ]
 
