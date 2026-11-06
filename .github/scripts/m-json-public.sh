@@ -52,9 +52,12 @@ fake_bin=
 cleanup()
 {
   command -p rm -f "$tmp_dir/input" "$tmp_dir/input-a" "$tmp_dir/input-b" "$tmp_dir/filter" \
-    "$tmp_dir/output" "$tmp_dir/expected" "$tmp_dir/error" "$tmp_dir/marker" \
-    "$fake_bin"/*
-  command -p rmdir "$fake_bin" 2>/dev/null || :
+    "$tmp_dir/output" "$tmp_dir/expected" "$tmp_dir/error" "$tmp_dir/marker"
+  if [ -n "$fake_bin" ]
+  then
+    command -p rm -f "$fake_bin"/*
+    command -p rmdir "$fake_bin" 2>/dev/null || :
+  fi
   command -p rmdir "$tmp_dir" 2>/dev/null || :
   if [ -n "$leading_tmp" ]
   then
