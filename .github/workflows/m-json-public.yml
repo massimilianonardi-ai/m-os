@@ -1,0 +1,30 @@
+name: m standalone JSON command
+
+on:
+  push:
+    paths:
+      - '.github/scripts/m-json-public.sh'
+      - '.github/workflows/m-json-public.yml'
+      - 'bin/sys/json'
+      - 'res/sys/manual/json'
+  pull_request:
+    paths:
+      - '.github/scripts/m-json-public.sh'
+      - '.github/workflows/m-json-public.yml'
+      - 'bin/sys/json'
+      - 'res/sys/manual/json'
+  workflow_dispatch:
+
+jobs:
+  public-json:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check POSIX shell syntax
+        run: sh -n bin/sys/json .github/scripts/m-json-public.sh
+      - name: Exercise standalone public command
+        run: .github/scripts/m-json-public.sh

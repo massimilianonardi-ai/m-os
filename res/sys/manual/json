@@ -1,0 +1,117 @@
+NAME
+    json - POSIX JSON query and validation utility
+
+SYNOPSIS
+    json [-c] [-r] [-e] [filter] [file ...]
+    json [-c] [-r] [-e] -f filter-file [file ...]
+    json --check [file ...]
+
+DESCRIPTION
+    json extracts values from JSON documents by evaluating a small, read-only
+    subset of the jq filter syntax. It is a standalone POSIX shell command and
+    does not require jq, Node.js, Python, an initialized m environment, or
+    non-POSIX utilities.
+
+    With no filter, '.' selects each complete JSON input. With no input files,
+    standard input is read. With multiple file operands, each is read
+    independently, in order. A '-' file operand selects standard input.
+    A stream may contain multiple JSON values, which are processed separately.
+
+    The supported filter language includes '.', '.key', '.["any key"]',
+    '.[0]', '.[-1]', '.[]', chained selectors, optional '?' access, '|' to
+    compose filters, and ',' to produce multiple alternatives. ',' binds more
+    tightly than '|'. Only read-only structural queries are implemented;
+    jq's expressions, functions, arithmetic and mutations are not supported.
+
+    A missing key or out-of-range array index returns JSON null. An empty
+    collection iterated with '.[]' returns no values. Access to incompatible
+    non-null types is an error unless '?' is used. Object member names are
+    matched after decoding JSON Unicode escapes. Duplicate object names use
+    the last value, retaining the first occurrence's position in output.
+
+    JSON input is validated strictly, including UTF-8, all JSON tokens,
+    nested structures, and trailing content. Escaped unpaired surrogate
+    code units are allowed by the JSON ABNF; raw string output replaces them
+    with valid Unicode replacement characters. Numeric lexemes are preserved
+    without floating-point conversion. To avoid leaking partial output from
+    malformed input, output is held in private temporary storage until all
+    input has been validated.
+
+OPTIONS
+    -c, --compact-output
+        Output compact JSON, one result per line. Default JSON output uses
+        two-space indentation for objects and arrays.
+
+    -r, --raw-output
+        Output decoded JSON string values without surrounding JSON quotes;
+        other JSON result types retain JSON formatting.
+
+    -e, --exit-status
+        Base status on the last result: 0 for values other than false/null;
+        1 for false or null; 4 for no results.
+
+    -f, --from-file <filter-file>
+        Read the filter expression from a file instead of a filter argument.
+
+    --check
+        Validate exactly one JSON value in each input stream without
+        producing output. A missing or additional JSON value is an error. No filter or
+        formatting/exit-status options may accompany --check.
+
+    --
+        Stop option processing. The first remaining argument still denotes
+        a filter (unless --check or -f already selected the mode/filter).
+
+OPERANDS
+    filter
+        Optional read-only jq-style filter; default '.'.
+    file
+        Optional path to an input file; '-' means standard input.
+
+ENVIRONMENT
+    TMPDIR
+        Directory for private staging; defaults to /tmp.
+
+DEPENDENCIES
+    POSIX sh, od, awk, mkdir, rm, rmdir and cat.
+
+EXIT STATUS
+    0    Successful query/validation, or -e with true/non-null last result.
+    1    -e last result false or null.
+    2    Invalid CLI arguments or option.
+    3    Invalid/unsupported filter syntax.
+    4    -e with no results.
+    7    Could not create private temporary storage.
+    8    Input file unavailable.
+    9    Input/filter file read failure.
+    10   Invalid JSON lexical token or escape.
+    11   Invalid UTF-8.
+    12   Invalid JSON structure, or --check without exactly one value.
+    13   Query type error.
+    15   Internal parser/byte stream error.
+    16   Output write failure.
+    17   Standard-input read failure.
+    18   Filter file unavailable.
+    19   Filter file read failure.
+    20   Filter staging failure.
+    21   Result staging failure.
+    129+ Termination by handled signal.
+
+EXAMPLES
+    printf '%s\n' '{"user":{"name":"Ada"}}' | json -r '.user.name'
+        Ada
+
+    json -r '.servers[].host' config.json
+        Each server hostname on a separate line.
+
+    json -c '.packages[0]' packages.json
+        Compact JSON for the first package.
+
+    json -e '.enabled' config.json >/dev/null
+        Exit 0 if the final value is neither false nor null.
+
+    json --check config.json
+        Validate the entire file without printing it.
+
+SEE ALSO
+    jq(1) (CLI/filter-language reference), RFC 8259, ECMA-404.
