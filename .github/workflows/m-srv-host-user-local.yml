@@ -49,6 +49,7 @@ jobs:
           payload=$tmp/payload
           driver=$tmp/integration-driver
           integrated=0
+          integrated2=0
           registration_owned=0
           portable_started=0
           pkg_store_created=0
@@ -61,6 +62,10 @@ jobs:
             echo 'INFRASTRUCTURE: test service registration already exists' >&2
             exit 3
           }
+          [ ! -e "$root/pkg/$package@2" ] && [ ! -L "$root/pkg/$package@2" ] || {
+            echo 'INFRASTRUCTURE: second test provider version already exists' >&2
+            exit 3
+          }
           [ ! -e "$root/pkg/$package@1" ] && [ ! -L "$root/pkg/$package@1" ] || {
             echo 'INFRASTRUCTURE: test-owned package identity already exists' >&2
             exit 3
@@ -70,6 +75,7 @@ jobs:
             if [ "$registration_owned" -eq 1 ]; then ./m srv host user uninstall "$facility" >/dev/null 2>&1 || :; fi
             ./m pkg provider default -u -- "$facility" >/dev/null 2>&1 || :
             ./m pkg default -u -- "$package" >/dev/null 2>&1 || :
+            if [ "$integrated2" -eq 1 ]; then ./m "$driver" deintegrate "$package" 2 >/dev/null 2>&1 || :; fi
             if [ "$integrated" -eq 1 ]; then ./m "$driver" deintegrate "$package" 1 >/dev/null 2>&1 || :; fi
             if [ -n "$marker" ] && [ -f "$marker" ]; then rm -f -- "$marker" || :; fi
             rm -rf -- "$tmp"
