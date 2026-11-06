@@ -86,10 +86,13 @@ extract_stream_target()
 # This is a backend-listing check, not a race-free extraction sandbox.
 extract_tar_links_validate()
 (
+  [ "$#" -eq 1 ] || return 14
+  extract_tar_listing_mode=$1
+
   while IFS= read -r extract_tar_listing
   do
-    case "$extract_tar_listing" in
-      *" link to "*)
+    case "$extract_tar_listing_mode:$extract_tar_listing" in
+      gnu:h*" link to "*|other:*" link to "*)
         extract_tar_hardlink_target=${extract_tar_listing#* link to }
         case "$extract_tar_hardlink_target" in
           ""|*" link to "*|*\\*|*"'"*|*'"'*) return 14 ;;
@@ -112,7 +115,7 @@ extract_tar_links_validate()
 extract_tar_preflight()
 {
   [ "$#" -eq 1 ] || return 10
-  extract_tar_members="$(TAR_OPTIONS= command -- tar -tf "$1")" || return 7
+  extract_tar_members="$(LC_ALL=C TAR_OPTIONS= command -- tar -tf "$1")" || return 7
   [ -n "$extract_tar_members" ] || return 0
 
   printf -- '%s\n' "$extract_tar_members" |
@@ -125,9 +128,18 @@ extract_tar_preflight()
     *) return 10 ;;
   esac
 
-  extract_tar_verbose="$(TAR_OPTIONS= command -- tar -tvf "$1")" || return 13
+  # GNU tar marks hard-link records with 'h' in its verbose listing.
+  # Other tar implementations may not; retain conservative suffix matching.
+  # Use the C locale so translated listing text cannot hide link targets.
+  extract_tar_version="$(LC_ALL=C TAR_OPTIONS= command -- tar --version 2>/dev/null)" || extract_tar_version=
+  case "$extract_tar_version" in
+    *"GNU tar"*) extract_tar_listing_mode=gnu ;;
+    *) extract_tar_listing_mode=other ;;
+  esac
+
+  extract_tar_verbose="$(LC_ALL=C TAR_OPTIONS= command -- tar -tvf "$1")" || return 13
   [ -n "$extract_tar_verbose" ] || return 13
-  printf -- '%s\n' "$extract_tar_verbose" | extract_tar_links_validate
+  printf -- '%s\n' "$extract_tar_verbose" | extract_tar_links_validate "$extract_tar_listing_mode"
 }
 
 extract_tar_fail()
