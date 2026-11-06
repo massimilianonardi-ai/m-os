@@ -194,6 +194,21 @@ jobs:
           wait_pid_gone "$pid2" || { echo 'FAIL: stop left hosted provider running' >&2; exit 1; }
           grep -Fx "term $pid2" "$marker" >/dev/null || { echo 'FAIL: stop did not deliver SIGTERM to hosted provider' >&2; exit 1; }
           [ -f "$native_manifest" ] || { echo 'FAIL: stop removed registration' >&2; exit 1; }
+
+          # Integrate a second concrete from the same real package descriptor.
+          # Only its foreground event labels differ, so we can observe which
+          # concrete the native supervisor actually launches.
+          payload2="$tmp/payload-2"
+          mkdir -p "$payload2/bin"
+          sed 's/term %s/term2 %s/; s/start %s/start2 %s/' \
+            "$payload/bin/service-target" > "$payload2/bin/service-target"
+          chmod 700 "$payload2/bin/service-target"
+          if ! ./m "$driver" integrate "$package" 2 "$range" "$payload2"; then
+            echo 'INFRASTRUCTURE: second local concrete integration failed' >&2
+            exit 3
+          fi
+          integrated2=1
+
           ./m srv host user uninstall "$facility"
           registration_owned=0
           [ ! -e "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
