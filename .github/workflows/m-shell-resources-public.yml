@@ -81,6 +81,8 @@ jobs:
           expected=$(cat res/sys/lang/en_US/execution/invalid-arguments)
           [ "$(./m lang execution invalid-arguments)" = "$expected" ]
           [ "$(./m lang no-such-domain no-such-message)" = no-such-domain.no-such-message ]
+          if ./m lang execution >"$work/out" 2>"$work/err"; then exit 1; else [ "$?" -eq 1 ]; fi
+          if ./m lang execution invalid-arguments extra >"$work/out" 2>"$work/err"; then exit 1; else [ "$?" -eq 1 ]; fi
 
           # Component identifiers are independently validated. Fallback is
           # resolved from data and catalog text is never evaluated.
@@ -155,6 +157,15 @@ jobs:
             [ "$?" -eq 2 ]
           fi
           [ ! -s "$work/out" ] && [ -s "$work/err" ]
+          if ./m manual --no-pager ../invalid >"$work/out" 2>"$work/err"; then
+            exit 1
+          else
+            [ "$?" -eq 1 ]
+          fi
+          [ ! -s "$work/out" ] && [ -s "$work/err" ]
+          ./m manual --no-pager pkg-pr >"$work/search"
+          grep -Fx 'sys pkg-provider.lib.sh' "$work/search" >/dev/null
+          LC_ALL=C sort -c "$work/search"
 
           # Exact unqualified duplicates report status 3 and both owner names.
           [ ! -e res/sys/manual/a2-ambiguous ] && [ ! -L res/sys/manual/a2-ambiguous ]
@@ -228,6 +239,8 @@ jobs:
               }
             fi
           }
+          invalid_log 1 info
+          invalid_log 1
           invalid_log 4 info Bad msg
           invalid_log 5 info domain Bad.
           invalid_log 6 info domain message lone
