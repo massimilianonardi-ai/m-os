@@ -236,6 +236,23 @@ jobs:
             exit 1
           }
 
+          # Restart replaces the old concrete by resolving current intent.
+          ./m srv host user restart "$facility"
+          wait_started 3 || { echo 'FAIL: restart did not re-resolve provider version 1' >&2; exit 1; }
+          pid4=$(last_pid)
+          [ "$pid4" != "$pid3" ] || { echo 'FAIL: restart retained provider version 2 PID' >&2; exit 1; }
+          wait_pid_gone "$pid3" || { echo 'FAIL: restart left provider version 2 running' >&2; exit 1; }
+          grep -Fx "term2 $pid3" "$marker" >/dev/null || {
+            echo 'FAIL: restart did not terminate provider version 2' >&2
+            exit 1
+          }
+          ./m srv host user stop "$facility"
+          wait_pid_gone "$pid4" || { echo 'FAIL: final stop retained provider version 1' >&2; exit 1; }
+          grep -Fx "term $pid4" "$marker" >/dev/null || {
+            echo 'FAIL: final stop did not terminate provider version 1' >&2
+            exit 1
+          }
+
           ./m srv host user uninstall "$facility"
           registration_owned=0
           [ ! -e "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
