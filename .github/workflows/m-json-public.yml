@@ -25,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check POSIX shell syntax
-        run: sh -n bin/sys/json .github/scripts/m-json-public.sh
+        run: |
+          sh -n bin/sys/json
+          sh -n .github/scripts/m-json-public.sh
       - name: Exercise standalone public command
         run: .github/scripts/m-json-public.sh
