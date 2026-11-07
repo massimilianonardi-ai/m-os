@@ -91,7 +91,7 @@ done
 [ "$ready" -eq 1 ] || { cat "$work/status.err" >&2; exit 1; }
 
 # Status must not create an absent browser. A page-required operation does.
-./m web-control page new >"$work/page-new"
+./m pwc-web-control page new >"$work/page-new"
 browser_ready=0
 i=0
 while [ "$i" -lt 15 ]
