@@ -709,7 +709,190 @@ _pkg_provider_environment_plan_apply()
       PATH="$pkg_provider_environment_apply_value${PATH:+:$PATH}"
       export PATH || return 1
     else
-      export "$pkg_provider_…5824 tokens truncated…nce_consumer" ] || continue
+      export "$pkg_provider_environment_apply_variable=$pkg_provider_environment_apply_value" || return 1
+    fi
+  done <<EOF_PROVIDER_ENVIRONMENT
+$1
+EOF_PROVIDER_ENVIRONMENT
+}
+
+pkg_provider_environment_apply()
+{
+  [ "$#" -eq 2 ] || return 2
+
+  pkg_provider_environment_apply_plan="$(_pkg_provider_environment_plan "$1" "$2")" || return $?
+  ( _pkg_provider_environment_plan_apply "$pkg_provider_environment_apply_plan" ) || return 1
+  _pkg_provider_environment_plan_apply "$pkg_provider_environment_apply_plan"
+}
+
+_pkg_provider_global_active_osarch()
+(
+  [ "$#" -eq 0 ] || return 2
+  [ -L "$m_BIN_EXT_OSARCH_DIR" ] || return 1
+
+  pkg_provider_global_osarch_target="$(command -p -- readlink "$m_BIN_EXT_OSARCH_DIR" 2>/dev/null)" || return 1
+  case "$pkg_provider_global_osarch_target" in
+    ext-*) pkg_provider_global_osarch=${pkg_provider_global_osarch_target#ext-} ;;
+    *) return 1 ;;
+  esac
+  case "$pkg_provider_global_osarch_target" in */*) return 1 ;; esac
+
+  _pkg_provider_osarch_valid "$pkg_provider_global_osarch" || return 1
+  [ -d "$m_BIN_DIR/$pkg_provider_global_osarch_target" ] || return 1
+  printf -- '%s\n' "$pkg_provider_global_osarch"
+)
+
+_pkg_provider_global_environment_class_resolve()
+(
+  [ "$#" -eq 4 ] || return 2
+  pkg_provider_global_environment_class_pkg=$1
+  pkg_provider_global_environment_class_version=$2
+  pkg_provider_global_environment_class_osarch=$3
+  pkg_provider_global_environment_class_require_default=$4
+
+  _pkg_provider_name_valid "$pkg_provider_global_environment_class_pkg" || return 2
+  if [ -n "$pkg_provider_global_environment_class_version" ]
+  then
+    _pkg_provider_version_valid "$pkg_provider_global_environment_class_version" || return 2
+  fi
+  if [ -n "$pkg_provider_global_environment_class_osarch" ]
+  then
+    _pkg_provider_osarch_valid "$pkg_provider_global_environment_class_osarch" || return 2
+    pkg_provider_global_environment_class_name="$pkg_provider_global_environment_class_pkg!$pkg_provider_global_environment_class_osarch"
+  else
+    pkg_provider_global_environment_class_name=$pkg_provider_global_environment_class_pkg
+  fi
+
+  pkg_provider_global_environment_class_selector="$m_PKG_DIR/$pkg_provider_global_environment_class_name"
+  pkg_provider_global_environment_class_current=
+
+  if [ -z "$pkg_provider_global_environment_class_version" ] || [ "$pkg_provider_global_environment_class_require_default" -eq 1 ]
+  then
+    if [ ! -e "$pkg_provider_global_environment_class_selector" ] && [ ! -L "$pkg_provider_global_environment_class_selector" ]
+    then
+      return 1
+    fi
+    [ -L "$pkg_provider_global_environment_class_selector" ] || return 2
+    pkg_provider_global_environment_class_current="$(command -p -- readlink "$pkg_provider_global_environment_class_selector")" || return 2
+    [ -n "$pkg_provider_global_environment_class_current" ] || return 2
+    case "$pkg_provider_global_environment_class_current" in */*) return 2 ;; esac
+    _pkg_provider_resolved_validate       "$pkg_provider_global_environment_class_current"       "$pkg_provider_global_environment_class_pkg"       ""       "$pkg_provider_global_environment_class_osarch" || return 2
+  fi
+
+  if [ -z "$pkg_provider_global_environment_class_version" ]
+  then
+    pkg_provider_global_environment_class_concrete=$pkg_provider_global_environment_class_current
+  elif [ -n "$pkg_provider_global_environment_class_osarch" ]
+  then
+    pkg_provider_global_environment_class_concrete="$pkg_provider_global_environment_class_pkg@$pkg_provider_global_environment_class_version!$pkg_provider_global_environment_class_osarch"
+  else
+    pkg_provider_global_environment_class_concrete="$pkg_provider_global_environment_class_pkg@$pkg_provider_global_environment_class_version"
+  fi
+
+  [ -d "$m_PKG_DIR/$pkg_provider_global_environment_class_concrete" ] && [ ! -L "$m_PKG_DIR/$pkg_provider_global_environment_class_concrete" ] || return 1
+  _pkg_provider_resolved_validate     "$pkg_provider_global_environment_class_concrete"     "$pkg_provider_global_environment_class_pkg"     "$pkg_provid…3824 tokens truncated…up/$pkg_provider_materialize_name" || {
+        _pkg_provider_materialize_cleanup
+        return 1
+      }
+    fi
+  done
+
+  pkg_provider_materialize_publish_status=0
+  for pkg_provider_materialize_name in \
+    env-linux-x86_64 env-linux-arm64 \
+    env-macos-x86_64 env-macos-arm64 \
+    env-windows-x86_64 env-windows-arm64 \
+    env
+  do
+    command -p -- mv -f -- "$pkg_provider_materialize_stage/$pkg_provider_materialize_name" "$pkg_provider_materialize_cache/$pkg_provider_materialize_name" || {
+      pkg_provider_materialize_publish_status=1
+      break
+    }
+  done
+
+  if [ "$pkg_provider_materialize_publish_status" -ne 0 ]
+  then
+    _pkg_provider_global_environment_restore "$pkg_provider_materialize_cache" "$pkg_provider_materialize_backup" >/dev/null 2>&1 || :
+    _pkg_provider_materialize_cleanup
+    return 1
+  fi
+
+  _pkg_provider_materialize_cleanup
+  return 0
+)
+
+pkg_provider_global_environment_apply()
+{
+  [ "$#" -eq 0 ] || return 2
+
+  pkg_provider_global_environment_osarch="$(_pkg_provider_global_active_osarch 2>/dev/null)" || pkg_provider_global_environment_osarch=
+  if [ -n "$pkg_provider_global_environment_osarch" ]
+  then
+    pkg_provider_global_environment_plan="$(_pkg_provider_global_environment_plan "$pkg_provider_global_environment_osarch")" || return 1
+  else
+    pkg_provider_global_environment_plan="$(_pkg_provider_global_environment_plan)" || return 1
+  fi
+
+  [ -n "$pkg_provider_global_environment_plan" ] || return 0
+  ( _pkg_provider_environment_plan_apply "$pkg_provider_global_environment_plan" ) || return 1
+  _pkg_provider_environment_plan_apply "$pkg_provider_global_environment_plan"
+}
+
+_pkg_provider_selector_matches_concrete()
+{
+  [ "$#" -eq 2 ] || return 2
+  pkg_provider_match_selector=$1
+  pkg_provider_match_concrete=$2
+
+  _pkg_provider_concrete_parse "$pkg_provider_match_concrete" || return 2
+  pkg_provider_match_osarch=$pkg_provider_concrete_osarch
+
+  pkg_provider_match_resolved="$(pkg_provider_selector_resolve "$pkg_provider_match_selector" "$pkg_provider_match_osarch")"
+  pkg_provider_match_status=$?
+  case "$pkg_provider_match_status" in
+    0) [ "$pkg_provider_match_resolved" = "$pkg_provider_match_concrete" ] ;;
+    1) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+pkg_provider_concrete_referenced()
+{
+  [ "$#" -eq 1 ] || return 2
+  pkg_provider_reference_target=$1
+  _pkg_provider_concrete_parse "$pkg_provider_reference_target" || return 2
+
+  _pkg_provider_system_conf || return 2
+  pkg_provider_reference_default_root="$pkg_provider_system_conf/provider/default"
+
+  if [ -e "$pkg_provider_reference_default_root" ] || [ -L "$pkg_provider_reference_default_root" ]
+  then
+    [ -d "$pkg_provider_reference_default_root" ] && [ ! -L "$pkg_provider_reference_default_root" ] || return 2
+    for pkg_provider_reference_file in       "$pkg_provider_reference_default_root"/*       "$pkg_provider_reference_default_root"/.[!.]*       "$pkg_provider_reference_default_root"/..?*
+    do
+      [ -e "$pkg_provider_reference_file" ] || [ -L "$pkg_provider_reference_file" ] || continue
+      _pkg_provider_scalar_read "$pkg_provider_reference_file" || return 2
+      _pkg_provider_selector_validate "$pkg_provider_scalar" || return 2
+      if _pkg_provider_selector_matches_concrete "$pkg_provider_scalar" "$pkg_provider_reference_target"
+      then
+        return 0
+      else
+        pkg_provider_reference_status=$?
+        [ "$pkg_provider_reference_status" -eq 1 ] || return 2
+      fi
+    done
+  fi
+
+  pkg_provider_reference_pkg_root="$m_STATE_SYS_DIR/pkg"
+  if [ ! -e "$pkg_provider_reference_pkg_root" ] && [ ! -L "$pkg_provider_reference_pkg_root" ]
+  then
+    return 1
+  fi
+  [ -d "$pkg_provider_reference_pkg_root" ] && [ ! -L "$pkg_provider_reference_pkg_root" ] || return 2
+
+  for pkg_provider_reference_consumer in     "$pkg_provider_reference_pkg_root"/*     "$pkg_provider_reference_pkg_root"/.[!.]*     "$pkg_provider_reference_pkg_root"/..?*
+  do
+    [ -e "$pkg_provider_reference_consumer" ] || [ -L "$pkg_provider_reference_consumer" ] || continue
     [ -d "$pkg_provider_reference_consumer" ] && [ ! -L "$pkg_provider_reference_consumer" ] || continue
     pkg_provider_reference_binding_root="$pkg_provider_reference_consumer/conf/binding"
 
@@ -735,7 +918,7 @@ _pkg_provider_environment_plan_apply()
   done
 
   return 1
-)
+}
 
 _pkg_provider_global_class_set()
 {
