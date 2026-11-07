@@ -145,6 +145,81 @@ jobs:
           ./m lang-set en_US
           [ "$(./m lang-set)" = en_US ]
 
+          # Force a later sys-selector update failure after an earlier owner
+          # changed, then verify the rollback-failure diagnostic and state.
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, stat, subprocess, threading, time
+
+          root = Path.cwd()
+          ai = root / 'res/ai/lang'
+          sys_lang = root / 'res/sys/lang'
+          assert not (root / 'res/ai').exists(), 'unexpected res/ai fixture; refusing to alter it'
+          assert not list(sys_lang.glob('.current.new.*'))
+          assert not list(sys_lang.glob('.current.old.*'))
+          (ai / 'en_US').mkdir(parents=True)
+          (ai / 'it_IT').mkdir()
+          (ai / 'current').symlink_to('en_US')
+          original_mode = stat.S_IMODE(sys_lang.stat().st_mode)
+
+          try:
+              watch_error = []
+
+              def fail_sys_update_after_ai_switch(injected):
+                  deadline = time.monotonic() + 5
+                  try:
+                      while time.monotonic() < deadline:
+                          if not (ai / 'current').exists() and not (ai / 'current').is_symlink():
+                              os.chmod(sys_lang, original_mode & ~0o222)
+                              injected.set()
+                              return
+                          if (ai / 'current').is_symlink() and os.readlink(ai / 'current') == 'it_IT':
+                              return
+                          time.sleep(0.0001)
+                      watch_error.append('timed out waiting for non-sys selector switch')
+                  except BaseException as error:
+                      watch_error.append(repr(error))
+
+              for attempt in range(3):
+                  injected = threading.Event()
+                  watcher = threading.Thread(target=fail_sys_update_after_ai_switch, args=(injected,))
+                  watcher.start()
+                  result = subprocess.run(['./m', 'lang-set', 'it_IT'], cwd=root, text=True, capture_output=True)
+                  watcher.join(timeout=6)
+                  os.chmod(sys_lang, original_mode)
+                  assert not watch_error, watch_error
+                  if injected.is_set() and result.returncode == 6:
+                      assert '[language.selector-rollback-failed]' in result.stderr, result.stderr
+                      assert os.readlink(sys_lang / 'current') == 'en_US'
+                      assert os.readlink(ai / 'current') == 'en_US'
+                      break
+                  assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+                  assert os.readlink(ai / 'current') == 'it_IT'
+                  subprocess.run(['./m', 'lang-set', 'en_US'], cwd=root, check=True)
+              else:
+                  raise AssertionError('could not inject sys-selector update failure')
+          finally:
+              os.chmod(sys_lang, original_mode)
+              for parent in (ai, sys_lang):
+                  for pattern in ('.current.new.*', '.current.old.*'):
+                      for item in parent.glob(pattern):
+                          if item.is_symlink() or item.is_file():
+                              item.unlink()
+                          else:
+                              raise AssertionError(f'unexpected directory at {item}')
+              for selector in (ai / 'current', sys_lang / 'current'):
+                  if selector.is_symlink() and os.readlink(selector) != 'en_US':
+                      selector.unlink()
+                      selector.symlink_to('en_US')
+              if (ai / 'current').is_symlink():
+                  (ai / 'current').unlink()
+              (ai / 'en_US').rmdir()
+              (ai / 'it_IT').rmdir()
+              ai.rmdir()
+              ai.parent.rmdir()
+          print('PASS: public lang-set rollback failure injection preserves prior selectors')
+          PY
+
           # Discover and inspect the actual distributed operational manual.
           ./m manual > "$work/topics"
           grep -Fx 'sys shell' "$work/topics" >/dev/null
