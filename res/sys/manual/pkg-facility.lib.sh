@@ -9,8 +9,9 @@ DESCRIPTION
     Facility/provider definitions are inert declarations. Validation does not create
     a facility default, create a consumer binding, publish commands or export
     environment variables. Installed concrete facility declarations are also the
-    source used by dependency resolution to discover installed providers; no
-    separate mutable provider-index registry is authoritative.
+    source of truth used by dependency resolution to discover installed providers.
+    pkg-facility-map.lib.sh maintains a replaceable derived index from those
+    validated declarations; it is not a second authority.
 
     The generic facility contract envelope is:
 

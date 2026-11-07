@@ -68,6 +68,41 @@ _pkg_catalog_compare_versions()
   esac
 }
 
+pkg_catalog_installed_versions_compare()
+{
+  [ "$#" -eq 3 ] || return 2
+  pkg_catalog_installed_repository=$1
+  pkg_catalog_installed_left=$2
+  pkg_catalog_installed_right=$3
+
+  _pkg_catalog_repository_adapter "$pkg_catalog_installed_repository" || return 1
+  pkg_catalog_installed_adapter=$pkg_catalog_repository_adapter
+  pkg_catalog_installed_type="$(_pkg_catalog_scalar_read "$pkg_catalog_installed_repository/type")" || return 1
+
+  # Facility-map reconciliation must remain offline. These adapters have
+  # repository-local version ordering; GitHub ordering is usable only when the
+  # pinned repository snapshot contains both versions in its immutable index.
+  case "$pkg_catalog_installed_type" in
+    github)
+      [ -f "$pkg_catalog_installed_repository/versions" ] &&
+        [ ! -L "$pkg_catalog_installed_repository/versions" ] || return 1
+      LC_ALL=C command -p -- awk -v left="$pkg_catalog_installed_left" -v right="$pkg_catalog_installed_right" '
+        $0 == left { left_seen=1 }
+        $0 == right { right_seen=1 }
+        END { if (!left_seen || !right_seen) exit 1 }
+      ' "$pkg_catalog_installed_repository/versions" || return 1
+      ;;
+    nodejs|chrome|chromium) : ;;
+    *) return 1 ;;
+  esac
+
+  _pkg_catalog_compare_versions \
+    "$pkg_catalog_installed_adapter" \
+    "$pkg_catalog_installed_repository" \
+    "$pkg_catalog_installed_left" \
+    "$pkg_catalog_installed_right"
+}
+
 pkg_catalog_init()
 {
   [ "$#" -eq 4 ] || return 2
