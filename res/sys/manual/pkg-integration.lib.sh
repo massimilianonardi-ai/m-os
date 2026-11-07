@@ -11,7 +11,8 @@ FUNCTIONS
         flat-pkg primary component/payload-root metadata and dmg-pkg primary
         component/payload-root/overlay metadata, validate dependency declaration
         syntax, materialize the managed concrete and its command/environment/
-        facility/state metadata and optional ordinary package library views
+        facility/state metadata, retained repository ordering metadata and
+        optional ordinary package library views
         lib/sh and lib/java. The package range descriptor lib/<runtime>/<name>
         contains one relative pathname beneath the useful root; integration
         validates it and creates the corresponding concrete-local symlink.
@@ -35,19 +36,40 @@ FUNCTIONS
         osarch controls the concrete package identity/class. Dependency declarations
         are stored as immutable package metadata but mutable runtime provider
         availability/selection is deliberately not resolved during integration.
-        No separate provider-index state is created; installed concrete facility
-        declarations are the provider-discovery source of truth.
+        Installed concrete facility declarations are the provider-discovery source
+        of truth. The managed facility map is a replaceable derived index, not a
+        second authoritative registry. Map reconciliation errors are reported and
+        do not roll back a valid package installation.
 
     pkg_deintegrate <package> <version> [<osarch>]
         Remove an installed concrete only when it is not the package default and is
-        not referenced by explicit provider-selection configuration. No separate
-        provider index must be maintained. Persistent package state is not removed.
+        not referenced by explicit provider-selection configuration. Reconcile the
+        derived facility map after removal; map errors are reported without
+        restoring an already-removed concrete. Persistent package state is not
+        removed.
 
     pkg_default_apply <package> <version> [<osarch>]
         Select an installed concrete as the package/platform default and publish its
         package commands. An empty version clears that package default. A transition
         also reconciles global facility commands whose configured provider selector
         depends on the presence or current concrete of this package/class.
+
+    pkg_integration_set_concrete <package> <version> <osarch>
+        Set the pkg_integration_* identity variables for one already-validated
+        package concrete. This derives the concrete name/path, package selector and
+        public command directory; it does not validate package metadata or check
+        whether the concrete is installed. osarch may be empty for a non-platform
+        package identity. Callers must validate the package identity before using
+        this path derivation.
+
+    pkg_integration_link_target_read <descriptor-file>
+        Validate and read one integration link-descriptor file. The file must be a
+        readable, non-executable regular file that is not a symbolic link. Its
+        content is read by shell command substitution, which removes trailing
+        newline bytes; the resulting value must be one non-empty safe relative
+        path with no absolute path, empty component, current-directory component,
+        parent-directory component or trailing slash. The result is stored in
+        pkg_integration_link_target.
 
 RETURN STATUS
     pkg_integrate returns 0 on success.
@@ -87,6 +109,13 @@ RETURN STATUS
     pkg_default_apply returns 0 on success, 1 when the requested default state
     cannot be validated or changed, and 2 for invalid invocation or invalid
     package/default identity operands.
+
+    pkg_integration_set_concrete returns 0 when identity variables are derived,
+    and 2 for an invalid invocation. It does not check installation state.
+
+    pkg_integration_link_target_read returns 0 for a valid descriptor, 1 when the
+    file cannot be read or contains an invalid/unsafe path, and 2 for an invalid
+    invocation.
 
 DEPENDENCIES
     The library uses the shared package identity validators from pkg-common.lib.sh
