@@ -87,6 +87,13 @@ _pkg_provider_scalar_read()
   [ "$pkg_provider_scalar_actual" = "$pkg_provider_scalar_expected" ] || return 1
 }
 
+_pkg_provider_facility_map_reconcile()
+{
+  [ "$#" -eq 0 ] || return 2
+  loadsyslib "pkg/facility/pkg-facility-map" || return 1
+  pkg_facility_map_reconcile
+}
+
 _pkg_provider_system_conf()
 {
   [ "$#" -eq 0 ] || return 2
@@ -330,6 +337,7 @@ _pkg_provider_default()
       _pkg_provider_global_reconcile "$1" "" "$pkg_provider_old_selector" >/dev/null 2>&1 || :
       return 1
     fi
+    _pkg_provider_facility_map_reconcile || log warn execution facility-map-reconcile-failed operation pkg-provider-default || :
     return 0
   fi
 
@@ -369,6 +377,7 @@ _pkg_provider_default()
     _pkg_provider_global_reconcile "$1" "$pkg_provider_new_selector" "$pkg_provider_old_selector" >/dev/null 2>&1 || :
     return 1
   fi
+  _pkg_provider_facility_map_reconcile || log warn execution facility-map-reconcile-failed operation pkg-provider-default || :
   return 0
 }
 
@@ -1844,6 +1853,7 @@ $pkg_provider_transition_piece"
     _pkg_provider_global_reconcile_plans "$pkg_provider_transition_new_plan" "$pkg_provider_transition_old_plan" >/dev/null 2>&1 || :
     return 1
   fi
+  _pkg_provider_facility_map_reconcile || log warn execution facility-map-reconcile-failed operation pkg-provider-package-default || :
   return 0
 )
 

@@ -2,13 +2,17 @@ name: m public pkg dependency provider and uninstall integration
 
 on:
   push:
-    branches: [master]
+    branches: [master, m-os-completion-p4-facility-map]
   pull_request:
     paths:
       - '.github/scripts/m-pkg-p3-provider-versions.sh'
       - '.github/scripts/m-pkg-p3-real-ambiguity.sh'
       - '.github/scripts/m-pkg-p3-typed-env.sh'
+      - '.github/scripts/m-pkg-p4-facility-map-unit.sh'
       - '.github/workflows/m-pkg-provider-lifecycle.yml'
+      - 'lib/sys/sh/pkg/facility/pkg-facility-map.lib.sh'
+      - 'lib/sys/sh/pkg/pkg-catalog.lib.sh'
+      - 'lib/sys/sh/pkg/pkg-integration.lib.sh'
       - 'lib/sys/sh/pkg/pkg-provider.lib.sh'
   workflow_dispatch:
 
@@ -165,6 +169,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Verify derived facility map ordering and offline recovery
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p4-facility-map-unit.sh
       - name: Verify real public provider version and compatibility selection
         shell: sh
         run: /bin/sh .github/scripts/m-pkg-p3-provider-versions.sh
