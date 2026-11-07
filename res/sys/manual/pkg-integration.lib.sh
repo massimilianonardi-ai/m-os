@@ -11,7 +11,8 @@ FUNCTIONS
         flat-pkg primary component/payload-root metadata and dmg-pkg primary
         component/payload-root/overlay metadata, validate dependency declaration
         syntax, materialize the managed concrete and its command/environment/
-        facility/state metadata and optional ordinary package library views
+        facility/state metadata, retained repository ordering metadata and
+        optional ordinary package library views
         lib/sh and lib/java. The package range descriptor lib/<runtime>/<name>
         contains one relative pathname beneath the useful root; integration
         validates it and creates the corresponding concrete-local symlink.
@@ -35,13 +36,17 @@ FUNCTIONS
         osarch controls the concrete package identity/class. Dependency declarations
         are stored as immutable package metadata but mutable runtime provider
         availability/selection is deliberately not resolved during integration.
-        No separate provider-index state is created; installed concrete facility
-        declarations are the provider-discovery source of truth.
+        Installed concrete facility declarations are the provider-discovery source
+        of truth. The managed facility map is a replaceable derived index, not a
+        second authoritative registry. Map reconciliation errors are reported and
+        do not roll back a valid package installation.
 
     pkg_deintegrate <package> <version> [<osarch>]
         Remove an installed concrete only when it is not the package default and is
-        not referenced by explicit provider-selection configuration. No separate
-        provider index must be maintained. Persistent package state is not removed.
+        not referenced by explicit provider-selection configuration. Reconcile the
+        derived facility map after removal; map errors are reported without
+        restoring an already-removed concrete. Persistent package state is not
+        removed.
 
     pkg_default_apply <package> <version> [<osarch>]
         Select an installed concrete as the package/platform default and publish its

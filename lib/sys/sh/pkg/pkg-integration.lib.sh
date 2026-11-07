@@ -1,5 +1,7 @@
 loadsyslib "pkg/pkg-common"
+loadsyslib "pkg/pkg-catalog"
 loadsyslib "pkg/facility/pkg-facility"
+loadsyslib "pkg/facility/pkg-facility-map"
 loadsyslib "pkg/facility/pkg-dependency"
 loadsyslib "pkg/pkg-state"
 loadsyslib "pkg/pkg-setuid"
@@ -852,6 +854,15 @@ pkg_integrate()
     return 16
   fi
 
+  if [ -d "$pkg_integrate_range/repository" ] && [ ! -L "$pkg_integrate_range/repository" ]
+  then
+    if ! command -p -- cp -R -- "$pkg_integrate_range/repository" "$pkg_integration_concrete/repository"
+    then
+      command -p -- rm -rf -- "$pkg_integration_concrete/repository" || :
+      log warn execution repository-ordering-metadata-copy-failed operation pkg-integrate concrete "$pkg_integration_concrete_name" || :
+    fi
+  fi
+
   if ! _pkg_dependency_materialize "$pkg_integrate_range/dependency" "$pkg_integration_concrete"
   then
     _pkg_integration_restore_input "$pkg_integration_concrete" "$pkg_integrate_root_input" || :
@@ -892,6 +903,13 @@ pkg_integrate()
   # Phase 7: finalize the setuid transaction and complete integration.
   _pkg_setuid_commit "$pkg_integrate_range" "$pkg_integration_concrete" || :
 
+  # The facility map is a derived cache. Its failure is reported, but never
+  # rolls back an otherwise valid package installation.
+  if ! pkg_facility_map_reconcile
+  then
+    log warn execution facility-map-reconcile-failed operation pkg-integrate concrete "$pkg_integration_concrete_name" || :
+  fi
+
   return 0
 )
 
@@ -913,6 +931,10 @@ pkg_deintegrate()
   _pkg_dependency_provider_unreferenced "$pkg_integration_concrete_name" || return 1
 
   command -p -- rm -rf -- "$pkg_integration_concrete" || return 1
+  if ! pkg_facility_map_reconcile
+  then
+    log warn execution facility-map-reconcile-failed operation pkg-deintegrate concrete "$pkg_integration_concrete_name" || :
+  fi
   return 0
 )
 
