@@ -189,7 +189,15 @@ NATIVE-COMMAND MIGRATION
 
         m pkg default <package>@<selected-version>[!<osarch>]
 
-    Leave previously unselected classes without a default. Confirm native
+    A reinstall can automatically select the installed concrete as the class
+    default. If the recorded pre-migration state had no default, explicitly
+    clear that selection after reinstall:
+
+        m pkg default -u -- <package-class>
+
+    Query pkg default <package-class> and verify it reports no selection before
+    restarting consumers. Leave previously unselected classes without a
+    default. Confirm native
     cmd/env content, command execution, managed configuration and service
     state before restarting consumers. Respect provider references: the
     manager can refuse removal of a still-referenced provider. Handle
