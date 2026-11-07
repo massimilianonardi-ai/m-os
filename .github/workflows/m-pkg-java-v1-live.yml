@@ -1,0 +1,60 @@
+name: Validate real v1 Java catalog adapters on autonomous m
+
+on:
+  push:
+    branches: [pkg-schema-v2]
+    paths:
+      - 'lib/sys/sh/pkg/repository/pkg-repository-apache-maven.lib.sh'
+      - 'lib/sys/sh/pkg/repository/pkg-repository-temurin.lib.sh'
+      - 'res/sys/manual/pkg-repository-apache-maven.lib.sh'
+      - 'res/sys/manual/pkg-repository-temurin.lib.sh'
+      - '.github/workflows/m-pkg-java-v1-live.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  java-catalog:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact autonomous m runtime
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout pinned catalog containing unchanged v1 Java package definitions
+        uses: actions/checkout@v4
+        with:
+          repository: massimilianonardi-ai/pkg-catalog
+          ref: 420e0870b81c77fb34cb125822ba76501516a35c
+          path: catalog
+          persist-credentials: false
+      - name: Checkout exact Java public-path permanent test
+        uses: actions/checkout@v4
+        with:
+          repository: massimilianonardi-ai/rumiai-tests
+          ref: 3f0eeb2db04ada295ee933ad6c0f4993c08c6ee5
+          path: tests
+          persist-credentials: false
+      - name: Prepare real m host and pinned local catalog
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          conf=$(./m state-path system sys pkg conf)
+          mkdir -p -- "$conf"
+          printf '%s\n' "$GITHUB_WORKSPACE/catalog" > "$conf/catalog"
+      - name: Run permanent real Java v1 integration through rumiai-test
+        shell: sh
+        env:
+          RUMIAI_TEST_M_OS_ROOT: ${{ github.workspace }}
+          RUMIAI_TEST_PKG_CATALOG_ROOT: ${{ github.workspace }}/catalog
+        run: |
+          set -eu
+          ./tests/rumiai-test --list m-os/pkg-java-v1
+          ./tests/rumiai-test m-os/pkg-java-v1

@@ -1348,6 +1348,10 @@ _pkg_provider_global_plan_concrete()
   _pkg_provider_resolved_validate "$pkg_provider_global_concrete" "$pkg_provider_global_pkg" "" "$pkg_provider_global_osarch" || return 1
   _pkg_provider_global_class_set "$pkg_provider_global_pkg" "$pkg_provider_global_osarch" || return 1
 
+  _pkg_schema_read "$m_PKG_DIR/$pkg_provider_global_concrete" || return 1
+  pkg_provider_global_schema=$pkg_schema
+  pkg_provider_global_relative=facility-cmd/$pkg_provider_global_facility
+  [ "$pkg_provider_global_schema" != v2 ] || pkg_provider_global_relative=link/bin
   pkg_provider_global_cmd_dir="$m_PKG_DIR/$pkg_provider_global_concrete/facility-cmd/$pkg_provider_global_facility"
   if [ ! -e "$pkg_provider_global_cmd_dir" ] && [ ! -L "$pkg_provider_global_cmd_dir" ]
   then
@@ -1361,11 +1365,34 @@ _pkg_provider_global_plan_concrete()
     [ -L "$pkg_provider_global_cmd_path" ] || return 1
     pkg_provider_global_command=${pkg_provider_global_cmd_path##*/}
     _pkg_provider_name_valid "$pkg_provider_global_command" || return 1
+    if [ "$pkg_provider_global_schema" = v2 ]
+    then
+      # The facility member is an installed projection of this concrete's
+      # link/bin entry, not an arbitrary executable symlink.
+      if ! pkg_provider_global_link="$(command -p -- readlink "$pkg_provider_global_cmd_path")"
+      then
+        log error execution provider-global-command-link-unreadable \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 3
+      fi
+      if [ "$pkg_provider_global_link" != "../../link/bin/$pkg_provider_global_command" ]
+      then
+        log error execution provider-global-command-link-invalid \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 4
+      fi
+      if ! _pkg_v2_installed_command_validate "$m_PKG_DIR/$pkg_provider_global_concrete" "$pkg_provider_global_command"
+      then
+        log error execution provider-global-command-target-invalid \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 5
+      fi
+    fi
     readpathce pkg_provider_global_resolved "$pkg_provider_global_cmd_path" || return 1
     [ -f "$pkg_provider_global_resolved" ] && [ -x "$pkg_provider_global_resolved" ] || return 1
     printf -- '%s\t%s\n' \
       "$pkg_provider_global_public_dir/$pkg_provider_global_command" \
-      "../../pkg/$pkg_provider_global_target_name/facility-cmd/$pkg_provider_global_facility/$pkg_provider_global_command"
+      "../../pkg/$pkg_provider_global_target_name/$pkg_provider_global_relative/$pkg_provider_global_command"
   done
 }
 
@@ -1381,7 +1408,9 @@ _pkg_provider_global_plan_class()
   _pkg_provider_global_class_set "$pkg_provider_global_pkg" "$pkg_provider_global_osarch" || return 1
   pkg_provider_global_current=
 
-  if [ -z "$pkg_provider_global_version" ] || [ "$pkg_provider_global_require_default" -eq 1 ]
+  # An explicitly pinned provider is independent of the ordinary package
+  # default. Only an unversioned selector requires that mutable default.
+  if [ -z "$pkg_provider_global_version" ]
   then
     if [ ! -e "$pkg_provider_global_selector_path" ] && [ ! -L "$pkg_provider_global_selector_path" ]
     then
@@ -1497,7 +1526,7 @@ _pkg_provider_global_plan_validate()
   do
     [ -n "$pkg_provider_global_validate_public" ] && [ -n "$pkg_provider_global_validate_target" ] && [ -z "$pkg_provider_global_validate_extra" ] || return 1
     case "$pkg_provider_global_validate_public" in "$m_BIN_EXT_DIR"/* | "$m_BIN_DIR"/ext-*/*) : ;; *) return 1 ;; esac
-    case "$pkg_provider_global_validate_target" in ../../pkg/*/facility-cmd/*/*) : ;; *) return 1 ;; esac
+    case "$pkg_provider_global_validate_target" in ../../pkg/*/facility-cmd/*/* | ../../pkg/*/link/bin/*) : ;; *) return 1 ;; esac
 
     if [ -n "$pkg_provider_global_seen" ]
     then
