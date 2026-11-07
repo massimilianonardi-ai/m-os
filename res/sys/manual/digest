@@ -41,5 +41,6 @@ EXIT STATUS
     statuses; stderr identifies the bootstrap or operation branch.
 
     0   Success.
-    2   Invalid invocation or unsupported algorithm.
-    Other non-zero status indicates input, backend or digest-validation failure.
+    1   Input, backend or returned-digest validation failure.
+    2   Invalid invocation or unsupported algorithm. This status is also used
+        when the m shell runtime cannot be loaded before operation dispatch.
