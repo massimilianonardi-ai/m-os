@@ -12,6 +12,7 @@ controller_pid=
 work=
 chromium_installed=0
 consumer_installed=0
+provider_default_owned=0
 
 cleanup()
 {
@@ -23,6 +24,14 @@ cleanup()
     kill -TERM -- "-$consumer_pid" >/dev/null 2>&1 || kill -TERM "$consumer_pid" >/dev/null 2>&1 || :
   fi
   if [ -n "$consumer_pid" ]; then wait "$consumer_pid" 2>/dev/null || :; consumer_pid=; fi
+  if [ "$provider_default_owned" -eq 1 ]; then
+    cleanup_provider_default=$(./m pkg provider default web-control 2>/dev/null) || cleanup_provider_default=
+    case "$cleanup_provider_default" in
+      pwc-web-control@v0.1.0)
+        ./m pkg provider default -u -- web-control >/dev/null 2>&1 || :
+        ;;
+    esac
+  fi
   if [ "$consumer_installed" -eq 1 ]; then
     ./m pkg uninstall "$consumer" >/dev/null 2>&1 || :
   fi
@@ -39,6 +48,12 @@ trap 'exit 130' HUP INT TERM
 [ ! -e "pkg/chromium" ] && [ ! -L "pkg/chromium" ] || { echo 'FAIL: Chromium package default already exists; refusing destructive test cleanup' >&2; exit 1; }
 [ ! -e "pkg/$consumer" ] && [ ! -L "pkg/$consumer" ] || { echo 'FAIL: consumer concrete already exists; refusing destructive test cleanup' >&2; exit 1; }
 [ ! -e bin/ext/chromium ] && [ ! -L bin/ext/chromium ] || { echo 'FAIL: Chromium command projection already exists; refusing destructive test cleanup' >&2; exit 1; }
+if ./m pkg provider default web-control >/dev/null 2>&1
+then
+  echo 'FAIL: web-control already has a provider default; refusing destructive test cleanup' >&2
+  exit 1
+fi
+[ ! -e bin/ext/web-control ] && [ ! -L bin/ext/web-control ] || { echo 'FAIL: web-control command projection already exists; refusing destructive test cleanup' >&2; exit 1; }
 consumer_conf=$(./m state-path system pkg pwc-web-control conf) || exit 1
 [ ! -e "$consumer_conf/binding/browser" ] && [ ! -L "$consumer_conf/binding/browser" ] || { echo 'FAIL: consumer browser binding already exists; refusing a non-isolated provider test' >&2; exit 1; }
 command -v setsid >/dev/null 2>&1 || { echo 'FAIL: setsid is required for isolated consumer teardown' >&2; exit 1; }
@@ -49,6 +64,8 @@ chromium_installed=1
 [ -f "$root/chrome_sandbox" ] && [ ! -L "$root/chrome_sandbox" ]
 ./m pkg install "$consumer"
 consumer_installed=1
+provider_default_owned=1
+./m pkg provider default web-control pwc-web-control@v0.1.0
 
 work=$(mktemp -d)
 WEB_CONTROL_HEADLESS=1 WEB_CONTROL_BROWSER_ARGS='["--no-sandbox"]' \
@@ -91,12 +108,12 @@ done
 [ "$ready" -eq 1 ] || { cat "$work/status.err" >&2; exit 1; }
 
 # Status must not create an absent browser. A page-required operation does.
-./m pwc-web-control page new >"$work/page-new"
+./m web-control page new >"$work/page-new"
 browser_ready=0
 i=0
 while [ "$i" -lt 15 ]
 do
-  if ./m pwc-web-control status >"$work/status" 2>"$work/status.err" && \
+  if ./m web-control status >"$work/status" 2>"$work/status.err" && \
      grep -F '"browserRunning":true' "$work/status" >/dev/null
   then
     browser_ready=1
