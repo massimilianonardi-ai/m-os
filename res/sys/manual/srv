@@ -176,6 +176,14 @@ ENVIRONMENT
 
 
 EXIT STATUS
+
+    Bootstrap failures (before operation dispatch):
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    2    The m shell runtime could not be loaded.
+    Operation-specific failures below may also use these numeric
+    statuses; stderr identifies the bootstrap or operation branch.
+
     0     The requested lifecycle operation completed successfully. This includes
           idempotent stop cases where the service is not running.
     1     A lifecycle operation failed, including unavailable or invalid provider

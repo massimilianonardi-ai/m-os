@@ -222,6 +222,14 @@ ENVIRONMENT
 
 
 EXIT STATUS
+
+    Bootstrap failures (before operation dispatch):
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    2    The m shell runtime could not be loaded.
+    Operation-specific failures below may also use these numeric
+    statuses; stderr identifies the bootstrap or operation branch.
+
     0   The requested operation succeeded.
     1   The requested package operation could not be completed after a valid
         invocation, or the requested installed class/default could not be resolved

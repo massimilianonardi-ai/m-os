@@ -59,6 +59,14 @@ ENVIRONMENT
 
 
 EXIT STATUS
+
+    Bootstrap failures (before operation dispatch):
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    2    The m shell runtime could not be loaded.
+    Operation-specific failures below may also use these numeric
+    statuses; stderr identifies the bootstrap or operation branch.
+
     0   Success, including a non-empty substring-search result list.
     1   Invalid invocation or invalid owner/topic identifier.
     2   Requested topic not found and no substring matches found.

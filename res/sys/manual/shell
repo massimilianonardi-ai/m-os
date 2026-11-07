@@ -25,5 +25,13 @@ ENVIRONMENT
         Exported shell-extension value used by managed shell configuration.
 
 EXIT STATUS
+
+    Bootstrap failures (before operation dispatch):
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    2    The m shell runtime could not be loaded.
+    Operation-specific failures below may also use these numeric
+    statuses; stderr identifies the bootstrap or operation branch.
+
     On success shell replaces itself with the selected shell.
     Non-zero status indicates state/configuration preparation or exec failure.
