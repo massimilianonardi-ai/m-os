@@ -6,7 +6,7 @@ repo_root=$(CDPATH= cd "$(dirname "$0")/../.." && pwd) || exit 1
 CDPATH= cd "$repo_root" || exit 1
 concrete=chromium@1697793
 consumer=pwc-web-control@v0.1.0
-root="$PWD/pkg/$concrete/root"
+root=
 consumer_pid=
 controller_pid=
 work=
@@ -60,6 +60,8 @@ command -v setsid >/dev/null 2>&1 || { echo 'FAIL: setsid is required for isolat
 command -v strace >/dev/null 2>&1 || { echo 'FAIL: strace is required to inspect the real child exec environment' >&2; exit 1; }
 ./m pkg install "$concrete"
 chromium_installed=1
+chromium_default=$(./m pkg default chromium) || exit 1
+root="$PWD/pkg/$chromium_default/root"
 [ -d "$root" ] && [ ! -L "$root" ]
 [ -f "$root/chrome_sandbox" ] && [ ! -L "$root/chrome_sandbox" ]
 ./m pkg install "$consumer"
