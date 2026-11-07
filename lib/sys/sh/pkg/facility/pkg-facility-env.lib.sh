@@ -166,3 +166,68 @@ _pkg_facility_env_provider_validate()
 
   [ "$pkg_facility_env_realization_count" -eq "$pkg_facility_env_contract_count" ]
 }
+
+# In v2 the facility contract owns the variable names; the provider supplies
+# only typed values for those required names. PATH may have multiple ordered
+# contributions, while ordinary variables have exactly one value.
+_pkg_facility_env_v2_provider_validate()
+{
+  [ "$#" -eq 3 ] || return 2
+  pkg_facility_v2_env_contract=$1
+  pkg_facility_v2_env_realization=$2
+  pkg_facility_v2_env_root=$3
+
+  _pkg_facility_env_contract_validate "$pkg_facility_v2_env_contract" || return 1
+  [ -d "$pkg_facility_v2_env_realization" ] &&
+    [ ! -L "$pkg_facility_v2_env_realization" ] || return 1
+  [ -d "$pkg_facility_v2_env_root" ] &&
+    [ ! -L "$pkg_facility_v2_env_root" ] || return 1
+  readpathce pkg_facility_env_root_resolved "$pkg_facility_v2_env_root" || return 1
+
+  for pkg_facility_v2_env_entry in \
+    "$pkg_facility_v2_env_realization"/* \
+    "$pkg_facility_v2_env_realization"/.[!.]* \
+    "$pkg_facility_v2_env_realization"/..?*
+  do
+    [ -e "$pkg_facility_v2_env_entry" ] ||
+      [ -L "$pkg_facility_v2_env_entry" ] || continue
+    pkg_facility_v2_env_name=${pkg_facility_v2_env_entry##*/}
+    [ -f "$pkg_facility_v2_env_contract/$pkg_facility_v2_env_name" ] &&
+      [ ! -L "$pkg_facility_v2_env_contract/$pkg_facility_v2_env_name" ] || return 1
+    [ -f "$pkg_facility_v2_env_entry" ] &&
+      [ ! -L "$pkg_facility_v2_env_entry" ] &&
+      [ -r "$pkg_facility_v2_env_entry" ] &&
+      [ ! -x "$pkg_facility_v2_env_entry" ] || return 1
+  done
+
+  for pkg_facility_v2_env_marker in "$pkg_facility_v2_env_contract"/*
+  do
+    pkg_facility_v2_env_name=${pkg_facility_v2_env_marker##*/}
+    pkg_facility_v2_env_value_file="$pkg_facility_v2_env_realization/$pkg_facility_v2_env_name"
+    [ -f "$pkg_facility_v2_env_value_file" ] &&
+      [ ! -L "$pkg_facility_v2_env_value_file" ] &&
+      [ -r "$pkg_facility_v2_env_value_file" ] &&
+      [ ! -x "$pkg_facility_v2_env_value_file" ] || return 1
+
+    pkg_facility_v2_env_count=0
+    while IFS= read -r pkg_facility_v2_env_descriptor
+    do
+      _pkg_facility_env_descriptor_validate \
+        "$pkg_facility_v2_env_descriptor" "$pkg_facility_v2_env_root" || return 1
+      if [ "$pkg_facility_v2_env_name" = PATH ]
+      then
+        case "$pkg_facility_v2_env_descriptor" in
+          root | "root-path "*) : ;;
+          *) return 1 ;;
+        esac
+        case "$pkg_facility_v2_env_descriptor" in
+          "root-path "*) [ -d "$pkg_facility_env_resolved" ] || return 1 ;;
+        esac
+      fi
+      pkg_facility_v2_env_count=$((pkg_facility_v2_env_count + 1))
+      [ "$pkg_facility_v2_env_name" = PATH ] ||
+        [ "$pkg_facility_v2_env_count" -eq 1 ] || return 1
+    done < "$pkg_facility_v2_env_value_file"
+    [ "$pkg_facility_v2_env_count" -gt 0 ] || return 1
+  done
+}
