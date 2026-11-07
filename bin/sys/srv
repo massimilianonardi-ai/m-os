@@ -32,6 +32,26 @@ srv_pid_exists()
   [ "$srv_ps_pid" = "$1" ]
 }
 
+srv_pid_start_identity_get()
+{
+  [ "$#" -eq 1 ] || return 2
+  srv_pid_valid "$1" || return 1
+
+  # POSIX ps has no process creation-time field. Keep this extension at
+  # the host capability boundary; never infer a match on an unknown backend.
+  srv_process_start_host="$(command -p -- uname -s 2>/dev/null)" || return 1
+  case "$srv_process_start_host" in
+    Linux | Darwin)
+      srv_process_start_identity="$(
+        LC_ALL=C TZ=UTC0 command -p -- ps -p "$1" -o lstart= 2>/dev/null |
+          command -p -- awk 'NR == 1 { $1 = $1; print }'
+      )" || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  [ -n "$srv_process_start_identity" ]
+}
+
 srv_caller_pid_get()
 {
   srv_caller_pid="$(command -p -- ps -p "$$" -o ppid= 2>/dev/null | command -p -- awk 'NR == 1 { print $1 }')"
@@ -147,6 +167,7 @@ srv_runtime_read()
   srv_owner=
   srv_command=
   srv_provider=
+  srv_recorded_start_identity=
 
   srv_runtime_pid_read || return 1
 
@@ -174,6 +195,31 @@ srv_runtime_read()
 '*) return 1 ;;
     esac
   fi
+
+  # A live process requires recorded start identity; old records without
+  # it remain eligible only for stale cleanup after the recorded PID exits.
+  if [ -e "$srv_runtime_dir/started" ] || [ -L "$srv_runtime_dir/started" ]
+  then
+    [ -f "$srv_runtime_dir/started" ] && \
+    [ ! -L "$srv_runtime_dir/started" ] && \
+    [ -r "$srv_runtime_dir/started" ] || return 1
+    srv_recorded_start_identity="$(command -p -- cat "$srv_runtime_dir/started" 2>/dev/null)" || return 1
+    [ -n "$srv_recorded_start_identity" ] || return 1
+
+    if srv_pid_exists "$srv_pid"
+    then
+      srv_pid_start_identity_get "$srv_pid" || return 1
+      [ "$srv_process_start_identity" = "$srv_recorded_start_identity" ] || return 1
+    fi
+  else
+    # Legacy records cannot distinguish a still-live service process from
+    # an unrelated process that recycled its PID. Do not accept either as
+    # managed; callers may still remove the state once that PID is dead.
+    if srv_pid_exists "$srv_pid"
+    then
+      return 1
+    fi
+  fi
 }
 
 srv_runtime_publish()
@@ -186,6 +232,7 @@ srv_runtime_publish()
     printf -- '%s\n' "$srv_pid" > "$srv_runtime_tmp/pid" && \
     printf -- '%s\n' "$srv_caller_pid" > "$srv_runtime_tmp/owner" && \
     printf -- '%s\n' "$srv_command" > "$srv_runtime_tmp/command" && \
+    printf -- '%s\n' "$srv_recorded_start_identity" > "$srv_runtime_tmp/started" && \
     { [ -z "$srv_provider" ] || printf -- '%s\n' "$srv_provider" > "$srv_runtime_tmp/provider"; }
   } || {
     command -p -- rm -rf -- "$srv_runtime_tmp" 2>/dev/null
@@ -237,6 +284,9 @@ srv_start()
     srv_unpublished_pid=
     fatal 1 execution execution-failed operation srv reason exited-during-start service "$srv_name" log "$srv_log_file"
   }
+  srv_pid_start_identity_get "$srv_pid" ||
+    fatal 3 srv start-process-identity-unavailable service "$srv_name" pid "$srv_pid"
+  srv_recorded_start_identity=$srv_process_start_identity
 
   srv_runtime_publish || fatal 1 execution execution-failed operation srv reason state-publish-failed service "$srv_name"
   srv_unpublished_pid=

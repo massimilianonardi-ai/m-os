@@ -110,9 +110,26 @@ STATE
     retarget the running instance; stop operates on recorded runtime state and does
     not resolve another provider.
 
-    Runtime records created by older revisions without provider metadata remain
-    readable for stop and stale-state cleanup. Current starts always persist the
-    selected concrete provider identity.
+    Current starts persist the selected concrete provider identity and a
+    snapshot of the process start time. For a live PID, start and stop compare
+    the recorded start time with the currently observed process before treating
+    it as a managed service. The current process-start inspection supports
+    Linux and macOS native ps backends; its lstart field is a host capability,
+    not a POSIX ps field. If the host does not provide supported start-time
+    inspection, new starts fail with status 3 rather than publishing an
+    unverifiable live process.
+
+    Legacy records without a process start-time snapshot cannot authenticate a
+    live PID. Such records are rejected by start and stop, including stop -f,
+    with status 1 and live-runtime-state-invalid, leaving the live process and
+    record untouched. After that PID is no longer running, a subsequent stop
+    removes the stale record. An operator handling a genuinely old running
+    service must first identify and stop its process independently before
+    cleaning the stale record and starting it with current srv.
+
+    Process start-time snapshots are not an infallible process handle: the
+    Linux/macOS ps lstart field has one-second granularity, so same-second PID
+    recycling remains outside the protection this check can prove.
 
 HOST USER SUPERVISION
     On Linux, srv resolves the calling account's UID and home from host account
@@ -181,6 +198,8 @@ EXIT STATUS
     1     A lifecycle operation failed, including unavailable or invalid provider
           selection/service realization.
     2     The invocation, host scope/action, or service name is invalid.
+    3     A newly launched service process identity could not be observed, so
+          the service is not published as a managed running instance.
 
 EXAMPLES
     Start a service named web:
