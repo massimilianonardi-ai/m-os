@@ -99,9 +99,11 @@ EXIT STATUS
     1    m_ROOT is missing or empty; invoke the command through m or
          from an initialized m environment.
     2    The m shell runtime could not be loaded.
-    Operation-specific failures below may also use these numeric
-    statuses; stderr identifies the bootstrap or operation branch.
 
     0   Query, display or selection completed successfully.
-    Non-zero status indicates invalid arguments, an invalid/misaligned selector,
-        unsupported detected platform data or filesystem/update failure.
+    1   Invalid invocation or selected osarch; invalid or misaligned selector;
+        unsupported detected platform data; filesystem, update or rollback
+        failure. The diagnostic on standard error identifies the failed branch.
+
+    Operation failures use status 1 even when they share a number with a
+    bootstrap failure; use the diagnostic to distinguish the cause.
