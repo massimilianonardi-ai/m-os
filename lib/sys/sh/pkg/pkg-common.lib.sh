@@ -90,3 +90,94 @@ pkg_concrete_read()
   [ "$#" -eq 4 ] || return 1
   _pkg_spec_read concrete "$@"
 }
+
+# An absent marker is the existing v1 installed-concrete layout.
+# A v2 marker is data created and owned by the package integrator.
+_pkg_schema_read()
+{
+  [ "$#" -eq 1 ] || return 2
+  pkg_schema=v1
+  pkg_schema_marker="$1/schema"
+
+  if [ -e "$pkg_schema_marker" ] || [ -L "$pkg_schema_marker" ]
+  then
+    [ -f "$pkg_schema_marker" ] && [ ! -L "$pkg_schema_marker" ] &&
+      [ -r "$pkg_schema_marker" ] && [ ! -x "$pkg_schema_marker" ] || return 1
+    [ "$(command -p -- cat -- "$pkg_schema_marker")" = v2 ] || return 1
+    pkg_schema_size="$(command -p -- wc -c < "$pkg_schema_marker")" || return 1
+    [ "$pkg_schema_size" -eq 3 ] || return 1
+    pkg_schema=v2
+  fi
+}
+
+_pkg_v2_root_target_validate()
+{
+  [ "$#" -ge 2 ] && [ "$#" -le 4 ] || return 2
+  pkg_v2_root_target=$1
+  pkg_v2_useful_root=$2
+  pkg_v2_root_prefix=${3-../../root/}
+  pkg_v2_target_mode=${4-executable}
+  case "$pkg_v2_root_prefix" in
+    ../../root/ | ../../../root/) : ;;
+    *) return 2 ;;
+  esac
+
+  case "$pkg_v2_root_target" in
+    "$pkg_v2_root_prefix"*) pkg_v2_relative=${pkg_v2_root_target#"$pkg_v2_root_prefix"} ;;
+    *) return 1 ;;
+  esac
+  case "$pkg_v2_relative" in
+    "" | /* | */ | *//*) return 1 ;;
+  esac
+  case "/$pkg_v2_relative/" in
+    */./* | */../*) return 1 ;;
+  esac
+  readpathce pkg_v2_resolved "$pkg_v2_useful_root/$pkg_v2_relative" || return 1
+  case "$pkg_v2_resolved" in
+    "$pkg_v2_useful_root"/*) : ;;
+    *) return 1 ;;
+  esac
+  [ -f "$pkg_v2_resolved" ] || return 1
+  case "$pkg_v2_target_mode" in
+    executable) [ -x "$pkg_v2_resolved" ] ;;
+    readable) [ -r "$pkg_v2_resolved" ] ;;
+    *) return 2 ;;
+  esac
+}
+
+
+# Validate the already-materialized v2 command view before a new selection.
+# Direct entries must stay inside root/; wrappers must be executable in cmd/.
+# This cannot guard a PATH symlink against later filesystem mutation.
+_pkg_v2_installed_command_validate()
+{
+  [ "$#" -eq 2 ] || return 1
+  pkg_v2_installed_concrete=$1
+  pkg_v2_installed_name=$2
+  pkg_name_valid "$pkg_v2_installed_name" || return 2
+  [ -d "$pkg_v2_installed_concrete" ] && [ ! -L "$pkg_v2_installed_concrete" ] || return 3
+  [ -d "$pkg_v2_installed_concrete/root" ] &&
+    [ ! -L "$pkg_v2_installed_concrete/root" ] || return 4
+  [ -d "$pkg_v2_installed_concrete/link/bin" ] &&
+    [ ! -L "$pkg_v2_installed_concrete/link/bin" ] || return 5
+
+  pkg_v2_installed_link="$pkg_v2_installed_concrete/link/bin/$pkg_v2_installed_name"
+  [ -L "$pkg_v2_installed_link" ] || return 6
+  pkg_v2_installed_target="$(command -p -- readlink "$pkg_v2_installed_link")" || return 7
+
+  case "$pkg_v2_installed_target" in
+    "../../cmd/$pkg_v2_installed_name")
+      [ -d "$pkg_v2_installed_concrete/cmd" ] &&
+        [ ! -L "$pkg_v2_installed_concrete/cmd" ] || return 8
+      [ -f "$pkg_v2_installed_concrete/cmd/$pkg_v2_installed_name" ] &&
+        [ ! -L "$pkg_v2_installed_concrete/cmd/$pkg_v2_installed_name" ] &&
+        [ -x "$pkg_v2_installed_concrete/cmd/$pkg_v2_installed_name" ] || return 9
+      ;;
+    ../../root/*)
+      _pkg_v2_root_target_validate "$pkg_v2_installed_target" "$pkg_v2_installed_concrete/root" || return 10
+      ;;
+    *)
+      return 11
+      ;;
+  esac
+}

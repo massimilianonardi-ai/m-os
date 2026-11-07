@@ -7,6 +7,14 @@ DESCRIPTION
     and installation orchestration.
 
 FUNCTIONS
+    pkg_catalog_installed_versions_compare <repository-dir> <left-version> <right-version>
+        Compare already-installed concrete versions using retained repository
+        metadata without refreshing the catalog or querying the network. The
+        repository adapter must support local ordering; a GitHub adapter additionally
+        requires both versions in its retained versions index. Prints -1, 0 or 1.
+        Returns 0 for a proven comparison, 1 when ordering cannot be established,
+        and 2 for invalid invocation.
+
     pkg_catalog_init <catalog-variable> <head-variable> <work-root> <cache-root>
         Read the configured catalog repository, update or create the cached Git
         checkout, resolve one exact HEAD and export that revision into

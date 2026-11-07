@@ -47,8 +47,9 @@ FUNCTIONS
         Each selected provider facility command directory is prepended to PATH.
         Facility environment records are applied through pkg-provider.lib.sh
         without shell evaluation, using the same projection interpreter as global
-        facility-default bootstrap environment. PATH itself is not valid
-        facility-env metadata.
+        facility-default bootstrap environment. PATH is a valid special
+        facility-env member: root/root-path entries prepend managed directories
+        rather than replacing the inherited PATH.
 
         When m_ENV_DO_NOT_OVERRIDE is set, it must contain a nonempty list
         of valid POSIX variable names separated by single ASCII spaces.

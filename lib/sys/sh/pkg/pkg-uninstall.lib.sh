@@ -19,7 +19,7 @@ _pkg_uninstall_resolve()
   if [ -n "$pkg_local_requested_version" ]
   then
     pkg_uninstall_version=$pkg_local_requested_version
-    _pkg_integration_set_concrete "$pkg_uninstall_pkg" "$pkg_uninstall_version" "$pkg_uninstall_identity_osarch" || return 1
+    pkg_integration_set_concrete "$pkg_uninstall_pkg" "$pkg_uninstall_version" "$pkg_uninstall_identity_osarch" || return 1
     [ -d "$pkg_integration_concrete" ] && [ ! -L "$pkg_integration_concrete" ] || return 1
   elif [ -n "$pkg_local_class_current_version" ]
   then
@@ -43,7 +43,7 @@ _pkg_uninstall_one()
   [ "$#" -eq 1 ] || return 2
   _pkg_uninstall_resolve "$1" || return 1
 
-  _pkg_integration_set_concrete "$pkg_uninstall_pkg" "$pkg_uninstall_version" "$pkg_uninstall_identity_osarch" || return 1
+  pkg_integration_set_concrete "$pkg_uninstall_pkg" "$pkg_uninstall_version" "$pkg_uninstall_identity_osarch" || return 1
   _pkg_dependency_provider_unreferenced "$pkg_integration_concrete_name" || return 1
 
   if [ "$pkg_uninstall_is_current" -eq 1 ]

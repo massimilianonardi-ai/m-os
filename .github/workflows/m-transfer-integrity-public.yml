@@ -1,0 +1,396 @@
+name: m A3 real HTTPS digest and extraction validation
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - m
+      - bin/sys/http-fetch
+      - bin/sys/digest
+      - bin/sys/extract
+      - res/sys/manual/http-fetch
+      - res/sys/manual/digest
+      - res/sys/manual/extract
+      - .github/workflows/m-transfer-integrity-public.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  a3-transfer-integrity:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise real TLS transport independent digest and extraction error paths
+        shell: sh
+        run: |
+          set -eu
+          work=$(mktemp -d)
+          server_pid=
+          cleanup() {
+            if [ -n "$server_pid" ]; then
+              kill "$server_pid" 2>/dev/null || :
+              wait "$server_pid" 2>/dev/null || :
+            fi
+            rm -rf -- "$work"
+          }
+          trap cleanup 0
+          trap 'exit 130' HUP INT TERM
+          mkdir -p "$work/source" "$work/tar-out" "$work/zip-out" "$work/gzip-out" "$work/bad-out"
+          printf 'real public m transport and archive test\n' > "$work/source/value.txt"
+
+          # Compare public digest results to an independent hash implementation.
+          for algorithm in sha256 sha512 md5
+          do
+            actual=$(./m digest -a "$algorithm" -- "$work/source/value.txt")
+            expected=$(python3 -c '
+          import hashlib, sys
+          with open(sys.argv[2], "rb") as source:
+              print(hashlib.new(sys.argv[1], source.read()).hexdigest())
+          ' "$algorithm" "$work/source/value.txt")
+            [ "$actual" = "$expected" ]
+            actual_stream=$(./m digest -a "$algorithm" < "$work/source/value.txt")
+            [ "$actual_stream" = "$expected" ]
+          done
+          if ./m digest -a sha1 -- "$work/source/value.txt" >"$work/out" 2>"$work/err"
+          then
+            echo 'digest unexpectedly accepted unsupported sha1' >&2
+            exit 1
+          else
+            [ "$?" -eq 2 ]
+          fi
+
+          tar -czf "$work/example.tar.gz" -C "$work/source" value.txt
+          ./m extract tar.gz "$work/example.tar.gz" "$work/tar-out"
+          cmp "$work/source/value.txt" "$work/tar-out/value.txt"
+
+          python3 -c '
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[2], "w") as archive:
+              archive.write(sys.argv[1], "value.txt")
+          ' "$work/source/value.txt" "$work/example.zip"
+          ./m extract zip "$work/example.zip" "$work/zip-out"
+          cmp "$work/source/value.txt" "$work/zip-out/value.txt"
+
+          # Archive input is genuinely hostile data, not a substituted
+          # extraction backend. Keep escape targets inside this test root.
+          python3 -c '
+          import io, sys, tarfile, zipfile
+          bad_tar, bad_zip = sys.argv[1:]
+          payload = b"a3-archive-traversal\n"
+          with tarfile.open(bad_tar, "w") as archive:
+              entry = tarfile.TarInfo("../a3-tar-escape")
+              entry.size = len(payload)
+              archive.addfile(entry, io.BytesIO(payload))
+          with zipfile.ZipFile(bad_zip, "w") as archive:
+              archive.writestr("../a3-zip-escape", payload)
+          ' "$work/traversal.tar" "$work/traversal.zip"
+
+          for format in tar zip
+          do
+            if ./m extract "$format" "$work/traversal.$format" "$work/bad-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract accepted %s path traversal\n' "$format" >&2
+              exit 1
+            else
+              status=$?
+              case "$format" in
+                zip) [ "$status" -eq 4 ] ;;
+                tar) [ "$status" -eq 8 ] ;;
+              esac
+            fi
+            [ ! -e "$work/a3-$format-escape" ] || {
+              printf 'extract wrote outside %s destination\n' "$format" >&2
+              exit 1
+            }
+          done
+
+          # All ZIP-family aliases must reject the same unsafe archive names.
+          python3 -c '
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1], "w") as archive:
+              archive.writestr("safe/../a3-escape", "no")
+              archive.writestr("/a3-absolute", "no")
+          ' "$work/invalid-paths.zip"
+          for format in zip jar war
+          do
+            if ./m extract "$format" "$work/invalid-paths.zip" "$work/bad-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract accepted unsafe %s archive names\n' "$format" >&2
+              exit 1
+            else
+              [ "$?" -eq 4 ]
+            fi
+          done
+          printf 'invalid zip payload\n' > "$work/not-a-zip.zip"
+          if ./m extract zip "$work/not-a-zip.zip" "$work/bad-out" \
+            >"$work/out" 2>"$work/err"
+          then
+            echo 'extract accepted malformed ZIP input' >&2
+            exit 1
+          else
+            [ "$?" -eq 3 ]
+          fi
+
+          # A member with a safe name must still be rejected when an
+          # existing destination path component redirects to another directory.
+          mkdir -p "$work/outside-target"
+          ln -s "$work/outside-target" "$work/zip-out/redirect"
+          python3 -c '
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1], "w") as archive:
+              archive.writestr("redirect/would-escape.txt", "unsafe")
+          ' "$work/preexisting-link.zip"
+          if ./m extract zip "$work/preexisting-link.zip" "$work/zip-out" \
+            >"$work/out" 2>"$work/err"
+          then
+            echo 'extract followed a preexisting ZIP destination symlink' >&2
+            exit 1
+          else
+            [ "$?" -eq 5 ]
+          fi
+          [ ! -e "$work/outside-target/would-escape.txt" ]
+
+          # TAR (including a compressed TAR) also must not follow an
+          # existing destination symlink when the member name looks safe.
+          mkdir -p "$work/tar-outside"
+          ln -s "$work/tar-outside" "$work/tar-out/redirect"
+          python3 -c '
+          import io, sys, tarfile
+          payload = b"do-not-write-outside\n"
+          with tarfile.open(sys.argv[1], "w") as archive:
+              item = tarfile.TarInfo("redirect/would-escape.txt")
+              item.size = len(payload)
+              archive.addfile(item, io.BytesIO(payload))
+          ' "$work/preexisting-tar-link.tar"
+          gzip -c "$work/preexisting-tar-link.tar" > "$work/preexisting-tar-link.tar.gz"
+          for format in tar tar.gz
+          do
+            case "$format" in
+              tar) artifact="$work/preexisting-tar-link.tar" ;;
+              tar.gz) artifact="$work/preexisting-tar-link.tar.gz" ;;
+            esac
+            if ./m extract "$format" "$artifact" "$work/tar-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract followed a preexisting %s destination symlink\n' "$format" >&2
+              exit 1
+            else
+              [ "$?" -eq 9 ]
+            fi
+            [ ! -e "$work/tar-outside/would-escape.txt" ]
+          done
+
+          # Hard-link sources are paths too. A safe output member name can
+          # otherwise create an alias to a file reached via a preexisting
+          # destination symlink. Check plain and compressed TAR independently.
+          mkdir -p "$work/hardlink-outside" "$work/hardlink-out"
+          printf 'protected-hardlink-source\n' > "$work/hardlink-outside/secret"
+          ln -s "$work/hardlink-outside" "$work/hardlink-out/redirect"
+          python3 -c '
+          import io, sys, tarfile
+          benign, hostile, name_only = sys.argv[1:]
+          payload = b"benign-hardlink\n"
+          with tarfile.open(benign, "w") as archive:
+              member = tarfile.TarInfo("original")
+              member.size = len(payload)
+              archive.addfile(member, io.BytesIO(payload))
+              alias = tarfile.TarInfo("alias")
+              alias.type = tarfile.LNKTYPE
+              alias.linkname = "original"
+              archive.addfile(alias)
+          with tarfile.open(hostile, "w") as archive:
+              alias = tarfile.TarInfo("alias")
+              alias.type = tarfile.LNKTYPE
+              alias.linkname = "redirect/secret"
+              archive.addfile(alias)
+          with tarfile.open(name_only, "w") as archive:
+              plain = tarfile.TarInfo("report link to /not-a-hardlink")
+              plain.size = len(payload)
+              archive.addfile(plain, io.BytesIO(payload))
+          ' "$work/benign-hardlink.tar" "$work/hostile-hardlink.tar" "$work/filename-link-to.tar"
+          mkdir -p "$work/benign-hardlink-out"
+          ./m extract tar "$work/benign-hardlink.tar" "$work/benign-hardlink-out"
+          cmp "$work/benign-hardlink-out/original" "$work/benign-hardlink-out/alias"
+
+          # A regular GNU tar member with a path resembling link metadata
+          # must not be rejected as an unsafe hard-link target.
+          mkdir -p "$work/filename-link-to-out"
+          ./m extract tar "$work/filename-link-to.tar" "$work/filename-link-to-out"
+          cmp "$work/benign-hardlink-out/original" \
+            "$work/filename-link-to-out/report link to /not-a-hardlink"
+
+          gzip -c "$work/hostile-hardlink.tar" > "$work/hostile-hardlink.tar.gz"
+          for format in tar tar.gz
+          do
+            case "$format" in
+              tar) artifact="$work/hostile-hardlink.tar" ;;
+              tar.gz) artifact="$work/hostile-hardlink.tar.gz" ;;
+            esac
+            if ./m extract "$format" "$artifact" "$work/hardlink-out" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract followed a hard-link source through %s\n' "$format" >&2
+              exit 1
+            else
+              [ "$?" -eq 12 ]
+            fi
+            [ ! -e "$work/hardlink-out/alias" ]
+            [ "$(cat "$work/hardlink-outside/secret")" = protected-hardlink-source ]
+          done
+
+          # A link introduced by the archive itself must not redirect a
+          # subsequent member outside its destination. Each case has a
+          # distinct disposable output tree; no host trust or user paths.
+          mkdir -p "$work/created-link-outside" "$work/created-tar-out" "$work/created-zip-out"
+          python3 -c '
+          import io, stat, sys, tarfile, zipfile
+          target, tarpath, zippath = sys.argv[1:]
+          payload = b"archive-created-link-rejection\n"
+          with tarfile.open(tarpath, "w") as archive:
+              link = tarfile.TarInfo("redirect")
+              link.type = tarfile.SYMTYPE
+              link.linkname = target
+              archive.addfile(link)
+              member = tarfile.TarInfo("redirect/escape.txt")
+              member.size = len(payload)
+              archive.addfile(member, io.BytesIO(payload))
+          with zipfile.ZipFile(zippath, "w") as archive:
+              link = zipfile.ZipInfo("redirect")
+              link.create_system = 3
+              link.external_attr = (stat.S_IFLNK | 0o777) << 16
+              archive.writestr(link, target)
+              archive.writestr("redirect/escape.txt", payload)
+          ' "$work/created-link-outside" "$work/created-link.tar" "$work/created-link.zip"
+          for format in tar zip
+          do
+            case "$format" in
+              tar) output="$work/created-tar-out" ;;
+              zip) output="$work/created-zip-out" ;;
+            esac
+            if ./m extract "$format" "$work/created-link.$format" "$output" \
+              >"$work/out" 2>"$work/err"
+            then
+              printf 'extract accepted archive-created %s symlink traversal\n' "$format" >&2
+              exit 1
+            fi
+            [ ! -e "$work/created-link-outside/escape.txt" ] || {
+              printf 'extract escaped through archive-created %s symlink\n' "$format" >&2
+              exit 1
+            }
+          done
+
+          # A symlink destination is never a valid extraction target.
+          ln -s "$work/source" "$work/symlink-destination"
+          if ./m extract tar.gz "$work/example.tar.gz" "$work/symlink-destination" \
+            >"$work/out" 2>"$work/err"
+          then
+            echo 'extract accepted a symlink destination' >&2
+            exit 1
+          fi
+          [ ! -e "$work/source/value-new.txt" ]
+
+          gzip -c "$work/source/value.txt" > "$work/value.txt.gz"
+          ./m extract gzip "$work/value.txt.gz" "$work/gzip-out"
+          cmp "$work/source/value.txt" "$work/gzip-out/value.txt"
+
+          printf 'not-a-gzip-stream\n' > "$work/broken.gz"
+          if ./m extract gzip "$work/broken.gz" "$work/bad-out" >"$work/out" 2>"$work/err"
+          then
+            echo 'extract accepted corrupt gzip input' >&2
+            exit 1
+          fi
+          [ ! -e "$work/bad-out/broken" ] && [ -s "$work/err" ]
+
+          # A local real HTTPS server verifies transport (not m-managed CA).
+          # Only this test process opts into the disposable test certificate.
+          cat > "$work/ca.cnf" <<'EOF_CA'
+          [req]
+          distinguished_name = subject
+          prompt = no
+          x509_extensions = ca_ext
+          [subject]
+          CN = m-a3-disposable-root
+          [ca_ext]
+          basicConstraints = critical,CA:TRUE
+          keyUsage = critical,keyCertSign,cRLSign
+          EOF_CA
+          cat > "$work/server.cnf" <<'EOF_SERVER'
+          [req]
+          distinguished_name = subject
+          prompt = no
+          [subject]
+          CN = localhost
+          [server_ext]
+          basicConstraints = critical,CA:FALSE
+          keyUsage = critical,digitalSignature,keyEncipherment
+          extendedKeyUsage = serverAuth
+          subjectAltName = IP:127.0.0.1
+          EOF_SERVER
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -keyout "$work/ca.key" -out "$work/ca.pem" \
+            -config "$work/ca.cnf" >/dev/null 2>&1
+          openssl req -new -newkey rsa:2048 -nodes -sha256 \
+            -keyout "$work/server.key" -out "$work/server.csr" \
+            -config "$work/server.cnf" >/dev/null 2>&1
+          openssl x509 -req -in "$work/server.csr" \
+            -CA "$work/ca.pem" -CAkey "$work/ca.key" -CAcreateserial \
+            -days 1 -sha256 -out "$work/server.pem" \
+            -extfile "$work/server.cnf" -extensions server_ext >/dev/null 2>&1
+          python3 -u -c '
+          import http.server, pathlib, ssl, sys
+          source, certificate, key, portfile = sys.argv[1:]
+          class Handler(http.server.SimpleHTTPRequestHandler):
+              def __init__(self, *args, **kwargs):
+                  super().__init__(*args, directory=source, **kwargs)
+          service = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+          ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+          ctx.load_cert_chain(certificate, key)
+          service.socket = ctx.wrap_socket(service.socket, server_side=True)
+          pathlib.Path(portfile).write_text(str(service.server_port))
+          service.serve_forever()
+          ' "$work/source" "$work/server.pem" "$work/server.key" "$work/port" >"$work/https.log" 2>&1 &
+          server_pid=$!
+          attempts=0
+          until [ -s "$work/port" ]
+          do
+            kill -0 "$server_pid" || { cat "$work/https.log" >&2; exit 3; }
+            [ "$attempts" -lt 50 ] || { cat "$work/https.log" >&2; exit 3; }
+            attempts=$((attempts + 1))
+            sleep 0.1
+          done
+          url="https://127.0.0.1:$(cat "$work/port")/value.txt"
+
+          # Default public trust must reject the test-only certificate.
+          if ./m http-fetch -t 5 -o "$work/rejected" -- "$url" >"$work/out" 2>"$work/err"
+          then
+            echo 'http-fetch accepted an unauthorized self-signed TLS server' >&2
+            exit 1
+          fi
+          [ -s "$work/err" ]
+
+          # Exercise the genuine curl TLS backend with explicit test-local trust.
+          CURL_CA_BUNDLE="$work/ca.pem" ./m http-fetch -t 5             -o "$work/fetched.txt" -- "$url"
+          cmp "$work/source/value.txt" "$work/fetched.txt"
+          actual_length=$(CURL_CA_BUNDLE="$work/ca.pem" ./m http-fetch -l -t 5 -- "$url")
+          expected_length=$(wc -c < "$work/source/value.txt" | tr -d ' ')
+          [ "$actual_length" = "$expected_length" ]
+
+          if ./m http-fetch -H "X-Invalid:$(printf '\r')unsafe" -- "$url"             >"$work/out" 2>"$work/err"
+          then
+            echo 'http-fetch accepted CR in a request header' >&2
+            exit 1
+          else
+            [ "$?" -eq 2 ]
+          fi
+          echo 'PASS: real m A3 HTTPS verification, digest and raw extraction'

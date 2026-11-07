@@ -4,7 +4,9 @@ NAME
 DESCRIPTION
     pkg-common.lib.sh provides shared syntax validation for package names,
     versions, supported osarch values, package requests and fully resolved
-    package concrete identities.
+    package concrete identities. Its internal helpers also read the installed
+    schema marker and validate v2 command target containment for package
+    default publication and shell-local context selection.
 
 FUNCTIONS
     pkg_name_valid <package>

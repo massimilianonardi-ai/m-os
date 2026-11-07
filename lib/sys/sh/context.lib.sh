@@ -6,6 +6,24 @@ _context_error()
   log error execution "$1" operation context value "$2"
 }
 
+# Resolve the selected concrete's schema once for command and library views.
+_context_views_set()
+{
+  [ "$#" -eq 1 ] || return 2
+  _pkg_schema_read "$m_PKG_DIR/$1" || return 1
+  case "$pkg_schema" in
+    v1)
+      _context_bin_rel=cmd
+      _context_lib_rel=lib
+      ;;
+    v2)
+      _context_bin_rel=link/bin
+      _context_lib_rel=link/lib
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 # Compute the active, most-recent-first concrete list without modifying the
 # calling shell. The caller applies it only after all checks succeed.
 _context_resolve()
@@ -14,6 +32,11 @@ _context_resolve()
   then
     return 0
   fi
+
+  # Detect the active host platform in this subshell: selecting an exact
+  # concrete must work in a fresh m sh session without changing caller
+  # variables other than the PATH/CLASSPATH owned by context.
+  loadsyslib "osarch" || return 1
 
   _context_resolved=${m_CONTEXT_PACKAGES-}
   _context_newline='
@@ -126,7 +149,11 @@ _context_commands_validate()
         ;;
     esac
 
-    for _context_scan_command in "$m_PKG_DIR/$_context_scan_concrete/cmd/"*
+    _context_views_set "$_context_scan_concrete" || {
+      _context_error context-package-schema-invalid "$_context_scan_concrete"
+      return 9
+    }
+    for _context_scan_command in "$m_PKG_DIR/$_context_scan_concrete/$_context_bin_rel/"*
     do
       [ -e "$_context_scan_command" ] || [ -L "$_context_scan_command" ] || continue
       [ -f "$_context_scan_command" ] && [ -x "$_context_scan_command" ] || {
@@ -134,6 +161,15 @@ _context_commands_validate()
         return 9
       }
       _context_scan_name=${_context_scan_command##*/}
+
+      # Revalidate installed v2 symlinks before publishing their PATH view.
+      # A direct executable bypasses the package launcher entirely.
+      if [ "$_context_bin_rel" = link/bin ] &&
+         ! _pkg_v2_installed_command_validate "$m_PKG_DIR/$_context_scan_concrete" "$_context_scan_name"
+      then
+        _context_error context-command-link-invalid "$_context_scan_command"
+        return 18
+      fi
 
       for _context_scan_core in "${m_BIN_SYS_DIR-}" "${m_BIN_SYS_OSARCH_DIR-}"
       do
@@ -186,9 +222,14 @@ _context_libraries_validate()
         ;;
     esac
 
+    _context_views_set "$_context_lib_concrete" || {
+      _context_error context-package-schema-invalid "$_context_lib_concrete"
+      return 12
+    }
+    _context_concrete_lib_rel=$_context_lib_rel
     for _context_lib_kind in sh java
     do
-      _context_lib_root="$m_PKG_DIR/$_context_lib_concrete/lib"
+      _context_lib_root="$m_PKG_DIR/$_context_lib_concrete/$_context_concrete_lib_rel"
       _context_lib_dir="$_context_lib_root/$_context_lib_kind"
       if [ ! -e "$_context_lib_dir" ] && [ ! -L "$_context_lib_dir" ]
       then
@@ -240,7 +281,8 @@ _context_libraries_validate()
                   _context_lib_other_items=
                   ;;
               esac
-              _context_lib_command="$m_PKG_DIR/$_context_lib_other/cmd/$_context_lib_name"
+              _context_views_set "$_context_lib_other" || return 12
+              _context_lib_command="$m_PKG_DIR/$_context_lib_other/$_context_bin_rel/$_context_lib_name"
               if [ -e "$_context_lib_command" ] || [ -L "$_context_lib_command" ]
               then
                 _context_error context-library-name-collision "$_context_lib_name"
@@ -328,7 +370,13 @@ context()
     esac
 
     # Preserve one selected concrete across executable and library views.
-    for _context_kind in cmd lib/sh
+    _context_views_set "$_context_item" || {
+      _context_error context-package-schema-invalid "$_context_item"
+      return 8
+    }
+    _context_selected_bin=$_context_bin_rel
+    _context_selected_lib=$_context_lib_rel
+    for _context_kind in "$_context_selected_bin" "$_context_selected_lib/sh"
     do
       _context_dir="$m_PKG_DIR/$_context_item/$_context_kind"
       if [ ! -e "$_context_dir" ] && [ ! -L "$_context_dir" ]
@@ -347,7 +395,7 @@ context()
       fi
     done
 
-    _context_dir="$m_PKG_DIR/$_context_item/lib/java"
+    _context_dir="$m_PKG_DIR/$_context_item/$_context_selected_lib/java"
     if [ -e "$_context_dir" ] || [ -L "$_context_dir" ]
     then
       [ -d "$_context_dir" ] && [ ! -L "$_context_dir" ] || {

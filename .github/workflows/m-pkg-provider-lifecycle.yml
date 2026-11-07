@@ -2,7 +2,18 @@ name: m public pkg dependency provider and uninstall integration
 
 on:
   push:
-    branches: [master]
+    branches: [master, m-os-completion-p4-facility-map]
+  pull_request:
+    paths:
+      - '.github/scripts/m-pkg-p3-provider-versions.sh'
+      - '.github/scripts/m-pkg-p3-real-ambiguity.sh'
+      - '.github/scripts/m-pkg-p3-typed-env.sh'
+      - '.github/scripts/m-pkg-p4-facility-map-unit.sh'
+      - '.github/workflows/m-pkg-provider-lifecycle.yml'
+      - 'lib/sys/sh/pkg/facility/pkg-facility-map.lib.sh'
+      - 'lib/sys/sh/pkg/pkg-catalog.lib.sh'
+      - 'lib/sys/sh/pkg/pkg-integration.lib.sh'
+      - 'lib/sys/sh/pkg/pkg-provider.lib.sh'
   workflow_dispatch:
 
 permissions:
@@ -115,8 +126,9 @@ jobs:
           ./m jsc "$work/modules.json" "$work/recompiled.js"
           [ -s "$work/recompiled.js" ]
 
-          # Repeated installation is a real pkg no-op, not a source checkout.
-          ./m pkg install mk@v0.1.0
+          # Repeating an explicit installed root must fail without replacing it.
+          if ./m pkg install mk@v0.1.0 >/dev/null 2>&1; then exit 21; fi
+          [ "$(./m pkg default mk)" = mk@v0.1.0 ]
           ./m pkg uninstall jsc@v0.1.0 mk@v0.1.0
           if ./m pkg versions mk >/dev/null 2>&1; then exit 14; fi
           if ./m pkg versions jsc >/dev/null 2>&1; then exit 15; fi
@@ -132,3 +144,54 @@ jobs:
           [ "$(cat "$work/second-node.txt")" = 42 ]
 
           echo 'PASS: public pkg dependencies, provider settings, runtime and uninstall/reinstall'
+  pinned-provider-selector:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify pinned facility provider selection and public projection
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p3-pinned-selector.sh
+  pinned-provider-versions:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify derived facility map ordering and offline recovery
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p4-facility-map-unit.sh
+      - name: Verify real public provider version and compatibility selection
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p3-provider-versions.sh
+  authentic-provider-typed-env:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify real Chromium typed environment and public command
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p3-typed-env.sh
+  authentic-provider-ambiguity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify genuine same-compatibility ambiguity through a real consumer
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p3-real-ambiguity.sh

@@ -1,0 +1,135 @@
+name: m-os P2 real public package integration
+
+on:
+  push:
+    branches: [m-os-completion-p2]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pkg-p2-public:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Public invalid-batch gate and real dependency-first install
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          [ ! -d pkg ]
+
+          # A malformed operand at either end of a mixed batch must not
+          # initialize the catalog or mutate the managed package store.
+          set +e
+          ./m pkg install '@bad' mk@v0.1.0 >/dev/null 2>&1
+          status=$?
+          set -e
+          [ "$status" -eq 2 ] || exit 11
+          [ ! -d pkg ]
+          set +e
+          ./m pkg install mk@v0.1.0 '@bad' >/dev/null 2>&1
+          status=$?
+          set -e
+          [ "$status" -eq 2 ] || exit 12
+          [ ! -d pkg ]
+
+          # Actual published packages through the real public m/pkg path.
+          ./m pkg depend mk@v0.1.0 jsc@v0.1.0 > p2-deps.txt
+          [ "$(wc -l < p2-deps.txt | tr -d ' ')" -eq 1 ]
+          grep '^nodejs@v26' p2-deps.txt
+          # The same concrete is both an explicit root and the dependency
+          # of mk/jsc. Installing it dependency-first fulfills that root;
+          # it must not be misreported as preexisting.
+          node_requested=$(cat p2-deps.txt)
+          ./m pkg install "$node_requested" mk@v0.1.0 jsc@v0.1.0
+          [ "$(./m pkg default mk)" = mk@v0.1.0 ]
+          [ "$(./m pkg default jsc)" = jsc@v0.1.0 ]
+          node_concrete=$(./m pkg default nodejs)
+          case "$node_concrete" in nodejs@v26*) : ;; *) exit 13 ;; esac
+          ./m node -p '6*7' > p2-actual.txt
+          [ "$(cat p2-actual.txt)" = 42 ]
+
+          # After a genuine public installation, a generic "all" consumer keeps its explicitly requested target
+          # for provider dependency planning even though its concrete root
+          # identity has no !osarch suffix. This bounded library-level probe
+          # uses the real installed concrete, catalog and planner. No foreign
+          # platform artifact is installed on the hosted test machine.
+          case "$(./m osarch)" in
+            linux-*) other=macos-arm64 ;;
+            macos-*) other=linux-x86_64 ;;
+            *) exit 17 ;;
+          esac
+          actual=$(./m sh -c '
+            . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
+            loadsyslib "osarch" || exit 2
+            loadsyslib "pkg/pkg-install" || exit 2
+            target=$1
+            _pkg_install_init || exit 3
+            contexts=$(_pkg_install_resolve "mk@v0.1.0!$target") || exit 4
+            eval "set -- $contexts"
+            [ "$#" -eq 1 ] || exit 5
+            [ "$1" = "mk@v0.1.0|$target" ] || exit 6
+            concrete_plan=$(pkg_depend_plan "$pkg_install_catalog_work" "$@") || exit 7
+            eval "set -- $concrete_plan"
+            [ "$#" -eq 1 ] || exit 8
+            printf "%s\\n" "$1"
+          ' _ "$other")
+          case "$actual" in
+            nodejs@v26*"!$other") : ;;
+            *) printf 'Unexpected target-aware provider: %s\n' "$actual" >&2; exit 19 ;;
+          esac
+
+          # An explicitly requested installed root now fails; its current
+          # concrete and default remain unchanged.
+          set +e
+          ./m pkg install mk@v0.1.0 > p2-existing.out 2>&1
+          status=$?
+          set -e
+          [ "$status" -eq 1 ] || exit 14
+          grep 'already-installed' p2-existing.out
+          [ "$(./m pkg default mk)" = mk@v0.1.0 ]
+
+          # One already-installed root must not prevent a later fresh root
+          # from installing successfully; the batch itself still fails.
+          ./m pkg uninstall jsc@v0.1.0
+          set +e
+          ./m pkg install mk@v0.1.0 jsc@v0.1.0 > p2-mixed-roots.out 2>&1
+          status=$?
+          set -e
+          [ "$status" -eq 1 ] || exit 16
+          grep 'already-installed' p2-mixed-roots.out
+          [ "$(./m pkg default jsc)" = jsc@v0.1.0 ]
+
+          # After genuine uninstall, a symlink posing as an installed
+          # concrete must be rejected before the artifact/install loop.
+          ./m pkg uninstall jsc@v0.1.0 mk@v0.1.0
+          ln -s "$PWD/bin" pkg/mk@v0.1.0
+          trap 'rm -f -- pkg/mk@v0.1.0' 0
+          set +e
+          ./m pkg install mk@v0.1.0 > p2-bad-store.out 2>&1
+          status=$?
+          set -e
+          [ "$status" -eq 1 ] || exit 15
+          grep 'root-resolution-failed' p2-bad-store.out
+          echo 'PASS: P2 real public package planner/install, repeat-root and corrupt-store rejection'
+
+      - name: P2 public ambiguity, historical installed root and planning cleanup
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p2-negatives.sh
+      - name: P2 corrupt HTTP artifact digest and staging cleanup
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p2-corrupt-download.sh
+      - name: P2 public install corrupt HTTPS artifact cleanup
+        shell: sh
+        run: /bin/sh .github/scripts/m-pkg-p2-public-artifact-failure.sh

@@ -17,6 +17,47 @@ extract_require()
   fatal execution command-not-found operation extract command "$1" format "$extract_format"
 }
 
+# Inspect archive member paths as data before handing them to a host backend.
+# A symlink already present in a member's output path can escape -d/-C.
+# Archive-created links and concurrent destination mutations require separate
+# backend-specific validation and are not covered by this preflight.
+extract_archive_members_validate()
+(
+  [ "$#" -eq 1 ] || return 2
+  extract_archive_kind=$1
+
+  while IFS= read -r extract_archive_member
+  do
+    case "$extract_archive_member" in
+      ""|/*|..|../*|*/../*|*/..) return 4 ;;
+    esac
+    if [ "$extract_archive_kind" = zip ]
+    then
+      case "$extract_archive_member" in *\\*) return 4 ;; esac
+    fi
+
+    extract_archive_path=$extract_destination
+    extract_archive_remaining=$extract_archive_member
+    while [ -n "$extract_archive_remaining" ]
+    do
+      case "$extract_archive_remaining" in
+        */*)
+          extract_archive_component=${extract_archive_remaining%%/*}
+          extract_archive_remaining=${extract_archive_remaining#*/}
+          ;;
+        *)
+          extract_archive_component=$extract_archive_remaining
+          extract_archive_remaining=
+          ;;
+      esac
+
+      case "$extract_archive_component" in ""|.) continue ;; esac
+      extract_archive_path="$extract_archive_path/$extract_archive_component"
+      [ ! -L "$extract_archive_path" ] || return 5
+    done
+  done
+)
+
 extract_stream_target()
 {
   [ "$#" -eq 2 ] || return 2
@@ -39,9 +80,86 @@ extract_stream_target()
   printf -- '%s\n' "$extract_stream_name"
 }
 
+# A tar hard-link member may refer to an existing file through a symbolic
+# link in the destination even when its own output member pathname is safe.
+# Inspect verbose hard-link targets, and fail closed on ambiguous metadata.
+# This is a backend-listing check, not a race-free extraction sandbox.
+extract_tar_links_validate()
+(
+  [ "$#" -eq 1 ] || return 14
+  extract_tar_listing_mode=$1
+
+  while IFS= read -r extract_tar_listing
+  do
+    case "$extract_tar_listing_mode:$extract_tar_listing" in
+      gnu:h*" link to "*|other:*" link to "*)
+        extract_tar_hardlink_target=${extract_tar_listing#* link to }
+        case "$extract_tar_hardlink_target" in
+          ""|*" link to "*|*\\*|*"'"*|*'"'*) return 14 ;;
+        esac
+
+        printf -- '%s\n' "$extract_tar_hardlink_target" |
+          extract_archive_members_validate tar
+        extract_tar_link_status=$?
+        case "$extract_tar_link_status" in
+          0) : ;;
+          4) return 11 ;;
+          5) return 12 ;;
+          *) return 14 ;;
+        esac
+        ;;
+    esac
+  done
+)
+
+extract_tar_preflight()
+{
+  [ "$#" -eq 1 ] || return 10
+  extract_tar_members="$(LC_ALL=C TAR_OPTIONS= command -- tar -tf "$1")" || return 7
+  [ -n "$extract_tar_members" ] || return 0
+
+  printf -- '%s\n' "$extract_tar_members" |
+    extract_archive_members_validate tar
+  extract_tar_member_status=$?
+  case "$extract_tar_member_status" in
+    0) : ;;
+    4) return 8 ;;
+    5) return 9 ;;
+    *) return 10 ;;
+  esac
+
+  # GNU tar marks hard-link records with 'h' in its verbose listing.
+  # Other tar implementations may not; retain conservative suffix matching.
+  # Use the C locale so translated listing text cannot hide link targets.
+  extract_tar_version="$(LC_ALL=C TAR_OPTIONS= command -- tar --version 2>/dev/null)" || extract_tar_version=
+  case "$extract_tar_version" in
+    *"GNU tar"*) extract_tar_listing_mode=gnu ;;
+    *) extract_tar_listing_mode=other ;;
+  esac
+
+  extract_tar_verbose="$(LC_ALL=C TAR_OPTIONS= command -- tar -tvf "$1")" || return 13
+  [ -n "$extract_tar_verbose" ] || return 13
+  printf -- '%s\n' "$extract_tar_verbose" | extract_tar_links_validate "$extract_tar_listing_mode"
+}
+
+extract_tar_fail()
+{
+  case "$1" in
+    7) fatal 7 archive tar-list-failed operation extract format "$extract_format" ;;
+    8) fatal 8 archive tar-member-unsafe operation extract format "$extract_format" ;;
+    9) fatal 9 archive tar-destination-link operation extract format "$extract_format" ;;
+    11) fatal 11 archive tar-link-target-unsafe operation extract format "$extract_format" ;;
+    12) fatal 12 archive tar-link-target-symlink operation extract format "$extract_format" ;;
+    13) fatal 13 archive tar-verbose-list-failed operation extract format "$extract_format" ;;
+    14) fatal 14 archive tar-link-target-uninspectable operation extract format "$extract_format" ;;
+    *) fatal 10 archive tar-preflight-failed operation extract format "$extract_format" ;;
+  esac
+}
+
 extract_tar_stream()
 {
   extract_require tar
+  extract_tar_preflight "$extract_artifact" || extract_tar_fail "$?"
   (
     cd -- "$extract_destination" || exit 1
     TAR_OPTIONS= command -- tar -xf -
@@ -86,6 +204,14 @@ extract_compressed_tar()
   then
     command -p -- rm -f -- "$extract_tmp" 2>/dev/null
     fatal execution execution-failed operation extract reason decompression-failed format "$extract_format"
+  fi
+
+  extract_tar_preflight "$extract_tmp"
+  extract_tar_check_status=$?
+  if [ "$extract_tar_check_status" -ne 0 ]
+  then
+    command -p -- rm -f -- "$extract_tmp" 2>/dev/null || :
+    extract_tar_fail "$extract_tar_check_status"
   fi
 
   exec 3< "$extract_tmp" || {
@@ -151,7 +277,26 @@ extract_stream()
 extract_zip()
 {
   extract_require unzip
-  UNZIP= UNZIPOPT= command -- unzip -qq -d "$extract_destination" "$extract_artifact" || fatal execution execution-failed operation extract reason extraction-failed format "$extract_format"
+
+  # Info-ZIP may silently normalize '..' members and return success. Reject
+  # unsafe member names before it can materialize anything in the destination.
+  extract_zip_members="$(UNZIP= UNZIPOPT= command -- unzip -Z -1 -- "$extract_artifact")" ||
+    fatal 3 archive zip-list-failed operation extract format "$extract_format"
+  [ -n "$extract_zip_members" ] ||
+    fatal 3 archive zip-list-failed operation extract format "$extract_format"
+
+  printf -- '%s\n' "$extract_zip_members" |
+    extract_archive_members_validate zip
+  extract_zip_preflight_status=$?
+  case "$extract_zip_preflight_status" in
+    0) : ;;
+    4) fatal 4 archive zip-member-unsafe operation extract format "$extract_format" ;;
+    5) fatal 5 archive zip-destination-link operation extract format "$extract_format" ;;
+    *) fatal 6 archive zip-preflight-failed operation extract format "$extract_format" ;;
+  esac
+
+  UNZIP= UNZIPOPT= command -- unzip -qq -d "$extract_destination" "$extract_artifact" ||
+    fatal execution execution-failed operation extract reason extraction-failed format "$extract_format"
 }
 
 extract_7z_command()

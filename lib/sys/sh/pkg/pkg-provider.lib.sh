@@ -87,6 +87,13 @@ _pkg_provider_scalar_read()
   [ "$pkg_provider_scalar_actual" = "$pkg_provider_scalar_expected" ] || return 1
 }
 
+_pkg_provider_facility_map_reconcile()
+{
+  [ "$#" -eq 0 ] || return 2
+  loadsyslib "pkg/facility/pkg-facility-map" || return 1
+  pkg_facility_map_reconcile
+}
+
 _pkg_provider_system_conf()
 {
   [ "$#" -eq 0 ] || return 2
@@ -330,6 +337,7 @@ _pkg_provider_default()
       _pkg_provider_global_reconcile "$1" "" "$pkg_provider_old_selector" >/dev/null 2>&1 || :
       return 1
     fi
+    _pkg_provider_facility_map_reconcile || log warn execution facility-map-reconcile-failed operation pkg-provider-default || :
     return 0
   fi
 
@@ -369,6 +377,7 @@ _pkg_provider_default()
     _pkg_provider_global_reconcile "$1" "$pkg_provider_new_selector" "$pkg_provider_old_selector" >/dev/null 2>&1 || :
     return 1
   fi
+  _pkg_provider_facility_map_reconcile || log warn execution facility-map-reconcile-failed operation pkg-provider-default || :
   return 0
 }
 
@@ -808,6 +817,14 @@ _pkg_provider_global_selector_resolve()
   pkg_provider_global_environment_selector_version=$pkg_provider_selector_version
   pkg_provider_global_environment_selector_osarch=$pkg_provider_selector_osarch
 
+  # An exact provider version identifies an installed concrete without a
+  # package-class default. Only versionless selectors follow that default.
+  pkg_provider_global_environment_require_default=1
+  if [ -n "$pkg_provider_global_environment_selector_version" ]
+  then
+    pkg_provider_global_environment_require_default=0
+  fi
+
   if [ -n "$pkg_provider_global_environment_selector_osarch" ]
   then
     [ -n "$pkg_provider_global_environment_active_osarch" ] || return 1
@@ -825,7 +842,7 @@ _pkg_provider_global_selector_resolve()
   if [ -n "$pkg_provider_global_environment_active_osarch" ]
   then
     pkg_provider_global_environment_candidate="$(
-      _pkg_provider_global_environment_class_resolve         "$pkg_provider_global_environment_selector_pkg"         "$pkg_provider_global_environment_selector_version"         "$pkg_provider_global_environment_active_osarch"         1
+      _pkg_provider_global_environment_class_resolve         "$pkg_provider_global_environment_selector_pkg"         "$pkg_provider_global_environment_selector_version"         "$pkg_provider_global_environment_active_osarch"         "$pkg_provider_global_environment_require_default"
     )"
     pkg_provider_global_environment_candidate_status=$?
     case "$pkg_provider_global_environment_candidate_status" in
@@ -838,7 +855,7 @@ _pkg_provider_global_selector_resolve()
     esac
   fi
 
-  _pkg_provider_global_environment_class_resolve     "$pkg_provider_global_environment_selector_pkg"     "$pkg_provider_global_environment_selector_version"     ""     1
+  _pkg_provider_global_environment_class_resolve     "$pkg_provider_global_environment_selector_pkg"     "$pkg_provider_global_environment_selector_version"     ""     "$pkg_provider_global_environment_require_default"
 )
 
 pkg_provider_default_resolve()
@@ -1057,7 +1074,7 @@ pkg_provider_global_environment_materialize()
   [ ! -e "$pkg_provider_materialize_backup" ] && [ ! -L "$pkg_provider_materialize_backup" ] || return 1
   command -p -- mkdir -- "$pkg_provider_materialize_stage" "$pkg_provider_materialize_backup" || return 1
 
-  pkg_provider_materialize_cleanup()
+  _pkg_provider_materialize_cleanup()
   {
     command -p -- rm -rf -- "$pkg_provider_materialize_stage" "$pkg_provider_materialize_backup" 2>/dev/null || :
   }
@@ -1069,13 +1086,13 @@ pkg_provider_global_environment_materialize()
   do
     if ! _pkg_provider_global_environment_plan "$pkg_provider_materialize_osarch" > "$pkg_provider_materialize_stage/plan-$pkg_provider_materialize_osarch"
     then
-      pkg_provider_materialize_cleanup
+      _pkg_provider_materialize_cleanup
       return 1
     fi
   done
 
   command -p -- cp -- "$pkg_provider_materialize_stage/plan-linux-x86_64" "$pkg_provider_materialize_stage/common" || {
-    pkg_provider_materialize_cleanup
+    _pkg_provider_materialize_cleanup
     return 1
   }
 
@@ -1084,11 +1101,11 @@ pkg_provider_global_environment_materialize()
   do
     if ! command -p -- comm -12 "$pkg_provider_materialize_stage/common" "$pkg_provider_materialize_stage/plan-$pkg_provider_materialize_osarch" > "$pkg_provider_materialize_stage/common-next"
     then
-      pkg_provider_materialize_cleanup
+      _pkg_provider_materialize_cleanup
       return 1
     fi
     command -p -- mv -f -- "$pkg_provider_materialize_stage/common-next" "$pkg_provider_materialize_stage/common" || {
-      pkg_provider_materialize_cleanup
+      _pkg_provider_materialize_cleanup
       return 1
     }
   done
@@ -1100,7 +1117,7 @@ pkg_provider_global_environment_materialize()
   do
     if ! command -p -- comm -23 "$pkg_provider_materialize_stage/plan-$pkg_provider_materialize_osarch" "$pkg_provider_materialize_stage/common" > "$pkg_provider_materialize_stage/delta-$pkg_provider_materialize_osarch"
     then
-      pkg_provider_materialize_cleanup
+      _pkg_provider_materialize_cleanup
       return 1
     fi
   done
@@ -1119,12 +1136,12 @@ pkg_provider_global_environment_materialize()
       done
     } | command -p -- cksum
   )" || {
-    pkg_provider_materialize_cleanup
+    _pkg_provider_materialize_cleanup
     return 1
   }
   set -- $pkg_provider_materialize_generation
   [ "$#" -ge 2 ] || {
-    pkg_provider_materialize_cleanup
+    _pkg_provider_materialize_cleanup
     return 1
   }
   pkg_provider_materialize_generation="$1-$2"
@@ -1134,7 +1151,7 @@ pkg_provider_global_environment_materialize()
     "$pkg_provider_materialize_stage/env" \
     "$pkg_provider_materialize_generation" \
     generic || {
-      pkg_provider_materialize_cleanup
+      _pkg_provider_materialize_cleanup
       return 1
     }
 
@@ -1148,7 +1165,7 @@ pkg_provider_global_environment_materialize()
       "$pkg_provider_materialize_stage/env-$pkg_provider_materialize_osarch" \
       "$pkg_provider_materialize_generation" \
       osarch || {
-        pkg_provider_materialize_cleanup
+        _pkg_provider_materialize_cleanup
         return 1
       }
   done
@@ -1160,18 +1177,18 @@ pkg_provider_global_environment_materialize()
     env-windows-x86_64 env-windows-arm64
   do
     command -p -- chmod 644 "$pkg_provider_materialize_stage/$pkg_provider_materialize_name" || {
-      pkg_provider_materialize_cleanup
+      _pkg_provider_materialize_cleanup
       return 1
     }
 
     if [ -e "$pkg_provider_materialize_cache/$pkg_provider_materialize_name" ] || [ -L "$pkg_provider_materialize_cache/$pkg_provider_materialize_name" ]
     then
       [ -f "$pkg_provider_materialize_cache/$pkg_provider_materialize_name" ] && [ ! -L "$pkg_provider_materialize_cache/$pkg_provider_materialize_name" ] || {
-        pkg_provider_materialize_cleanup
+        _pkg_provider_materialize_cleanup
         return 1
       }
       command -p -- cp -p -- "$pkg_provider_materialize_cache/$pkg_provider_materialize_name" "$pkg_provider_materialize_backup/$pkg_provider_materialize_name" || {
-        pkg_provider_materialize_cleanup
+        _pkg_provider_materialize_cleanup
         return 1
       }
     fi
@@ -1193,11 +1210,11 @@ pkg_provider_global_environment_materialize()
   if [ "$pkg_provider_materialize_publish_status" -ne 0 ]
   then
     _pkg_provider_global_environment_restore "$pkg_provider_materialize_cache" "$pkg_provider_materialize_backup" >/dev/null 2>&1 || :
-    pkg_provider_materialize_cleanup
+    _pkg_provider_materialize_cleanup
     return 1
   fi
 
-  pkg_provider_materialize_cleanup
+  _pkg_provider_materialize_cleanup
   return 0
 )
 
@@ -1237,7 +1254,7 @@ _pkg_provider_selector_matches_concrete()
 }
 
 pkg_provider_concrete_referenced()
-(
+{
   [ "$#" -eq 1 ] || return 2
   pkg_provider_reference_target=$1
   _pkg_provider_concrete_parse "$pkg_provider_reference_target" || return 2
@@ -1298,7 +1315,7 @@ pkg_provider_concrete_referenced()
   done
 
   return 1
-)
+}
 
 _pkg_provider_global_class_set()
 {
@@ -1331,6 +1348,10 @@ _pkg_provider_global_plan_concrete()
   _pkg_provider_resolved_validate "$pkg_provider_global_concrete" "$pkg_provider_global_pkg" "" "$pkg_provider_global_osarch" || return 1
   _pkg_provider_global_class_set "$pkg_provider_global_pkg" "$pkg_provider_global_osarch" || return 1
 
+  _pkg_schema_read "$m_PKG_DIR/$pkg_provider_global_concrete" || return 1
+  pkg_provider_global_schema=$pkg_schema
+  pkg_provider_global_relative=facility-cmd/$pkg_provider_global_facility
+  [ "$pkg_provider_global_schema" != v2 ] || pkg_provider_global_relative=link/bin
   pkg_provider_global_cmd_dir="$m_PKG_DIR/$pkg_provider_global_concrete/facility-cmd/$pkg_provider_global_facility"
   if [ ! -e "$pkg_provider_global_cmd_dir" ] && [ ! -L "$pkg_provider_global_cmd_dir" ]
   then
@@ -1344,11 +1365,34 @@ _pkg_provider_global_plan_concrete()
     [ -L "$pkg_provider_global_cmd_path" ] || return 1
     pkg_provider_global_command=${pkg_provider_global_cmd_path##*/}
     _pkg_provider_name_valid "$pkg_provider_global_command" || return 1
+    if [ "$pkg_provider_global_schema" = v2 ]
+    then
+      # The facility member is an installed projection of this concrete's
+      # link/bin entry, not an arbitrary executable symlink.
+      if ! pkg_provider_global_link="$(command -p -- readlink "$pkg_provider_global_cmd_path")"
+      then
+        log error execution provider-global-command-link-unreadable \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 3
+      fi
+      if [ "$pkg_provider_global_link" != "../../link/bin/$pkg_provider_global_command" ]
+      then
+        log error execution provider-global-command-link-invalid \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 4
+      fi
+      if ! _pkg_v2_installed_command_validate "$m_PKG_DIR/$pkg_provider_global_concrete" "$pkg_provider_global_command"
+      then
+        log error execution provider-global-command-target-invalid \
+          facility "$pkg_provider_global_facility" concrete "$pkg_provider_global_concrete" command "$pkg_provider_global_command"
+        return 5
+      fi
+    fi
     readpathce pkg_provider_global_resolved "$pkg_provider_global_cmd_path" || return 1
     [ -f "$pkg_provider_global_resolved" ] && [ -x "$pkg_provider_global_resolved" ] || return 1
     printf -- '%s\t%s\n' \
       "$pkg_provider_global_public_dir/$pkg_provider_global_command" \
-      "../../pkg/$pkg_provider_global_target_name/facility-cmd/$pkg_provider_global_facility/$pkg_provider_global_command"
+      "../../pkg/$pkg_provider_global_target_name/$pkg_provider_global_relative/$pkg_provider_global_command"
   done
 }
 
@@ -1364,7 +1408,9 @@ _pkg_provider_global_plan_class()
   _pkg_provider_global_class_set "$pkg_provider_global_pkg" "$pkg_provider_global_osarch" || return 1
   pkg_provider_global_current=
 
-  if [ -z "$pkg_provider_global_version" ] || [ "$pkg_provider_global_require_default" -eq 1 ]
+  # An explicitly pinned provider is independent of the ordinary package
+  # default. Only an unversioned selector requires that mutable default.
+  if [ -z "$pkg_provider_global_version" ]
   then
     if [ ! -e "$pkg_provider_global_selector_path" ] && [ ! -L "$pkg_provider_global_selector_path" ]
     then
@@ -1415,6 +1461,14 @@ _pkg_provider_global_plan_selector()
   pkg_provider_global_plan_version=$pkg_provider_selector_version
   pkg_provider_global_plan_osarch=$pkg_provider_selector_osarch
 
+  # An exact provider must publish its own facility commands even when
+  # its package class has no mutable default selection.
+  pkg_provider_global_plan_require_default=1
+  if [ -n "$pkg_provider_global_plan_version" ]
+  then
+    pkg_provider_global_plan_require_default=0
+  fi
+
   if [ -n "$pkg_provider_global_plan_osarch" ]
   then
     if [ -n "$pkg_provider_global_plan_version" ]
@@ -1426,11 +1480,11 @@ _pkg_provider_global_plan_selector()
     return $?
   fi
 
-  _pkg_provider_global_plan_class "$pkg_provider_global_facility" "$pkg_provider_global_plan_pkg" "$pkg_provider_global_plan_version" "" 1 || return 1
+  _pkg_provider_global_plan_class "$pkg_provider_global_facility" "$pkg_provider_global_plan_pkg" "$pkg_provider_global_plan_version" "" "$pkg_provider_global_plan_require_default" || return 1
   for pkg_provider_global_each_osarch in \
     linux-arm64 linux-x86_64 macos-arm64 macos-x86_64 windows-arm64 windows-x86_64
   do
-    _pkg_provider_global_plan_class "$pkg_provider_global_facility" "$pkg_provider_global_plan_pkg" "$pkg_provider_global_plan_version" "$pkg_provider_global_each_osarch" 1 || return 1
+    _pkg_provider_global_plan_class "$pkg_provider_global_facility" "$pkg_provider_global_plan_pkg" "$pkg_provider_global_plan_version" "$pkg_provider_global_each_osarch" "$pkg_provider_global_plan_require_default" || return 1
   done
 }
 
@@ -1472,7 +1526,7 @@ _pkg_provider_global_plan_validate()
   do
     [ -n "$pkg_provider_global_validate_public" ] && [ -n "$pkg_provider_global_validate_target" ] && [ -z "$pkg_provider_global_validate_extra" ] || return 1
     case "$pkg_provider_global_validate_public" in "$m_BIN_EXT_DIR"/* | "$m_BIN_DIR"/ext-*/*) : ;; *) return 1 ;; esac
-    case "$pkg_provider_global_validate_target" in ../../pkg/*/facility-cmd/*/*) : ;; *) return 1 ;; esac
+    case "$pkg_provider_global_validate_target" in ../../pkg/*/facility-cmd/*/* | ../../pkg/*/link/bin/*) : ;; *) return 1 ;; esac
 
     if [ -n "$pkg_provider_global_seen" ]
     then
@@ -1828,6 +1882,7 @@ $pkg_provider_transition_piece"
     _pkg_provider_global_reconcile_plans "$pkg_provider_transition_new_plan" "$pkg_provider_transition_old_plan" >/dev/null 2>&1 || :
     return 1
   fi
+  _pkg_provider_facility_map_reconcile || log warn execution facility-map-reconcile-failed operation pkg-provider-package-default || :
   return 0
 )
 

@@ -68,7 +68,11 @@ _pkg_facility_service_contract_validate()
   [ "$pkg_facility_service_count" -eq 3 ] || return 1
 
   _pkg_facility_service_scalar_read "$pkg_facility_service_contract/start" || return 1
-  [ "$pkg_facility_service_scalar" = package-command ] || return 1
+  pkg_facility_service_start_type=package-command
+  case "$pkg_facility_service_contract" in
+    */v2/facility/*/service) pkg_facility_service_start_type=package-bin ;;
+  esac
+  [ "$pkg_facility_service_scalar" = "$pkg_facility_service_start_type" ] || return 1
 
   _pkg_facility_service_scalar_read "$pkg_facility_service_contract/process" || return 1
   [ "$pkg_facility_service_scalar" = foreground ] || return 1
@@ -79,7 +83,8 @@ _pkg_facility_service_contract_validate()
 
 _pkg_facility_service_realization_validate()
 {
-  [ "$#" -eq 3 ] || return 2
+  [ "$#" -ge 3 ] && [ "$#" -le 4 ] || return 2
+  pkg_facility_service_schema=${4-v1}
   pkg_facility_service_realization=$1
   pkg_facility_service_definition=$2
   pkg_facility_service_root=$3
@@ -89,15 +94,25 @@ _pkg_facility_service_realization_validate()
   _pkg_facility_service_realization_start_read "$pkg_facility_service_realization" || return 1
 
   pkg_facility_service_command=$pkg_facility_service_scalar
-  _pkg_facility_cmd_package_command_validate \
-    "$pkg_facility_service_definition" \
-    "$pkg_facility_service_command" \
-    "$pkg_facility_service_root"
+  if [ "$pkg_facility_service_schema" = v2 ]
+  then
+    _pkg_facility_cmd_v2_entry_validate \
+      "$pkg_facility_service_definition" \
+      "$pkg_facility_service_root" \
+      "$pkg_facility_service_command"
+  else
+    _pkg_facility_cmd_package_command_validate \
+      "$pkg_facility_service_definition" \
+      "$pkg_facility_service_command" \
+      "$pkg_facility_service_root"
+  fi
 }
 
 _pkg_facility_service_provider_validate()
 {
   [ "$#" -eq 4 ] || return 2
   _pkg_facility_service_contract_validate "$1" || return 1
-  _pkg_facility_service_realization_validate "$2" "$3" "$4"
+  pkg_facility_service_schema=v1
+  case "$1" in */v2/facility/*/service) pkg_facility_service_schema=v2 ;; esac
+  _pkg_facility_service_realization_validate "$2" "$3" "$4" "$pkg_facility_service_schema"
 }

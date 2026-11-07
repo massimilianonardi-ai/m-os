@@ -13,6 +13,57 @@ missing from that source have been added here.
 is kept in the separate `pkg-catalog` repository and is consulted by package
 operations rather than by the `m` bootstrap.
 
+## First use of the current package catalog (v1 + v2)
+
+A separate v2 repository is not needed: `pkg-catalog` owns both generations,
+and v2 is promoted to `pkg-catalog/main`. The runtime support is integrated
+in `m-os/master`. Use these mainline revisions for current development; the
+`pkg-schema-v2` branches are historical feature branches.
+
+In a **fresh development directory**, clone the two existing repositories,
+select the local catalog checkout and use the real public `m` commands:
+
+```sh
+git clone --branch master https://github.com/massimilianonardi-ai/m-os.git
+git clone --branch main https://github.com/massimilianonardi-ai/pkg-catalog.git
+cd m-os
+./m osarch update
+conf=$(./m state-path system sys pkg conf)
+mkdir -p -- "$conf"
+catalog=$(CDPATH= cd -- ../pkg-catalog && pwd -P)
+printf '%s\n' "$catalog" > "$conf/catalog"
+./m osarch show
+./m pkg install nodejs
+./m node --version
+# The following also exercises the independently released technical tools:
+./m pkg install mk jsc
+./m pkg default mk
+./m pkg default jsc
+```
+
+This selects the existing `pkg-catalog` working-tree branch via the
+existing catalog-URL configuration mechanism, without changing `pkg` or
+creating a new repository. The catalog cache is created by the normal
+`pkg` path from that local Git checkout. Both repositories must remain
+available at these relative locations during use. The catalog URL file is
+tracked in this development checkout, so this setup deliberately changes
+local configuration; it does **not** publish a new default for other users.
+
+The catalog's `v1/` definitions remain available for packages without
+a `v2/` definition. Packages with a v2 definition use that complete v2
+definition, never a mixture of v1 and v2 descriptors. The promoted `mk` and
+`jsc` definitions reuse their released `m-mk` and `m-jsc` source archives and
+retain the `nodejs =26` dependency. This documented command sequence is an
+operator procedure, not evidence that it was run on your host. Revision-pinned
+hosted evidence for the merged runtime/catalog and public package consumers is
+recorded in the `rumiai-dev` validation handoff; it does not claim privileged
+host-system service validation or full M01–M15 acceptance.
+
+Live package installation requires access to upstream archives and API
+endpoints. In particular, the jq v1 GitHub Releases request has previously
+received an upstream HTTP 403 from a GitHub-hosted macOS runner. A transfer
+failure must not be interpreted as proof of an incompatible package schema.
+
 ## First-use commands
 
 From the root of this checkout:
@@ -33,11 +84,12 @@ The source checkout preserves the existing `m` state and platform-selection
 contract. `osarch update` materializes the platform-specific technical paths
 for the current host. There is no implicit platform mutation in bootstrap.
 
-The currently included repository adapters support GitHub, Node.js, Google
-Chrome's Linux Debian repository, Chromium snapshot storage, and their shared
-artifact functionality. Additional upstream adapter types from `rumiai-os`
-are not yet included, so packages requiring those other adapters are not
-installable through this restricted repository revision.
+The current repository adapters cover GitHub, Node.js, Google Chrome's
+Linux Debian repository, Chromium snapshots, shared artifact resolution,
+Apache Maven and Temurin. Hosted V2 validation includes real Java/Maven
+consumers on the merged runtime/catalog revisions; see the validation handoff
+for exact run IDs and scope. Other legacy adapters remain outside this
+minimal technical checkout.
 
 On Linux, managed Chrome, Chromium and Electron package commands use
 `launcher_nss` to reconcile approved additional system TLS CAs into the

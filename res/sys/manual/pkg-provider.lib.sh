@@ -8,8 +8,12 @@ DESCRIPTION
     Facility defaults are system-scoped package-subsystem configuration. A facility
     default owns global command publication for that facility through bin/ext and
     bin/ext-<osarch> and contributes the selected provider's facility environment
-    to each new m bootstrap. Facility-default selectors are non-secret runtime
-    selection metadata: their storage is read-only/traversable for runtime accounts
+    to each new m bootstrap. Before a v2 global command is published,
+    its installed facility-cmd entry must still refer to that concrete's
+    matching link/bin command, which must remain a valid direct-root or
+    concrete-local wrapper projection. An altered projection is rejected
+    without changing the existing facility-default selection.
+    Facility-default selectors are non-secret runtime selection metadata: their storage is read-only/traversable for runtime accounts
     that must resolve global/system-host intent, while mutation remains protected by
     normal filesystem ownership. Consumer bindings are system-scoped package
     configuration stored as binding/<facility> beneath the consumer package conf
@@ -105,18 +109,22 @@ FUNCTIONS
         preserving selector-based targets. A pinned selector without osarch remains
         pinned but is published or removed as the corresponding package class
         appears or disappears. osarch is empty for the generic package class.
-        Unrelated external-command collisions are rejected.
+        Unrelated external-command collisions are rejected. The derived installed
+        facility map is refreshed after the selection transition; map failure is
+        logged without changing the authoritative package/provider selection.
 
     pkg_provider default <facility>
         Print the configured system default provider selector for the facility.
 
     pkg_provider default <facility> <provider-selector>
         Set the configured system default provider selector and reconcile the
-        facility's owned global command projection.
+        facility's owned global command projection and derived installed facility
+        map default projection. Map reconciliation failure is logged and does not
+        invalidate the configured selection.
 
     pkg_provider default -u [--] <facility>
         Remove the configured system default provider selector and its owned global
-        command projection.
+        command projection, then reconcile the derived installed facility map.
 
     pkg_provider bind <consumer> <facility>
         Print the configured provider selector for that consumer/facility pair.
