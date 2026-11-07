@@ -13,18 +13,19 @@ missing from that source have been added here.
 is kept in the separate `pkg-catalog` repository and is consulted by package
 operations rather than by the `m` bootstrap.
 
-## First use of the versioned package catalog (v1 + v2)
+## First use of the current package catalog (v1 + v2)
 
-A separate v2 repository is not needed: `pkg-catalog` already owns both
-generations. The `pkg-schema-v2` branches are the current trial deployment
-path; they have not been promoted to the mainlines.
+A separate v2 repository is not needed: `pkg-catalog` owns both generations,
+and v2 is promoted to `pkg-catalog/main`. The runtime support is integrated
+in `m-os/master`. Use these mainline revisions for current development; the
+`pkg-schema-v2` branches are historical feature branches.
 
 In a **fresh development directory**, clone the two existing repositories,
-select the local v2 catalog checkout and use the real public `m` commands:
+select the local catalog checkout and use the real public `m` commands:
 
 ```sh
-git clone --branch pkg-schema-v2 https://github.com/massimilianonardi-ai/m-os.git
-git clone --branch pkg-schema-v2 https://github.com/massimilianonardi-ai/pkg-catalog.git
+git clone --branch master https://github.com/massimilianonardi-ai/m-os.git
+git clone --branch main https://github.com/massimilianonardi-ai/pkg-catalog.git
 cd m-os
 ./m osarch update
 conf=$(./m state-path system sys pkg conf)
@@ -49,14 +50,14 @@ tracked in this development checkout, so this setup deliberately changes
 local configuration; it does **not** publish a new default for other users.
 
 The catalog's `v1/` definitions remain available for packages without
-a `v2/` definition. Packages with a v2 definition (`jq`, `nodejs`,
-`ollama`, `mk` and `jsc` at this branch) use that complete v2 definition,
-never a mixture of v1 and v2 descriptors. The new `mk`/`jsc` v2
-catalog entries reuse their already-released `m-mk`/`m-jsc` source
-archives and preserve their `nodejs =26` dependency; this new migration
-has not yet completed a live installation test. Only the specific hosted v1/v2 acceptance
-scenarios already recorded in `rumiai-dev` have passed; this example
-is **not** evidence of an execution on the operator's host.
+a `v2/` definition. Packages with a v2 definition use that complete v2
+definition, never a mixture of v1 and v2 descriptors. The promoted `mk` and
+`jsc` definitions reuse their released `m-mk` and `m-jsc` source archives and
+retain the `nodejs =26` dependency. This documented command sequence is an
+operator procedure, not evidence that it was run on your host. Revision-pinned
+hosted evidence for the merged runtime/catalog and public package consumers is
+recorded in the `rumiai-dev` validation handoff; it does not claim privileged
+host-system service validation or full M01–M15 acceptance.
 
 Live package installation requires access to upstream archives and API
 endpoints. In particular, the jq v1 GitHub Releases request has previously
@@ -84,10 +85,10 @@ contract. `osarch update` materializes the platform-specific technical paths
 for the current host. There is no implicit platform mutation in bootstrap.
 
 The current repository adapters cover GitHub, Node.js, Google Chrome's
-Linux Debian repository, Chromium snapshots and shared artifact resolution.
-The `pkg-schema-v2` branch additionally includes the existing Apache Maven
-and Temurin adapters ported from `rumiai-os`; their full catalog-backed Java
-integration is not yet validated. Other legacy adapters remain outside this
+Linux Debian repository, Chromium snapshots, shared artifact resolution,
+Apache Maven and Temurin. Hosted V2 validation includes real Java/Maven
+consumers on the merged runtime/catalog revisions; see the validation handoff
+for exact run IDs and scope. Other legacy adapters remain outside this
 minimal technical checkout.
 
 On Linux, managed Chrome, Chromium and Electron package commands use
