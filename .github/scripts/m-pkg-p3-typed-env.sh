@@ -109,22 +109,24 @@ done
 
 # Status must not create an absent browser. A page-required operation does.
 ./m web-control page new >"$work/page-new"
-browser_ready=0
+browser_started=0
 i=0
 while [ "$i" -lt 15 ]
 do
-  if ./m web-control status >"$work/status" 2>"$work/status.err" && \
-     grep -F '"browserRunning":true' "$work/status" >/dev/null
+  if awk '
+    /execve\(/ && (index($0, "/chrome\"") || index($0, "/chromium\"") || index($0, "/chrome-headless-shell\"")) { found=1 }
+    END { exit !found }
+  ' "$work/execve.log"
   then
-    browser_ready=1
+    browser_started=1
     break
   fi
   sleep 1
   i=$((i + 1))
 done
-[ "$browser_ready" -eq 1 ] || {
-  cat "$work/status" "$work/status.err" "$work/page-new" "$work/consumer.log" >&2
-  echo 'FAIL: page creation did not start the Chromium browser runtime' >&2
+[ "$browser_started" -eq 1 ] || {
+  cat "$work/page-new" "$work/consumer.log" "$work/execve.log" >&2
+  echo 'FAIL: page creation did not execute a Chromium browser process' >&2
   exit 1
 }
 
