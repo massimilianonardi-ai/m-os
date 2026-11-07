@@ -163,9 +163,10 @@ jobs:
                     --user-data-dir="$work/browser-home/browser-profile" \
                     --dump-dom "$browser_url?phase=$1" \
                     >"$work/browser-dom" 2>"$work/browser-err" || :
-                  if [ ! -s "$work/browser-dom" ]
+                  if [ ! -s "$work/browser-dom" ] &&
+                     ! grep -Fq 'net::ERR_CERT_AUTHORITY_INVALID' "$work/browser-err"
                   then
-                    echo 'ERROR: browser produced no document; TLS result is unobservable' >&2
+                    echo 'ERROR: browser produced no document and no explicit certificate rejection' >&2
                     cat "$work/browser-err" >&2
                     exit 3
                   fi
@@ -242,6 +243,9 @@ jobs:
                 [ ! -e "$work/browser-home/.m/tls-nss-owned" ]
                 certutil -L -d "sql:$db" -n "a4-unrelated" >/dev/null
                 if [ -n "$browser_bin" ]; then browser_reject revoked; fi
+                if [ -n "$browser_bin" ]; then
+                  echo 'PASS: browser HTTPS rejects before trust and after revocation, accepts the approved CA'
+                fi
                 echo 'PASS: real m A4 CA/NSS authority, preservation, revocation (browser conditional)'
               else
                 echo 'PENDING: Linux NSS positive projection requires certutil and flock'
