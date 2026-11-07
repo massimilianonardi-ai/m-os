@@ -125,6 +125,8 @@ installed_v014=1
 }
 concrete_v014=$(./m pkg default electron-web-control) || exit 72
 case "$concrete_v014" in *!*) class_v014=${concrete_v014##*!} ;; *) class_v014=all ;; esac
+[ -f "pkg/$concrete_v014/repository/versions" ] && [ ! -L "pkg/$concrete_v014/repository/versions" ] || exit 77
+[ -f "pkg/$concrete_v014/repository/type" ] && [ ! -L "pkg/$concrete_v014/repository/type" ] || exit 78
 [ -d pkg/electron-web-control@v0.1.0 ] && [ ! -L pkg/electron-web-control@v0.1.0 ] || exit 13
 [ -d pkg/electron-web-control@v0.1.4 ] && [ ! -L pkg/electron-web-control@v0.1.4 ] || exit 14
 [ "$(command -p cat pkg/electron-web-control@v0.1.0/facility)" = 'web-control 1' ] || exit 15
@@ -136,6 +138,9 @@ case "$concrete_v014" in *!*) class_v014=${concrete_v014##*!} ;; *) class_v014=a
 installed_v015=1
 concrete_v015=$(./m pkg default electron-web-control) || exit 54
 case "$concrete_v015" in *!*) class_v015=${concrete_v015##*!} ;; *) class_v015=all ;; esac
+[ -f "pkg/$concrete_v015/repository/versions" ] && [ ! -L "pkg/$concrete_v015/repository/versions" ] || exit 79
+grep -Fx 'v0.1.4' "pkg/$concrete_v015/repository/versions" >/dev/null || exit 80
+grep -Fx 'v0.1.5' "pkg/$concrete_v015/repository/versions" >/dev/null || exit 81
 map_v2="$repo_root/facility/web-control/2/$class_v015"
 [ -L "$map_v2/electron-web-control@v0.1.4" ] || exit 55
 [ -L "$map_v2/electron-web-control@v0.1.5" ] || exit 56

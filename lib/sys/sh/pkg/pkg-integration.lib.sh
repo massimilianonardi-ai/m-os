@@ -854,13 +854,16 @@ pkg_integrate()
     return 16
   fi
 
-  if [ -d "$pkg_integrate_range/repository" ] && [ ! -L "$pkg_integrate_range/repository" ]
+  pkg_integrate_repository="${pkg_integrate_range%/*}/repository"
+  if [ -d "$pkg_integrate_repository" ] && [ ! -L "$pkg_integrate_repository" ]
   then
-    if ! command -p -- cp -R -- "$pkg_integrate_range/repository" "$pkg_integration_concrete/repository"
+    if ! command -p -- cp -R -- "$pkg_integrate_repository" "$pkg_integration_concrete/repository"
     then
       command -p -- rm -rf -- "$pkg_integration_concrete/repository" || :
-      log warn execution repository-ordering-metadata-copy-failed operation pkg-integrate concrete "$pkg_integration_concrete_name" || :
+      log warn execution repository-ordering-metadata-copy-failed operation pkg-integrate concrete "$pkg_integration_concrete_name" path "$pkg_integrate_repository" || :
     fi
+  else
+    log warn execution repository-ordering-metadata-source-unavailable operation pkg-integrate concrete "$pkg_integration_concrete_name" path "$pkg_integrate_repository" || :
   fi
 
   if ! _pkg_dependency_materialize "$pkg_integrate_range/dependency" "$pkg_integration_concrete"
