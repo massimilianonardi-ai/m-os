@@ -139,7 +139,24 @@ case "$concrete_v015" in *!*) class_v015=${concrete_v015##*!} ;; *) class_v015=a
 map_v2="$repo_root/facility/web-control/2/$class_v015"
 [ -L "$map_v2/electron-web-control@v0.1.4" ] || exit 55
 [ -L "$map_v2/electron-web-control@v0.1.5" ] || exit 56
-[ "$(command -p readlink "$map_v2/electron-web-control@latest")" = 'electron-web-control@v0.1.5' ] || exit 57
+if [ "$(command -p readlink "$map_v2/electron-web-control@latest" 2>/dev/null || :)" != 'electron-web-control@v0.1.5' ]
+then
+  echo "FAIL: missing compatible latest link under $map_v2" >&2
+  for pkg_p3_debug_concrete in "$concrete_v014" "$concrete_v015"
+  do
+    pkg_p3_debug_repository="$repo_root/pkg/$pkg_p3_debug_concrete/repository"
+    echo "DEBUG: repository metadata for $pkg_p3_debug_concrete" >&2
+    command -p -- ls -la "$pkg_p3_debug_repository" >&2 || :
+    if [ -f "$pkg_p3_debug_repository/versions" ]
+    then
+      echo 'DEBUG: versions index' >&2
+      command -p -- cat "$pkg_p3_debug_repository/versions" >&2 || :
+      echo 'DEBUG: installed comparator status/output' >&2
+      ./m /bin/sh -c '. "$m_LIB_DIR/sys/sh/core.lib.sh"; loadsyslib pkg/pkg-catalog; pkg_catalog_installed_versions_compare "$1" v0.1.4 v0.1.5' sh "$pkg_p3_debug_repository" >&2 || :
+    fi
+  done
+  exit 57
+fi
 [ "$(command -p readlink "$map_v2/electron-web-control@v0.1.5")" = "../../../../pkg/$concrete_v015" ] || exit 58
 
 ./m pkg install electron-web-control@v0.1.6 || exit 59
