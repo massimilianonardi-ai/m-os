@@ -186,7 +186,7 @@ _pkg_state_direct_links_validate()
   for pkg_state_link_file in "$pkg_state_range/link"/*
   do
     [ -e "$pkg_state_link_file" ] || [ -L "$pkg_state_link_file" ] || continue
-    _pkg_integration_link_target_read "$pkg_state_link_file" || return 1
+    pkg_integration_link_target_read "$pkg_state_link_file" || return 1
     pkg_state_link_target=$pkg_integration_link_target
     readpathce pkg_state_link_resolved "$pkg_state_root/$pkg_state_link_target" || return 1
 

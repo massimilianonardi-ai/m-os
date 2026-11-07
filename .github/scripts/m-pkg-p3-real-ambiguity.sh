@@ -6,7 +6,8 @@ repo_root=$(CDPATH= cd "$(dirname "$0")/../.." && pwd) || exit 1
 CDPATH= cd "$repo_root" || exit 1
 provider_a=electron-web-control@v0.1.6
 provider_b=pwc-web-control@v0.1.6
-consumer=amazon-wishlist-extract@v0.1.0
+consumer=amazon-wishlist-extract
+consumer_concrete=$consumer@v0.1.0
 
 work=$(mktemp -d)
 cleanup_packages=0
@@ -93,7 +94,7 @@ do
     exit 1
   fi
 done
-[ "$(./m pkg requirement list "$consumer")" = 'nodejs =26
+[ "$(./m pkg requirement list "$consumer_concrete")" = 'nodejs =26
 web-control >2' ]
 
 cleanup_packages=1
@@ -112,7 +113,7 @@ then
 fi
 
 set +e
-./m pkg depend "$consumer" >"$work/depend" 2>&1
+./m pkg depend "$consumer_concrete" >"$work/depend" 2>&1
 status=$?
 set -e
 [ "$status" -eq 1 ] || {
@@ -124,5 +125,5 @@ grep -F 'provider-ambiguous' "$work/depend" >/dev/null
 grep -F 'facility="web-control"' "$work/depend" >/dev/null
 grep -F 'electron-web-control@v0.1.6' "$work/depend" >/dev/null
 grep -F 'pwc-web-control@v0.1.6' "$work/depend" >/dev/null
-[ ! -e "pkg/$consumer" ] && [ ! -L "pkg/$consumer" ]
+[ ! -e "pkg/$consumer_concrete" ] && [ ! -L "pkg/$consumer_concrete" ]
 echo 'PASS: public pkg depend reports ambiguity between two genuine compatible providers for a real consumer'

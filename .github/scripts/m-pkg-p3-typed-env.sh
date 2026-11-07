@@ -10,6 +10,8 @@ root="$PWD/pkg/$concrete/root"
 consumer_pid=
 controller_pid=
 work=
+chromium_installed=0
+consumer_installed=0
 
 cleanup()
 {
@@ -21,20 +23,33 @@ cleanup()
     kill -TERM -- "-$consumer_pid" >/dev/null 2>&1 || kill -TERM "$consumer_pid" >/dev/null 2>&1 || :
   fi
   if [ -n "$consumer_pid" ]; then wait "$consumer_pid" 2>/dev/null || :; consumer_pid=; fi
-  ./m pkg uninstall "$consumer" "$concrete" >/dev/null 2>&1 || :
+  if [ "$consumer_installed" -eq 1 ]; then
+    ./m pkg uninstall "$consumer" >/dev/null 2>&1 || :
+  fi
+  if [ "$chromium_installed" -eq 1 ]; then
+    ./m pkg uninstall "$concrete" >/dev/null 2>&1 || :
+  fi
   if [ -n "$work" ]; then rm -rf "$work"; fi
 }
 trap cleanup 0
 trap 'exit 130' HUP INT TERM
 
 ./m osarch update
+[ ! -e "pkg/$concrete" ] && [ ! -L "pkg/$concrete" ] || { echo 'FAIL: Chromium concrete already exists; refusing destructive test cleanup' >&2; exit 1; }
+[ ! -e "pkg/chromium" ] && [ ! -L "pkg/chromium" ] || { echo 'FAIL: Chromium package default already exists; refusing destructive test cleanup' >&2; exit 1; }
+[ ! -e "pkg/$consumer" ] && [ ! -L "pkg/$consumer" ] || { echo 'FAIL: consumer concrete already exists; refusing destructive test cleanup' >&2; exit 1; }
+[ ! -e bin/ext/chromium ] && [ ! -L bin/ext/chromium ] || { echo 'FAIL: Chromium command projection already exists; refusing destructive test cleanup' >&2; exit 1; }
+consumer_conf=$(./m state-path system pkg pwc-web-control conf) || exit 1
+[ ! -e "$consumer_conf/binding/browser" ] && [ ! -L "$consumer_conf/binding/browser" ] || { echo 'FAIL: consumer browser binding already exists; refusing a non-isolated provider test' >&2; exit 1; }
+command -v setsid >/dev/null 2>&1 || { echo 'FAIL: setsid is required for isolated consumer teardown' >&2; exit 1; }
+command -v strace >/dev/null 2>&1 || { echo 'FAIL: strace is required to inspect the real child exec environment' >&2; exit 1; }
 ./m pkg install "$concrete"
+chromium_installed=1
 [ -d "$root" ] && [ ! -L "$root" ]
 [ -f "$root/chrome_sandbox" ] && [ ! -L "$root/chrome_sandbox" ]
 ./m pkg install "$consumer"
+consumer_installed=1
 
-command -v setsid >/dev/null 2>&1 || { echo 'FAIL: setsid is required for isolated consumer teardown' >&2; exit 1; }
-command -v strace >/dev/null 2>&1 || { echo 'FAIL: strace is required to inspect the real child exec environment' >&2; exit 1; }
 work=$(mktemp -d)
 WEB_CONTROL_HEADLESS=1 WEB_CONTROL_BROWSER_ARGS='["--no-sandbox"]' \
   setsid strace -f -v -s 8192 -e trace=execve -o "$work/execve.log" \
@@ -44,11 +59,25 @@ controller_path="$PWD/pkg/$consumer/root/src/controller.mjs"
 i=0
 while [ "$i" -lt 20 ] && [ -z "$controller_pid" ]
 do
-  controller_pid=$(ps -eo pid=,args= | awk -v needle="$controller_path" '$2 == "node" && index($0, needle) > 0 { print $1; exit }')
+  controller_pid=$(ps -eo pid=,args= | awk -v needle="$controller_path" '
+    {
+      executable = $2
+      sub(/^.*\//, "", executable)
+      if (executable == "node" && index($0, needle) > 0) {
+        print $1
+        exit
+      }
+    }
+  ')
   [ -n "$controller_pid" ] || sleep 1
   i=$((i + 1))
 done
-[ -n "$controller_pid" ] || { cat "$work/consumer.log" >&2; echo 'FAIL: PWC controller did not start' >&2; exit 1; }
+[ -n "$controller_pid" ] || {
+  cat "$work/consumer.log" >&2
+  ps -eo pid=,args= | awk -v needle="$controller_path" 'index($0, needle) > 0 || /web-control-service/ { print }' >&2
+  echo 'FAIL: PWC controller process was not identified' >&2
+  exit 1
+}
 
 ready=0
 i=0

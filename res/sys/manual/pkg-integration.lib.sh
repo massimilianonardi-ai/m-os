@@ -49,6 +49,23 @@ FUNCTIONS
         also reconciles global facility commands whose configured provider selector
         depends on the presence or current concrete of this package/class.
 
+    pkg_integration_set_concrete <package> <version> <osarch>
+        Set the pkg_integration_* identity variables for one already-validated
+        package concrete. This derives the concrete name/path, package selector and
+        public command directory; it does not validate package metadata or check
+        whether the concrete is installed. osarch may be empty for a non-platform
+        package identity. Callers must validate the package identity before using
+        this path derivation.
+
+    pkg_integration_link_target_read <descriptor-file>
+        Validate and read one integration link-descriptor file. The file must be a
+        readable, non-executable regular file that is not a symbolic link. Its
+        content is read by shell command substitution, which removes trailing
+        newline bytes; the resulting value must be one non-empty safe relative
+        path with no absolute path, empty component, current-directory component,
+        parent-directory component or trailing slash. The result is stored in
+        pkg_integration_link_target.
+
 RETURN STATUS
     pkg_integrate returns 0 on success.
 
@@ -87,6 +104,13 @@ RETURN STATUS
     pkg_default_apply returns 0 on success, 1 when the requested default state
     cannot be validated or changed, and 2 for invalid invocation or invalid
     package/default identity operands.
+
+    pkg_integration_set_concrete returns 0 when identity variables are derived,
+    and 2 for an invalid invocation. It does not check installation state.
+
+    pkg_integration_link_target_read returns 0 for a valid descriptor, 1 when the
+    file cannot be read or contains an invalid/unsafe path, and 2 for an invalid
+    invocation.
 
 DEPENDENCIES
     The library uses the shared package identity validators from pkg-common.lib.sh

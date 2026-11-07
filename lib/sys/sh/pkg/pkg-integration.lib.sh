@@ -52,7 +52,7 @@ _pkg_integration_set_class()
   pkg_integration_selector="$m_PKG_DIR/$pkg_integration_selector_name"
 }
 
-_pkg_integration_set_concrete()
+pkg_integration_set_concrete()
 {
   [ "$#" -eq 3 ] || return 2
   _pkg_integration_set_class "$1" "$3" || return 1
@@ -82,7 +82,7 @@ _pkg_integration_dir_entries_empty()
   return 0
 }
 
-_pkg_integration_link_target_read()
+pkg_integration_link_target_read()
 {
   [ "$#" -eq 1 ] || return 2
   [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] && [ ! -x "$1" ] || return 1
@@ -279,12 +279,12 @@ _pkg_integration_dmg_overlay_validate()
           ;;
         payload-root)
           [ -z "$pkg_integration_overlay_payload_root" ] || return 1
-          _pkg_integration_link_target_read "$pkg_integration_overlay_field" || return 1
+          pkg_integration_link_target_read "$pkg_integration_overlay_field" || return 1
           pkg_integration_overlay_payload_root=$pkg_integration_overlay_field
           ;;
         target-root)
           [ -z "$pkg_integration_overlay_target_root" ] || return 1
-          _pkg_integration_link_target_read "$pkg_integration_overlay_field" || return 1
+          pkg_integration_link_target_read "$pkg_integration_overlay_field" || return 1
           pkg_integration_overlay_target_root=$pkg_integration_overlay_field
           ;;
         *)
@@ -330,7 +330,7 @@ _pkg_integration_libraries_validate()
         *) return 1 ;;
       esac
 
-      _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
+      pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
       [ -e "$pkg_integration_lib_root/$pkg_integration_link_target" ] || return 1
       readpathce pkg_integration_lib_resolved "$pkg_integration_lib_root/$pkg_integration_link_target" || return 1
       case "$pkg_integration_lib_resolved" in
@@ -375,7 +375,7 @@ _pkg_integration_libraries_materialize()
     for pkg_integration_lib_descriptor in "$pkg_integration_lib_runtime/"*
     do
       [ -f "$pkg_integration_lib_descriptor" ] || continue
-      _pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
+      pkg_integration_link_target_read "$pkg_integration_lib_descriptor" || return 1
       pkg_integration_lib_name=${pkg_integration_lib_descriptor##*/}
       command -p -- ln -s "../../root/$pkg_integration_link_target" \
         "$pkg_integration_lib_concrete/lib/$pkg_integration_lib_runtime_name/$pkg_integration_lib_name" || return 1
@@ -469,7 +469,7 @@ _pkg_integration_validate_definition()
       _pkg_integration_component_file_validate "$pkg_integration_component_file" || return 1
       if [ -n "$pkg_integration_payload_root_file" ]
       then
-        _pkg_integration_link_target_read "$pkg_integration_payload_root_file" || return 1
+        pkg_integration_link_target_read "$pkg_integration_payload_root_file" || return 1
       fi
       [ -z "$pkg_integration_overlay_dir" ] || return 1
       ;;
@@ -478,7 +478,7 @@ _pkg_integration_validate_definition()
       _pkg_integration_component_file_validate "$pkg_integration_component_file" || return 1
       if [ -n "$pkg_integration_payload_root_file" ]
       then
-        _pkg_integration_link_target_read "$pkg_integration_payload_root_file" || return 1
+        pkg_integration_link_target_read "$pkg_integration_payload_root_file" || return 1
       fi
       if [ -n "$pkg_integration_overlay_dir" ]
       then
@@ -508,7 +508,7 @@ _pkg_integration_validate_definition()
     [ -f "$pkg_integration_cmd_source" ] && [ ! -L "$pkg_integration_cmd_source" ] && [ -r "$pkg_integration_cmd_source" ] && [ ! -x "$pkg_integration_cmd_source" ] || return 1
     [ -f "$pkg_integration_range/link/$pkg_integration_command" ] && [ ! -L "$pkg_integration_range/link/$pkg_integration_command" ] || return 1
 
-    _pkg_integration_link_target_read "$pkg_integration_range/link/$pkg_integration_command" || return 1
+    pkg_integration_link_target_read "$pkg_integration_range/link/$pkg_integration_command" || return 1
     [ -e "$pkg_integration_root/$pkg_integration_link_target" ] || [ -L "$pkg_integration_root/$pkg_integration_link_target" ] || return 1
     readpathce pkg_integration_link_resolved "$pkg_integration_root/$pkg_integration_link_target" || return 1
     case "$pkg_integration_link_resolved" in
@@ -555,7 +555,7 @@ _pkg_integration_materialize_commands()
     command -p -- cp -- "$pkg_integration_cmd_source" "$pkg_integration_concrete/cmd/$pkg_integration_command" || return 1
     command -p -- chmod +x "$pkg_integration_concrete/cmd/$pkg_integration_command" || return 1
 
-    _pkg_integration_link_target_read "$pkg_integration_range/link/$pkg_integration_command" || return 1
+    pkg_integration_link_target_read "$pkg_integration_range/link/$pkg_integration_command" || return 1
     command -p -- ln -s "../root/$pkg_integration_link_target" "$pkg_integration_concrete/link/$pkg_integration_command" || return 1
   done
 }
@@ -794,7 +794,7 @@ pkg_integrate()
   readpathce pkg_integrate_range "$pkg_integrate_range_input" || return 6
   readpathce pkg_integrate_root "$pkg_integrate_root_input" || return 7
 
-  _pkg_integration_set_concrete "$pkg_integrate_pkg" "$pkg_integrate_version" "$pkg_integrate_osarch" || return 8
+  pkg_integration_set_concrete "$pkg_integrate_pkg" "$pkg_integrate_version" "$pkg_integrate_osarch" || return 8
   [ ! -e "$pkg_integration_concrete" ] && [ ! -L "$pkg_integration_concrete" ] || return 9
 
   # Phase 3: validate the complete integration plan before consuming the
@@ -904,7 +904,7 @@ pkg_deintegrate()
 
   pkg_name_version_osarch_valid "$pkg_deintegrate_pkg" "$pkg_deintegrate_version" "$pkg_deintegrate_osarch" || return 2
 
-  _pkg_integration_set_concrete "$pkg_deintegrate_pkg" "$pkg_deintegrate_version" "$pkg_deintegrate_osarch" || return 1
+  pkg_integration_set_concrete "$pkg_deintegrate_pkg" "$pkg_deintegrate_version" "$pkg_deintegrate_osarch" || return 1
   valid_dir "$pkg_integration_concrete" || return 1
 
   _pkg_default_read_current "$pkg_integration_selector" || return 1
@@ -984,7 +984,7 @@ pkg_default_apply()
     return 0
   fi
 
-  _pkg_integration_set_concrete "$pkg_default_pkg" "$pkg_default_version" "$pkg_default_osarch" || return 1
+  pkg_integration_set_concrete "$pkg_default_pkg" "$pkg_default_version" "$pkg_default_osarch" || return 1
   pkg_default_new_concrete=$pkg_integration_concrete_name
   valid_dir "$pkg_integration_concrete" || return 1
 
