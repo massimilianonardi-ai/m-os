@@ -8,7 +8,6 @@ on:
       - '.github/workflows/m-json-public.yml'
       - 'bin/sys/json'
       - 'res/sys/manual/json'
-      - '.github/scripts/m-json-test-parsing.sh'
   pull_request:
     paths:
       - '.github/scripts/m-json-public.sh'
@@ -16,7 +15,6 @@ on:
       - '.github/workflows/m-json-public.yml'
       - 'bin/sys/json'
       - 'res/sys/manual/json'
-      - '.github/scripts/m-json-test-parsing.sh'
   workflow_dispatch:
 
 jobs:

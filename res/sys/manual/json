@@ -84,7 +84,7 @@ EXIT STATUS
     4    -e with no results.
     7    Could not create private temporary storage.
     8    Input file unavailable.
-    9    Input/filter file read failure.
+    9    Input file read failure.
     10   Invalid JSON lexical token or escape.
     11   Invalid UTF-8.
     12   Invalid JSON structure, or --check without exactly one value.
@@ -94,7 +94,6 @@ EXIT STATUS
     17   Standard-input read failure.
     18   Filter file unavailable.
     19   Filter file read failure.
-    21   Could not stage private query output or diagnostics.
     20   Filter staging failure.
     21   Result staging failure.
     129+ Termination by handled signal.
