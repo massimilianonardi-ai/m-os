@@ -2,7 +2,7 @@ name: m public pkg dependency provider and uninstall integration
 
 on:
   push:
-    branches: [master]
+    branches: [master, m-os-completion-p4-facility-map]
   pull_request:
     paths:
       - '.github/scripts/m-pkg-p3-provider-versions.sh'
