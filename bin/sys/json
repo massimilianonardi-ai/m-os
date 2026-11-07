@@ -1,0 +1,1067 @@
+#!/bin/sh
+# Portable JSON querying. Parsing and read-only filters run in POSIX awk.
+
+json_usage()
+{
+  printf '%s\n' 'usage: json [-c] [-r] [-e] [-f filter-file | filter] [file ...]' >&2
+  printf '%s\n' '       json --check [file ...]' >&2
+  return 2
+}
+
+json_main()
+{
+  json_compact=0
+  json_raw=0
+  json_exit=0
+  json_check=0
+  json_filter_file=
+  json_filter=.
+  json_filter_given=0
+  json_options=1
+  while [ "$#" -gt 0 ] && [ "$json_options" -eq 1 ]
+  do
+    case "$1" in
+      -c|--compact-output) json_compact=1; shift;;
+      -r|--raw-output) json_raw=1; shift;;
+      -e|--exit-status) json_exit=1; shift;;
+      --check) json_check=1; shift;;
+      -f|--from-file)
+        [ "$#" -ge 2 ] && [ -n "$2" ] || { json_usage; return 2; }
+        [ -z "$json_filter_file" ] || { json_usage; return 2; }
+        json_filter_file=$2
+        json_filter_given=1
+        shift 2
+        ;;
+      --) shift; json_options=0;;
+      -*) json_usage; return 2;;
+      *) json_options=0;;
+    esac
+  done
+  if [ "$json_check" -eq 1 ]
+  then
+    [ "$json_filter_given" -eq 0 ] && [ "$json_raw" -eq 0 ] && \
+      [ "$json_compact" -eq 0 ] && [ "$json_exit" -eq 0 ] || { json_usage; return 2; }
+  elif [ "$json_filter_given" -eq 0 ] && [ "$#" -gt 0 ]
+  then
+    json_filter=$1
+    shift
+  fi
+  [ "${1-}" != -- ] || shift
+
+  umask 077
+  json_temp_base=${TMPDIR:-/tmp}
+  # Keep relative path operands from looking like POSIX utility options.
+  case "$json_temp_base" in
+    /*) : ;;
+    *) json_temp_base=./$json_temp_base ;;
+  esac
+  json_attempt=0
+  json_temp=
+  while [ "$json_attempt" -lt 10 ]
+  do
+    json_temp=$json_temp_base/json-$$-$json_attempt
+    if (umask 077; command -p mkdir -m 700 "$json_temp") 2>/dev/null
+    then
+      break
+    fi
+    json_temp=
+    json_attempt=$((json_attempt + 1))
+  done
+  [ -n "$json_temp" ] || {
+    printf '%s\n' 'json: temporary-directory-creation-failed' >&2
+    return 7
+  }
+  trap 'command -p rm -f "$json_temp/bytes" "$json_temp/filter" "$json_temp/normalized" "$json_temp/diagnostic"; command -p rmdir "$json_temp"' 0
+  trap 'exit 129' 1
+  trap 'exit 130' 2
+  trap 'exit 131' 3
+  trap 'exit 143' 15
+
+  if [ -n "$json_filter_file" ]
+  then
+    [ -f "$json_filter_file" ] && [ -r "$json_filter_file" ] || {
+      printf '%s\n' 'json: filter-file-unreadable' >&2
+      return 18
+    }
+    command -p cat < "$json_filter_file" > "$json_temp/filter" || {
+      printf '%s\n' 'json: filter-file-read-failed' >&2
+      return 19
+    }
+  else
+    printf '%s' "$json_filter" > "$json_temp/filter" || {
+      printf '%s\n' 'json: filter-materialization-failed' >&2
+      return 20
+    }
+  fi
+
+  : > "$json_temp/normalized" || {
+    printf '%s\n' 'json: result-staging-failed' >&2
+    return 21
+  }
+  : > "$json_temp/diagnostic" || {
+    printf '%s\n' 'json: result-staging-failed' >&2
+    return 21
+  }
+  [ "$#" -gt 0 ] || set -- -
+  json_seen_result=0
+  json_last_status=4
+  for json_file in "$@"
+  do
+    if [ "$json_file" != - ]
+    then
+      [ -f "$json_file" ] && [ -r "$json_file" ] || {
+        printf '%s\n' "json: input-file-unreadable: $json_file" >&2
+        return 8
+      }
+      LC_ALL=C command -p od -A n -t u1 -v < "$json_file" > "$json_temp/bytes" || {
+        printf '%s\n' "json: input-file-read-failed: $json_file" >&2
+        return 9
+      }
+    else
+      LC_ALL=C command -p od -A n -t u1 -v > "$json_temp/bytes" || {
+        printf '%s\n' 'json: standard-input-read-failed' >&2
+        return 17
+      }
+    fi
+
+    : > "$json_temp/diagnostic" || {
+      printf '%s\n' 'json: result-staging-failed' >&2
+      return 21
+    }
+    LC_ALL=C command -p awk \
+      -v compact_output="$json_compact" \
+      -v raw_output="$json_raw" \
+      -v exit_status="$json_exit" \
+      -v check_only="$json_check" \
+      '
+# POSIX awk JSON syntax, Unicode and path-query engine.
+# The external shell supplies an octet stream produced by POSIX od.
+
+function fail(status, identity)
+{
+  printf "json: %s at byte %.0f\n", identity, byte_offset > diagnostic_file
+  exit status
+}
+
+function filter_fail(identity)
+{
+  printf "json: filter-%s at character %d\n", identity, filter_pos > diagnostic_file
+  exit 3
+}
+
+function next_octet(    line,n)
+{
+  while (part_index > part_count)
+  {
+    if ((getline line < ARGV[2]) <= 0) return -1
+    part_count=split(line, parts, /[[:space:]]+/)
+    part_index=1
+    while (part_index <= part_count && parts[part_index] == "") part_index++
+  }
+  n=parts[part_index++]
+  if (n == "") return next_octet()
+  if (n !~ /^[0-9]+$/ || n + 0 > 255) fail(15,"invalid-byte-stream")
+  return n + 0
+}
+
+function peek_byte()
+{
+  if (lookahead == -2) lookahead=next_octet()
+  return lookahead
+}
+
+function take_byte(    b)
+{
+  b=peek_byte()
+  if (b >= 0)
+  {
+    lookahead=-2
+    byte_offset++
+  }
+  return b
+}
+
+function document_append(b)
+{
+  document_pending=document_pending sprintf("%c", b)
+  document_size++
+  if (length(document_pending) >= 4096)
+  {
+    document_chunk[++document_chunk_count]=document_pending
+    document_pending=""
+  }
+}
+
+function take_document_byte(    b)
+{
+  b=take_byte()
+  document_append(b)
+  return b
+}
+
+function is_digit(b) { return b >= 48 && b <= 57 }
+function is_hex(b) { return is_digit(b) || (b >= 65 && b <= 70) || (b >= 97 && b <= 102) }
+function hex_value(b)
+{
+  if (is_digit(b)) return b-48
+  if (b <= 70) return b-55
+  return b-87
+}
+
+function unicode_encode(cp)
+{
+  if (cp < 128) return sprintf("%c",cp)
+  if (cp < 2048) return sprintf("%c%c",192+int(cp/64),128+cp%64)
+  if (cp < 65536)
+  {
+    return sprintf("%c%c%c",224+int(cp/4096),128+int(cp/64)%64,128+cp%64)
+  }
+  return sprintf("%c%c%c%c",240+int(cp/262144),128+int(cp/4096)%64,128+int(cp/64)%64,128+cp%64)
+}
+
+# Unpaired UTF-16 surrogates stay distinct from scalar values in key matching.
+# No valid UTF-8 key can contain the chosen 0xff-prefix representation.
+function unicode_unpaired(cp)
+{
+  return sprintf("%cU%04X",255,cp)
+}
+function unicode_flush()
+{
+  if (unicode_high >= 0)
+  {
+    unicode_text=unicode_text unicode_unpaired(unicode_high)
+    unicode_high=-1
+  }
+}
+function unicode_unit(cp)
+{
+  if (unicode_high >= 0)
+  {
+    if (cp >= 56320 && cp <= 57343)
+    {
+      unicode_text=unicode_text unicode_encode(65536+(unicode_high-55296)*1024+cp-56320)
+      unicode_high=-1
+      return
+    }
+    unicode_flush()
+  }
+  if (cp >= 55296 && cp <= 56319) unicode_high=cp
+  else if (cp >= 56320 && cp <= 57343) unicode_text=unicode_text unicode_unpaired(cp)
+  else unicode_text=unicode_text unicode_encode(cp)
+}
+function unicode_literal(s)
+{
+  unicode_flush()
+  unicode_text=unicode_text s
+}
+function unicode_begin()
+{
+  unicode_high=-1
+  unicode_text=""
+}
+
+function utf8_continuation(lo,hi,    b)
+{
+  b=peek_byte()
+  if (b < lo || b > hi) fail(11,"invalid-utf8")
+  take_document_byte()
+  return b
+}
+function utf8_character(first, capture,    b2,b3,b4,s)
+{
+  s=sprintf("%c",first)
+  if (first >= 194 && first <= 223)
+  {
+    b2=utf8_continuation(128,191)
+    return s sprintf("%c",b2)
+  }
+  if (first == 224) b2=utf8_continuation(160,191)
+  else if (first >= 225 && first <= 236) b2=utf8_continuation(128,191)
+  else if (first == 237) b2=utf8_continuation(128,159)
+  else if (first >= 238 && first <= 239) b2=utf8_continuation(128,191)
+  else if (first == 240) b2=utf8_continuation(144,191)
+  else if (first >= 241 && first <= 243) b2=utf8_continuation(128,191)
+  else if (first == 244) b2=utf8_continuation(128,143)
+  else fail(11,"invalid-utf8")
+  b3=utf8_continuation(128,191)
+  s=s sprintf("%c%c",b2,b3)
+  if (first < 240) return s
+  b4=utf8_continuation(128,191)
+  return s sprintf("%c",b4)
+}
+
+function read_string(capture,    b,escape,i,cp,s)
+{
+  take_document_byte() # opening quote
+  if (capture) unicode_begin()
+  while (1)
+  {
+    b=peek_byte()
+    if (b < 0) fail(10,"unterminated-string")
+    if (b == 34)
+    {
+      take_document_byte()
+      if (capture)
+      {
+        unicode_flush()
+        string_value=unicode_text
+      }
+      return
+    }
+    if (b < 32) fail(10,"unescaped-control-character")
+    if (b == 92)
+    {
+      take_document_byte()
+      escape=peek_byte()
+      if (escape == 117)
+      {
+        take_document_byte()
+        cp=0
+        for (i=0; i<4; i++)
+        {
+          b=peek_byte()
+          if (!is_hex(b)) fail(10,"invalid-unicode-escape")
+          cp=cp*16+hex_value(b)
+          take_document_byte()
+        }
+        if (capture) unicode_unit(cp)
+      }
+      else if (escape == 34 || escape == 92 || escape == 47 || escape == 98 || escape == 102 || escape == 110 || escape == 114 || escape == 116)
+      {
+        take_document_byte()
+        if (capture)
+        {
+          if (escape == 98) s=sprintf("%c",8)
+          else if (escape == 102) s=sprintf("%c",12)
+          else if (escape == 110) s="\n"
+          else if (escape == 114) s="\r"
+          else if (escape == 116) s="\t"
+          else s=sprintf("%c",escape)
+          unicode_literal(s)
+        }
+      }
+      else fail(10,"invalid-string-escape")
+      continue
+    }
+    take_document_byte()
+    if (b >= 128) s=utf8_character(b,capture)
+    else s=sprintf("%c",b)
+    if (capture) unicode_literal(s)
+  }
+}
+
+function read_number(    b)
+{
+  b=peek_byte()
+  if (b == 45) { take_document_byte(); b=peek_byte() }
+  if (b == 48) take_document_byte()
+  else
+  {
+    if (b < 49 || b > 57) fail(10,"invalid-number-integer")
+    do { take_document_byte(); b=peek_byte() } while (is_digit(b))
+  }
+  if (peek_byte() == 46)
+  {
+    take_document_byte()
+    if (!is_digit(peek_byte())) fail(10,"invalid-number-fraction")
+    do { take_document_byte(); b=peek_byte() } while (is_digit(b))
+  }
+  b=peek_byte()
+  if (b == 69 || b == 101)
+  {
+    take_document_byte()
+    b=peek_byte()
+    if (b == 43 || b == 45) take_document_byte()
+    if (!is_digit(peek_byte())) fail(10,"invalid-number-exponent")
+    do { take_document_byte(); b=peek_byte() } while (is_digit(b))
+  }
+}
+
+function literal_byte(word,i)
+{
+  return index("abcdefghijklmnopqrstuvwxyz",substr(word,i,1))+96
+}
+function read_literal(word,    i,b)
+{
+  for (i=1; i<=length(word); i++)
+  {
+    b=peek_byte()
+    if (b != literal_byte(word,i)) fail(10,"invalid-literal")
+    take_document_byte()
+  }
+}
+
+function read_token(capture,    b)
+{
+  skipped_space=0
+  while (1)
+  {
+    b=peek_byte()
+    if (b == 9 || b == 10 || b == 13 || b == 32) { take_byte(); skipped_space++ }
+    else break
+  }
+  token_start=document_size+1
+  if (b == -1) return "end"
+  if (b == 34) { read_string(capture); return "string" }
+  if (b == 123 || b == 125 || b == 91 || b == 93 || b == 44 || b == 58)
+  {
+    take_document_byte()
+    return sprintf("%c",b)
+  }
+  if (b == 45 || is_digit(b)) { read_number(); return "number" }
+  if (b == 116) { read_literal("true"); return "true" }
+  if (b == 102) { read_literal("false"); return "false" }
+  if (b == 110) { read_literal("null"); return "null" }
+  fail(10,"unexpected-character")
+}
+
+function create_node(t,    id,parent)
+{
+  id=++node_count
+  node_type[id]=t
+  node_start[id]=token_start
+  node_end[id]=document_size
+  node_live[id]=1
+  if (depth > 1 && frame_type[depth-1] != "root")
+  {
+    parent=frame_node[depth-1]
+    if (first_child[parent] == 0) first_child[parent]=id
+    else next_sibling[last_child[parent]]=id
+    last_child[parent]=id
+    if (frame_type[depth-1] == "object")
+    {
+      node_key[id]=frame_key[depth-1]
+      node_key_start[id]=frame_key_start[depth-1]
+      node_key_end[id]=frame_key_end[depth-1]
+      map_key=parent SUBSEP length(node_key[id]) ":" node_key[id]
+      if (map_key in key_last_node)
+      {
+        node_alias[key_last_node[map_key]]=id
+        node_live[id]=0
+      }
+      else key_last_node[map_key]=id
+    }
+  }
+  else document_root=id
+  return id
+}
+
+function accept_value(t,    id)
+{
+  if (t != "{" && t != "[" && t != "string" && t != "number" && t != "true" && t != "false" && t != "null") fail(12,"expected-value")
+  if (frame_type[depth] == "root") frame_state[depth]="end"
+  else frame_state[depth]="separator"
+  # The parent was the previous stack frame; stack shifts only for containers.
+  depth++
+  id=create_node(t)
+  if (t == "{" || t == "[")
+  {
+    frame_type[depth]=(t == "{" ? "object" : "array")
+    frame_state[depth]=(t == "{" ? "first-key" : "first-value")
+    frame_node[depth]=id
+  }
+  else depth--
+}
+
+function close_frame()
+{
+  node_end[frame_node[depth]]=document_size
+  depth--
+}
+
+function reset_document(    i)
+{
+  # Clear node state only after all results of the preceding document are sent.
+  for (i=1; i<=node_count; i++)
+  {
+    delete node_type[i]
+    delete node_start[i]
+    delete node_end[i]
+    delete node_key[i]
+    delete node_key_start[i]
+    delete node_key_end[i]
+    delete node_live[i]
+    delete node_alias[i]
+    delete first_child[i]
+    delete last_child[i]
+    delete next_sibling[i]
+  }
+  for (i=1; i<=document_chunk_count; i++) delete document_chunk[i]
+  for (i in key_last_node) delete key_last_node[i]
+  node_count=0
+  document_chunk_count=0
+  document_pending=""
+  document_size=0
+  document_root=0
+  document_text=""
+  depth=1
+  frame_type[1]="root"
+  frame_state[1]="value"
+  frame_node[1]=0
+}
+
+function parse_one_document(    t,s,k)
+{
+  reset_document()
+  t=read_token(0)
+  if (t == "end") return 0
+  if (previous_scalar && skipped_space == 0 && (t == "number" || t == "true" || t == "false" || t == "null")) fail(12,"missing-value-separator")
+  while (1)
+  {
+    s=frame_state[depth]
+    k=frame_type[depth]
+    if (s == "end")
+    {
+      # A complete root value is ready; the outer loop reads the next one.
+      if (document_pending != "") document_chunk[++document_chunk_count]=document_pending
+      if (!check_only) evaluate_document()
+      documents_seen++
+      previous_scalar=(node_type[document_root] != "[" && node_type[document_root] != "{")
+      return 1
+    }
+    if (t == "end") fail(12,"unexpected-end-of-document")
+    if (s == "value" || s == "next-value") accept_value(t)
+    else if (s == "first-value")
+    {
+      if (t == "]") close_frame()
+      else accept_value(t)
+    }
+    else if (s == "first-key" || s == "next-key")
+    {
+      if (t == "}" && s == "first-key") close_frame()
+      else
+      {
+        if (t != "string") fail(12,"expected-object-key")
+        frame_key[depth]=string_value
+        frame_key_start[depth]=token_start
+        frame_key_end[depth]=document_size
+        frame_state[depth]="colon"
+      }
+    }
+    else if (s == "colon")
+    {
+      if (t != ":") fail(12,"expected-colon")
+      frame_state[depth]="value"
+    }
+    else if (s == "separator")
+    {
+      if (k == "array" && t == "]") close_frame()
+      else if (k == "object" && t == "}") close_frame()
+      else
+      {
+        if (t != ",") fail(12,"expected-comma-or-closing-delimiter")
+        frame_state[depth]=(k == "array" ? "next-value" : "next-key")
+      }
+    }
+    else fail(15,"internal-parser-state")
+    if (frame_state[depth] == "end") continue
+    t=read_token(frame_state[depth] == "first-key" || frame_state[depth] == "next-key")
+  }
+}
+
+# Filter parser: deliberately bounded read-only jq-compatible subset.
+function filter_peek()
+{
+  return substr(filter_text,filter_pos,1)
+}
+function filter_skip_space()
+{
+  while (filter_peek() == " " || filter_peek() == "\t" || filter_peek() == "\n" || filter_peek() == "\r") filter_pos++
+}
+function filter_take()
+{
+  return substr(filter_text,filter_pos++,1)
+}
+function filter_identifier_start(c)
+{
+  return c ~ /^[A-Za-z_]$/
+}
+function filter_identifier_part(c)
+{
+  return c ~ /^[A-Za-z0-9_]$/
+}
+function filter_read_hex(    i,ch,cp)
+{
+  cp=0
+  for (i=0; i<4; i++)
+  {
+    ch=filter_take()
+    # Must read hex as a character: index-based numeric helper is byte-oriented.
+    if (ch !~ /^[0-9a-fA-F]$/) filter_fail("invalid-unicode-escape")
+    if (ch ~ /^[0-9]$/) cp=cp*16+(ch+0)
+    else if (ch ~ /^[A-F]$/) cp=cp*16+(index("ABCDEF",ch)+9)
+    else cp=cp*16+(index("abcdef",ch)+9)
+  }
+  return cp
+}
+function filter_read_string(    ch,e,cp,s)
+{
+  if (filter_take() != "\"") filter_fail("expected-string")
+  unicode_begin()
+  while (1)
+  {
+    ch=filter_take()
+    if (ch == "") filter_fail("unterminated-string")
+    if (ch == "\"")
+    {
+      unicode_flush()
+      return unicode_text
+    }
+    if (ch == "\\")
+    {
+      e=filter_take()
+      if (e == "u") unicode_unit(filter_read_hex())
+      else
+      {
+        if (e == "\"" || e == "\\" || e == "/") s=e
+        else if (e == "b") s=sprintf("%c",8)
+        else if (e == "f") s=sprintf("%c",12)
+        else if (e == "n") s="\n"
+        else if (e == "r") s="\r"
+        else if (e == "t") s="\t"
+        else filter_fail("invalid-string-escape")
+        unicode_literal(s)
+      }
+    }
+    else
+    {
+      if (ch ~ /[[:cntrl:]]/) filter_fail("invalid-string-control")
+      unicode_literal(ch)
+    }
+  }
+}
+function add_step(stage,branch,type,value,optional,    id,part)
+{
+  id=++step_count
+  step_type[id]=type
+  step_value[id]=value
+  step_optional[id]=optional
+  part=stage SUBSEP branch
+  if (first_step[part] == 0) first_step[part]=id
+  else next_step[last_step[part]]=id
+  last_step[part]=id
+}
+function compile_filter(    ch,start,key,idx,optional,stage,branch,seen_selector)
+{
+  filter_pos=1
+  stage_count=1
+  branch_count[1]=1
+  stage=1
+  branch=1
+  while (1)
+  {
+    filter_skip_space()
+    if (filter_take() != ".") filter_fail("expected-dot")
+    seen_selector=0
+    while (1)
+    {
+      filter_skip_space()
+      ch=filter_peek()
+      if (filter_identifier_start(ch))
+      {
+        start=filter_pos
+        do { filter_pos++; ch=filter_peek() } while (filter_identifier_part(ch))
+        key=substr(filter_text,start,filter_pos-start)
+        optional=0
+        if (filter_peek() == "?") { filter_pos++; optional=1 }
+        add_step(stage,branch,"key",key,optional)
+        seen_selector=1
+      }
+      else if (ch == "[")
+      {
+        filter_pos++
+        filter_skip_space()
+        ch=filter_peek()
+        if (ch == "]")
+        {
+          filter_pos++
+          optional=0
+          if (filter_peek() == "?") { filter_pos++; optional=1 }
+          add_step(stage,branch,"iter","",optional)
+        }
+        else if (ch == "\"")
+        {
+          key=filter_read_string()
+          filter_skip_space()
+          if (filter_take() != "]") filter_fail("expected-closing-bracket")
+          optional=0
+          if (filter_peek() == "?") { filter_pos++; optional=1 }
+          add_step(stage,branch,"key",key,optional)
+        }
+        else
+        {
+          start=filter_pos
+          if (ch == "-") filter_pos++
+          if (filter_peek() !~ /^[0-9]$/) filter_fail("invalid-array-index")
+          do { filter_pos++; ch=filter_peek() } while (ch ~ /^[0-9]$/)
+          idx=substr(filter_text,start,filter_pos-start)
+          filter_skip_space()
+          if (filter_take() != "]") filter_fail("expected-closing-bracket")
+          optional=0
+          if (filter_peek() == "?") { filter_pos++; optional=1 }
+          add_step(stage,branch,"index",idx,optional)
+        }
+        seen_selector=1
+      }
+      else if (ch == ".")
+      {
+        filter_pos++
+        if (!filter_identifier_start(filter_peek()) && filter_peek() != "[") filter_fail("expected-selector")
+      }
+      else break
+    }
+    if (!seen_selector) add_step(stage,branch,"identity","",0)
+    filter_skip_space()
+    ch=filter_peek()
+    if (ch == "|")
+    {
+      filter_pos++
+      stage++
+      stage_count=stage
+      branch_count[stage]=1
+      branch=1
+      continue
+    }
+    if (ch == ",")
+    {
+      filter_pos++
+      branch++
+      branch_count[stage]=branch
+      continue
+    }
+    if (ch != "") filter_fail("unexpected-character")
+    break
+  }
+}
+
+function match_child(parent,k,    child,found)
+{
+  found=0
+  for (child=first_child[parent]; child; child=next_sibling[child])
+  {
+    if (node_live[child] && node_key[child] == k) found=child
+  }
+  return found
+}
+
+# A sequence of node IDs per stage; zero means the JSON null value.
+function step_run(id,step,    type,input_type,child,n,idx,count,iter)
+{
+  type=step_type[step]
+  if (type == "identity") { queue_push(id); return }
+  input_type=(id ? node_type[id] : "null")
+  if (type == "key")
+  {
+    if (input_type == "{") queue_push(match_child(id,step_value[step]))
+    else if (input_type == "null") queue_push(0)
+    else if (!step_optional[step]) fail(13,"cannot-index-with-key")
+    return
+  }
+  if (type == "index")
+  {
+    if (input_type == "null") { queue_push(0); return }
+    if (input_type != "[")
+    {
+      if (!step_optional[step]) fail(13,"cannot-index-with-number")
+      return
+    }
+    idx=step_value[step]+0
+    count=0
+    for (child=first_child[id]; child; child=next_sibling[child]) count++
+    if (idx < 0) idx=count+idx
+    n=0
+    for (child=first_child[id]; child; child=next_sibling[child])
+    {
+      if (n++ == idx) { queue_push(child); return }
+    }
+    queue_push(0)
+    return
+  }
+  if (type == "iter")
+  {
+    if (input_type != "[" && input_type != "{")
+    {
+      if (!step_optional[step]) fail(13,"cannot-iterate")
+      return
+    }
+    for (child=first_child[id]; child; child=next_sibling[child])
+    {
+      if (node_live[child]) queue_push(child)
+    }
+  }
+}
+
+# All stages operate on bounded arrays of node IDs, not recursive calls.
+function resolve_value(id)
+{
+  if (id && node_alias[id]) return node_alias[id]
+  return id
+}
+function queue_push(id)
+{
+  queue_next[++queue_next_count]=resolve_value(id)
+}
+function evaluate_document(    i,j,stage,branch,step,work_count,current_count,stage_output_count)
+{
+  document_text=""
+  for (i=1; i<=document_chunk_count; i++) document_text=document_text document_chunk[i]
+  current_count=1
+  queue_current[1]=document_root
+  for (stage=1; stage<=stage_count; stage++)
+  {
+    stage_output_count=0
+    for (i=1; i<=current_count; i++)
+    {
+      for (branch=1; branch<=branch_count[stage]; branch++)
+      {
+        work_count=1
+        queue_work[1]=queue_current[i]
+        for (step=first_step[stage SUBSEP branch]; step; step=next_step[step])
+        {
+          queue_next_count=0
+          for (j=1; j<=work_count; j++) step_run(queue_work[j],step)
+          work_count=queue_next_count
+          for (j=1; j<=work_count; j++) queue_work[j]=queue_next[j]
+        }
+        for (j=1; j<=work_count; j++) queue_stage[++stage_output_count]=queue_work[j]
+      }
+    }
+    current_count=stage_output_count
+    for (i=1; i<=current_count; i++) queue_current[i]=queue_stage[i]
+  }
+  for (i=1; i<=current_count; i++) emit_result(queue_current[i])
+}
+
+function emit_result(id,    type,raw)
+{
+  type=id ? node_type[id] : "null"
+  output_count++
+  last_output_false=(type == "false" || type == "null")
+  if (id) raw=substr(document_text,node_start[id],node_end[id]-node_start[id]+1)
+  else raw="null"
+  if (raw_output && type == "string")
+  {
+    printf "%s\n", decode_raw_string(raw)
+  }
+  else serialize_node(id)
+}
+
+function decode_raw_string(raw,    i,ch,esc,cp,h,unicode_value,high,j)
+{
+  unicode_begin()
+  for (i=2; i<length(raw); i++)
+  {
+    ch=substr(raw,i,1)
+    if (ch == "\\")
+    {
+      esc=substr(raw,++i,1)
+      if (esc == "u")
+      {
+        cp=0
+        for (j=1; j<=4; j++)
+        {
+          h=substr(raw,++i,1)
+          if (h ~ /^[0-9]$/) cp=cp*16+(h+0)
+          else if (h ~ /^[A-F]$/) cp=cp*16+(index("ABCDEF",h)+9)
+          else cp=cp*16+(index("abcdef",h)+9)
+        }
+        unicode_unit(cp)
+      }
+      else
+      {
+        if (esc == "b") ch=sprintf("%c",8)
+        else if (esc == "f") ch=sprintf("%c",12)
+        else if (esc == "n") ch="\n"
+        else if (esc == "r") ch="\r"
+        else if (esc == "t") ch="\t"
+        else ch=esc
+        unicode_literal(ch)
+      }
+    }
+    else unicode_literal(ch)
+  }
+  unicode_flush()
+  # For lone surrogates, jq raw output uses U+FFFD, never invalid UTF-8.
+  gsub(sprintf("%cU[Dd][89ABCDEFabcdef][0-9A-Fa-f][0-9A-Fa-f]",255),unicode_encode(65533),unicode_text)
+  return unicode_text
+}
+
+# Explicit serialization stack avoids recursion even for deep JSON trees.
+# Object lookup and iteration use the same last-duplicate-wins model.
+function emit_fragment(s)
+{
+  serialized_buffer=serialized_buffer s
+  if (length(serialized_buffer) >= 8192)
+  {
+    printf "%s",serialized_buffer
+    serialized_buffer=""
+  }
+}
+function serialize_indent(level,    i)
+{
+  if (compact_output) return
+  emit_fragment("\n")
+  for (i=0; i<level; i++) emit_fragment("  ")
+}
+function first_live_child(node,    child)
+{
+  child=first_child[node]
+  while (child && !node_live[child]) child=next_sibling[child]
+  return child
+}
+function next_live_child(child)
+{
+  child=next_sibling[child]
+  while (child && !node_live[child]) child=next_sibling[child]
+  return child
+}
+function serialize_node(root,    sp,id,t,child,raw,open_char,close_char)
+{
+  serialized_buffer=""
+  if (root == 0)
+  {
+    emit_fragment("null")
+    printf "%s\n",serialized_buffer
+    return
+  }
+  sp=1
+  serialization_node[1]=root
+  serialization_state[1]=0
+  while (sp > 0)
+  {
+    id=serialization_node[sp]
+    t=node_type[id]
+    if (t != "{" && t != "[")
+    {
+      emit_fragment(substr(document_text,node_start[id],node_end[id]-node_start[id]+1))
+      sp--
+      continue
+    }
+    if (serialization_state[sp] == 0)
+    {
+      open_char=t
+      close_char=(t == "{" ? "}" : "]")
+      emit_fragment(open_char)
+      child=first_live_child(id)
+      if (!child)
+      {
+        emit_fragment(close_char)
+        sp--
+        continue
+      }
+      serialization_child[sp]=child
+      serialization_first[sp]=1
+      serialization_state[sp]=1
+      serialize_indent(sp)
+      continue
+    }
+    if (serialization_state[sp] == 1)
+    {
+      child=serialization_child[sp]
+      if (!serialization_first[sp])
+      {
+        emit_fragment(",")
+        serialize_indent(sp)
+      }
+      serialization_first[sp]=0
+      if (t == "{")
+      {
+        emit_fragment(substr(document_text,node_key_start[child],node_key_end[child]-node_key_start[child]+1))
+        emit_fragment(compact_output ? ":" : ": ")
+      }
+      serialization_state[sp]=2
+      sp++
+      serialization_node[sp]=resolve_value(child)
+      serialization_state[sp]=0
+      continue
+    }
+    child=next_live_child(serialization_child[sp])
+    if (child)
+    {
+      serialization_child[sp]=child
+      serialization_state[sp]=1
+    }
+    else
+    {
+      serialize_indent(sp-1)
+      emit_fragment(t == "{" ? "}" : "]")
+      sp--
+    }
+  }
+  printf "%s\n",serialized_buffer
+}
+
+## POSIX awk needs an explicit continued line to vertically align BEGIN braces.
+BEGIN \
+{
+  diagnostic_file=ARGV[3]
+  ARGV[3]=""
+  byte_offset=0
+  lookahead=-2
+  part_count=0
+  part_index=1
+  output_count=0
+  last_output_false=0
+  documents_seen=0
+  filter_text=""
+  if (!check_only)
+  {
+    while ((getline filter_line < ARGV[1]) > 0)
+    {
+      if (filter_text != "") filter_text=filter_text "\n"
+      filter_text=filter_text filter_line
+    }
+    close(ARGV[1])
+    if (filter_text == "") filter_fail("empty-filter")
+    compile_filter()
+  }
+  while (parse_one_document())
+  {
+    if (check_only && documents_seen > 1) fail(12,"multiple-json-values")
+  }
+  if (check_only && documents_seen == 0) fail(12,"empty-json-input")
+  if (exit_status && !check_only)
+  {
+    if (output_count == 0) exit 4
+    if (last_output_false) exit 1
+  }
+  exit 0
+}
+' "$json_temp/filter" "$json_temp/bytes" "$json_temp/diagnostic" >> "$json_temp/normalized"
+    json_status=$?
+    case "$json_status" in
+      0|1|4)
+        if [ "$json_exit" -eq 1 ] && [ "$json_check" -eq 0 ]
+        then
+          if [ "$json_status" -ne 4 ]
+          then
+            json_seen_result=1
+            json_last_status=$json_status
+          fi
+        elif [ "$json_status" -ne 0 ]
+        then
+          return "$json_status"
+        fi
+        ;;
+      *)
+        command -p cat < "$json_temp/diagnostic" >&2 || :
+        return "$json_status"
+        ;;
+    esac
+  done
+  if [ "$json_check" -eq 0 ]
+  then
+    command -p cat < "$json_temp/normalized" || {
+      printf '%s\n' 'json: output-write-failed' >&2
+      return 16
+    }
+  fi
+  if [ "$json_exit" -eq 1 ] && [ "$json_check" -eq 0 ]
+  then
+    [ "$json_seen_result" -eq 1 ] || return 4
+    return "$json_last_status"
+  fi
+  return 0
+}
+
+json_main "$@"
