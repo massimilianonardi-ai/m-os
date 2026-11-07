@@ -206,9 +206,9 @@ then
 fi
 [ -d pkg/electron-web-control@v0.1.0 ] && [ ! -L pkg/electron-web-control@v0.1.0 ] || exit 26
 [ "$(./m pkg provider default web-control)" = electron-web-control@v0.1.0 ] || exit 38
-concrete_v010=$(./m pkg default electron-web-control) || exit 73
-case "$concrete_v010" in *!*) class_v010=${concrete_v010##*!} ;; *) class_v010=all ;; esac
-[ "$(command -p readlink "$repo_root/facility/web-control/1/$class_v010/default")" = "../../../../pkg/$concrete_v010" ] || exit 70
+provider_default_v010=$(./m pkg provider default web-control) || exit 73
+case "$provider_default_v010" in *!*) class_v010=${provider_default_v010##*!} ;; *) class_v010=all ;; esac
+[ "$(command -p readlink "$repo_root/facility/web-control/1/$class_v010/default")" = "../../../../pkg/$provider_default_v010" ] || exit 70
 [ -L bin/ext/web-control ] || exit 39
 [ "$(command -p readlink bin/ext/web-control)" = '../../pkg/electron-web-control@v0.1.0/facility-cmd/web-control/web-control' ] || exit 40
 
@@ -227,7 +227,8 @@ fi
 ./m pkg default electron-web-control@v0.1.0 || exit 42
 ./m pkg provider default web-control electron-web-control || exit 43
 [ "$(./m pkg requirement resolve web-control '=1')" = electron-web-control@v0.1.0 ] || exit 44
-[ "$(command -p readlink "$repo_root/facility/web-control/1/$class_v010/default")" = "../../../../pkg/$concrete_v010" ] || exit 74
+package_default_v010=$(./m pkg default electron-web-control) || exit 74
+[ "$(command -p readlink "$repo_root/facility/web-control/1/$class_v010/default")" = "../../../../pkg/$package_default_v010" ] || exit 74
 ./m pkg default -u -- electron-web-control || exit 45
 [ ! -e "$repo_root/facility/web-control/1/$class_v010/default" ] && [ ! -L "$repo_root/facility/web-control/1/$class_v010/default" ] || exit 75
 ./m pkg default electron-web-control@v0.1.4 || exit 46
