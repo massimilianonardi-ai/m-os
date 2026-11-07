@@ -33,5 +33,7 @@ EXIT STATUS
     Operation-specific failures below may also use these numeric
     statuses; stderr identifies the bootstrap or operation branch.
 
-    On success shell replaces itself with the selected shell.
-    Non-zero status indicates state/configuration preparation or exec failure.
+    On success shell replaces itself with the selected shell, so the caller
+    receives that shell's exit status. A non-zero status may indicate state or
+    configuration preparation failure, exec failure, or the selected shell's
+    own exit status.
