@@ -89,7 +89,27 @@ do
   i=$((i + 1))
 done
 [ "$ready" -eq 1 ] || { cat "$work/status.err" >&2; exit 1; }
-grep -F '"browserRunning":true' "$work/status" >/dev/null
+
+# Status must not create an absent browser. A page-required operation does.
+./m web-control page new >"$work/page-new"
+browser_ready=0
+i=0
+while [ "$i" -lt 15 ]
+do
+  if ./m pwc-web-control status >"$work/status" 2>"$work/status.err" && \
+     grep -F '"browserRunning":true' "$work/status" >/dev/null
+  then
+    browser_ready=1
+    break
+  fi
+  sleep 1
+  i=$((i + 1))
+done
+[ "$browser_ready" -eq 1 ] || {
+  cat "$work/status" "$work/status.err" "$work/page-new" "$work/consumer.log" >&2
+  echo 'FAIL: page creation did not start the Chromium browser runtime' >&2
+  exit 1
+}
 
 expected="$root/chrome_sandbox"
 awk -v expected="CHROME_DEVEL_SANDBOX=$expected" '
