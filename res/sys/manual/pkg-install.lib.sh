@@ -28,6 +28,9 @@ FUNCTIONS
         dependency concretes before those exact roots. Return 0 for complete
         success, 1 for execution failures (including already-installed
         explicit roots), and 2 for invalid invocation or request syntax.
+        Catalog initialization failures identify the invalid schema; an
+        incomplete catalog schema emits `pkg-catalog.schema-root-incomplete`
+        and returns status 1.
 
     pkg_install_validate <package-spec>...
         Check the syntax of a nonempty list of package requests without

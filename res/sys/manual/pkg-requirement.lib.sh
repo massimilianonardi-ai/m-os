@@ -14,7 +14,11 @@ FUNCTIONS
         package artifact and does not install the package.
 
         An empty successful result means that the selected package definition has
-        no facility dependency declarations.
+        no facility dependency declarations. An invalid catalog containing both
+        versioned and flat legacy schema roots, or a versioned catalog missing a
+        required root, fails with status 1 and emits the corresponding specific
+        `pkg-catalog.schema-roots-conflict` or
+        `pkg-catalog.schema-root-incomplete` diagnostic.
 
     pkg_requirement resolve <facility> <constraint>...
         Resolve the configured system facility default and require the selected

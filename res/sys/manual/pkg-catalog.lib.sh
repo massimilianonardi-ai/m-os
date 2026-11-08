@@ -27,8 +27,13 @@ FUNCTIONS
         a catalog with both versioned and flat roots is invalid. The destination variable
         names must be distinct valid shell identifiers. <work-root> and
         <cache-root> must be existing real directories and <work-root>/catalog
-        must not already exist. Catalog refresh command output is kept off standard
-        output; results are returned through the assigned variables.
+        must not already exist. A snapshot containing both the versioned v1 root
+        and flat legacy pkg/facility roots fails with status 3 and a
+        schema-roots-conflict diagnostic. A v1 or explicitly supported
+        unversioned legacy snapshot missing either required pkg/ or facility/
+        root fails with status 4 and a
+        schema-root-incomplete diagnostic. Catalog refresh command output is kept
+        off standard output; results are returned through the assigned variables.
 
     pkg_catalog_stream_resolve <stream-variable> <identity-osarch-variable> <catalog> <package> <target-osarch>
         Resolve one package stream from an already materialized catalog snapshot.
@@ -81,6 +86,8 @@ RETURN STATUS
     1   Catalog state, lookup, repository metadata or requested value is invalid
         or cannot be resolved.
     2   Invalid function invocation.
+    3   Versioned and legacy catalog schema roots are both present.
+    4   A required root is missing from the catalog schema snapshot.
 
 DEPENDENCIES
     pkg-common.lib.sh

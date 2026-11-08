@@ -170,7 +170,14 @@ _pkg_install_init()
   pkg_install_work="$pkg_install_tmp_root/install2-$$"
   mkdir -p -- "$pkg_install_work" || return 6
 
-  pkg_catalog_init pkg_install_catalog_work pkg_install_catalog_head "$pkg_install_work" "$pkg_install_cache_root" || return 7
+  pkg_catalog_init pkg_install_catalog_work pkg_install_catalog_head "$pkg_install_work" "$pkg_install_cache_root"
+  pkg_install_catalog_status=$?
+  case "$pkg_install_catalog_status" in
+    0) return 0;;
+    3) return 8;;
+    4) return 9;;
+    *) return 7;;
+  esac
 }
 
 _pkg_install_end()
@@ -209,8 +216,13 @@ pkg_install()
   _pkg_install_validate "$@" ||
     fatal 2 pkg-install invalid-request-list operation pkg-install
 
-  _pkg_install_init ||
-    fatal 1 pkg-install initialization-failed operation pkg-install
+  _pkg_install_init
+  _pkg_install_init_status=$?
+  case "$_pkg_install_init_status" in
+    0) :;;
+    8|9) return 1;;
+    *) fatal 1 pkg-install initialization-failed operation pkg-install;;
+  esac
 
   _pkg_install_list_contexts="$(_pkg_install_resolve "$@")" ||
     fatal 1 pkg-install root-resolution-failed operation pkg-install

@@ -5,7 +5,12 @@ on:
     branches: [master]
     paths:
       - 'lib/sys/sh/pkg/pkg-catalog.lib.sh'
+      - 'lib/sys/sh/pkg/pkg-install.lib.sh'
+      - 'lib/sys/sh/pkg/pkg-requirement.lib.sh'
+      - 'res/sys/lang/**/pkg-catalog/**'
+      - '.github/scripts/m-pkg-catalog-invalid-shape.sh'
       - 'res/sys/manual/pkg-catalog.lib.sh'
+      - 'res/sys/manual/pkg-requirement.lib.sh'
       - '.github/workflows/m-pkg-v1-catalog.yml'
   workflow_dispatch:
 
@@ -24,6 +29,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Reject invalid catalog schema roots through public pkg commands
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          sh -n .github/scripts/m-pkg-catalog-invalid-shape.sh
+          ./m shell -c '. .github/scripts/m-pkg-catalog-invalid-shape.sh'
       - name: Check versioned snapshot and public requirement resolution
         shell: sh
         run: |
