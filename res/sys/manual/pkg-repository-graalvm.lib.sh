@@ -14,9 +14,10 @@ DESCRIPTION
     The GitHub Releases API is the release authority. Stable tag prefixes map to
     package versions as follows: graal-<version>, jdk-<version>, and
     vm-<version>. Drafts and prereleases are excluded. Release timestamps, not
-    tag spelling, determine chronology. Unknown tag forms and duplicate mapped
-    versions fail closed so a new upstream naming scheme cannot silently
-    disappear from the listing.
+    tag spelling, determine chronology. When stable tag families map to the
+    same package version, the newest release record represents that version;
+    older duplicate records are omitted. Unknown tag forms fail closed so a
+    new upstream naming scheme cannot silently disappear from the listing.
 
     The adapter selects exactly one uploaded release asset matching the
     catalog's archive_regex. GitHub API asset size and SHA-256 digest are
