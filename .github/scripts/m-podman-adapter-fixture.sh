@@ -149,4 +149,29 @@ podman_fixture_assert_request_failure \
   /releases/tags/v6.1.3 \
   pkg_repository_resolve_artifact
 
+podman_fixture_assert_unsupported_request()
+{
+  podman_fixture_path=$1
+  podman_fixture_operation=$2
+  if m_LOG_LEVEL=error _pkg_repository_podman_get \
+    "$podman_fixture_path" "$podman_fixture_operation" \
+    >"$podman_fixture_tmp/out" 2>"$podman_fixture_tmp/err"
+  then
+    printf '%s\n' 'Unsupported internal request unexpectedly succeeded' >&2
+    exit 1
+  else
+    podman_fixture_status=$?
+  fi
+  [ "$podman_fixture_status" -eq 2 ] || exit 1
+  [ ! -s "$podman_fixture_tmp/out" ] || exit 1
+  grep -F '[error] [pkg-repository-podman.request-operation-unsupported]' \
+    "$podman_fixture_tmp/err" >/dev/null || {
+    cat "$podman_fixture_tmp/err" >&2
+    printf '%s\n' 'Unsupported internal request diagnostic missing' >&2
+    exit 1
+  }
+}
+podman_fixture_assert_unsupported_request /releases/latest unsupported-operation
+podman_fixture_assert_unsupported_request /unsupported pkg_repository_resolve_version
+
 printf '%s\n' 'PASS: Podman release fixtures, stable tag filtering, exact/latest chronology and anchor asset metadata'

@@ -98,7 +98,12 @@ _pkg_repository_podman_get()
     pkg_repository_resolve_artifact:/releases/tags/*)
       pkg_repository_podman_message_id=artifact-metadata-request-failed
       ;;
-    *) return 2;;
+    *)
+      log error pkg-repository-podman request-operation-unsupported \
+        operation "$pkg_repository_podman_operation" \
+        path "$pkg_repository_podman_path" || :
+      return 2
+      ;;
   esac
   pkg_repository_podman_url="https://api.github.com/repos/podman-container-tools/podman$pkg_repository_podman_path"
   http-fetch \

@@ -29,6 +29,8 @@ DESCRIPTION
     A nonzero http-fetch status (including HTTP API quota/rate-limit or
     upstream errors) is distinct from malformed release or asset metadata,
     which is rejected by adapter validation.
+    An unsupported internal request operation/path emits the distinct
+    request-operation-unsupported identity and returns status 2.
 
 FUNCTIONS
     pkg_repository_list_versions <repository-dir>
