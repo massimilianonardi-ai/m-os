@@ -99,6 +99,8 @@ else
 fi
 [ "$pkg_catalog_shape_requirement_status" -eq 1 ] || exit 1
 [ ! -s "$pkg_catalog_shape_tmp/requirement.out" ] || exit 1
+[ "$(grep -Fc 'pkg-catalog.schema-roots-conflict' \
+  "$pkg_catalog_shape_tmp/requirement.err")" -eq 1 ] || exit 1
 grep -F 'pkg-catalog.schema-roots-conflict' \
   "$pkg_catalog_shape_tmp/requirement.err" >/dev/null || exit 1
 
@@ -151,6 +153,8 @@ else
 fi
 [ "$pkg_catalog_shape_requirement_status" -eq 1 ] || exit 1
 [ ! -s "$pkg_catalog_shape_tmp/incomplete-requirement.out" ] || exit 1
+[ "$(grep -Fc 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/incomplete-requirement.err")" -eq 1 ] || exit 1
 grep -F 'pkg-catalog.schema-root-incomplete' \
   "$pkg_catalog_shape_tmp/incomplete-requirement.err" >/dev/null || exit 1
 grep -F '/v1/facility"' \
@@ -212,6 +216,8 @@ else
 fi
 [ "$pkg_catalog_shape_requirement_status" -eq 1 ] || exit 1
 [ ! -s "$pkg_catalog_shape_tmp/missing-pkg-requirement.out" ] || exit 1
+[ "$(grep -Fc 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/missing-pkg-requirement.err")" -eq 1 ] || exit 1
 grep -F 'pkg-catalog.schema-root-incomplete' \
   "$pkg_catalog_shape_tmp/missing-pkg-requirement.err" >/dev/null || exit 1
 grep -F '/v1/pkg"' \
@@ -270,6 +276,8 @@ else
 fi
 [ "$pkg_catalog_shape_requirement_status" -eq 1 ] || exit 1
 [ ! -s "$pkg_catalog_shape_tmp/legacy-requirement.out" ] || exit 1
+[ "$(grep -Fc 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/legacy-requirement.err")" -eq 1 ] || exit 1
 grep -F 'pkg-catalog.schema-root-incomplete' \
   "$pkg_catalog_shape_tmp/legacy-requirement.err" >/dev/null || exit 1
 grep -F '/facility"' \
