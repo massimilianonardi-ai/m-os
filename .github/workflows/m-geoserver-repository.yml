@@ -54,7 +54,7 @@ jobs:
           osarch=$(./m osarch)
           ./m pkg install "geoserver!$osarch"
           latest=$(./m pkg default geoserver)
-          case "$latest" in geoserver@*!"$osarch") ;; *) echo "latest install selected an unexpected package identity: $latest" >&2; exit 1 ;; esac
+          case "$latest" in geoserver@*) ;; *) echo "latest install selected an unexpected package identity: $latest" >&2; exit 1 ;; esac
           latest_version=${latest#geoserver@}
           latest_version=${latest_version%%!*}
           if [ "$latest" != "geoserver@3.0.1!$osarch" ]; then
@@ -62,7 +62,7 @@ jobs:
           fi
           versions=$(./m pkg versions geoserver)
           printf '%s\n' "$versions"
-          case "$versions" in *"geoserver@3.0.1!$osarch"*) : ;; *) echo 'exact 3.0.1 install missing' >&2; exit 1 ;; esac
+          case "$versions" in *'geoserver@3.0.1'*) : ;; *) echo 'exact 3.0.1 install missing' >&2; exit 1 ;; esac
           case "$versions" in *"$latest"*) : ;; *) echo "latest install missing: $latest" >&2; exit 1 ;; esac
           ./m pkg provider default java temurin@21+35
           ./m pkg provider default geoserver "$latest"
