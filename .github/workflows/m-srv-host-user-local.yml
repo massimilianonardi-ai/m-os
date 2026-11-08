@@ -183,6 +183,37 @@ jobs:
             done
             return 1
           }
+          # A valid provider start command that exits immediately must fail
+          # closed and leave no runtime record. The process target is a local,
+          # test-owned executable and the public provider path remains real.
+          srv_run=$(./m state-path user sys srv run)
+          [ -d "$srv_run" ] || { echo 'INFRASTRUCTURE: srv runtime directory is unavailable' >&2; exit 3; }
+          cat > "$payload/bin/service-target" <<'EOF_FAIL_TARGET'
+          #!/bin/sh
+          exit 37
+          EOF_FAIL_TARGET
+          chmod 700 "$payload/bin/service-target"
+          if ./m srv start "$facility" >"$tmp/failure.stdout" 2>"$tmp/failure.stderr"; then
+            echo 'FAIL: srv accepted a provider that exits during start' >&2
+            exit 1
+          fi
+          grep -F 'exited-during-start' "$tmp/failure.stderr" >/dev/null || {
+            echo 'FAIL: srv did not report exited-during-start' >&2
+            cat "$tmp/failure.stderr" >&2
+            exit 1
+          }
+          [ -z "$(find "$srv_run" -type f -print -quit)" ] || {
+            echo 'FAIL: failed srv start published runtime state' >&2
+            find "$srv_run" -type f -print >&2
+            exit 1
+          }
+          echo 'PASS: public srv rejects an exiting valid provider and publishes no runtime record'
+
+          # Restore the same test-owned provider to a long-running target;
+          # prove recovery and cleanup through the public portable interface.
+          cp "$tmp/service-target-template" "$payload/bin/service-target"
+          chmod 700 "$payload/bin/service-target"
+          : > "$marker"
           # Prove portable srv with an actual local provider on both hosts:
           # the host manager has not started anything in this sequence.
           portable_started=1
