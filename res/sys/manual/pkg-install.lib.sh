@@ -29,7 +29,7 @@ FUNCTIONS
         success, 1 for execution failures (including already-installed
         explicit roots), and 2 for invalid invocation or request syntax.
         Catalog initialization failures identify the invalid schema; an
-        incomplete versioned schema emits `pkg-catalog.schema-root-incomplete`
+        incomplete catalog schema emits `pkg-catalog.schema-root-incomplete`
         and returns status 1.
 
     pkg_install_validate <package-spec>...

@@ -247,3 +247,61 @@ fi
 [ "$pkg_catalog_shape_before" = "$pkg_catalog_shape_after" ] || exit 1
 
 printf '%s\n' 'PASS: public requirement and install reject a v1 catalog missing pkg/ with one specific diagnostic and no package concrete installed'
+
+# The unversioned root is still accepted as a legacy v1 shape, so it must also
+# contain both roots. Exercise its incomplete-root diagnostic independently.
+rm -rf -- "$pkg_catalog_shape_repo/v1"
+mkdir -p -- "$pkg_catalog_shape_repo/pkg" || exit 1
+printf '%s\n' legacy-package > "$pkg_catalog_shape_repo/pkg/marker" || exit 1
+git -C "$pkg_catalog_shape_repo" add -A || exit 1
+git -C "$pkg_catalog_shape_repo" \
+  -c user.name=Validation \
+  -c user.email=validation@example.invalid \
+  commit -m 'test fixture: incomplete legacy catalog roots' >/dev/null 2>&1 || exit 1
+
+if ./m pkg requirement list jsc@v0.1.0 \
+  >"$pkg_catalog_shape_tmp/legacy-requirement.out" \
+  2>"$pkg_catalog_shape_tmp/legacy-requirement.err"
+then
+  printf '%s\n' 'pkg requirement list accepted an incomplete legacy catalog' >&2
+  exit 1
+else
+  pkg_catalog_shape_requirement_status=$?
+fi
+[ "$pkg_catalog_shape_requirement_status" -eq 1 ] || exit 1
+[ ! -s "$pkg_catalog_shape_tmp/legacy-requirement.out" ] || exit 1
+grep -F 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/legacy-requirement.err" >/dev/null || exit 1
+grep -F '/facility"' \
+  "$pkg_catalog_shape_tmp/legacy-requirement.err" >/dev/null || exit 1
+
+if ./m pkg install jsc@v0.1.0 \
+  >"$pkg_catalog_shape_tmp/legacy-install.out" \
+  2>"$pkg_catalog_shape_tmp/legacy-install.err"
+then
+  printf '%s\n' 'pkg install accepted an incomplete legacy catalog' >&2
+  exit 1
+else
+  pkg_catalog_shape_install_status=$?
+fi
+[ "$pkg_catalog_shape_install_status" -eq 1 ] || exit 1
+[ ! -s "$pkg_catalog_shape_tmp/legacy-install.out" ] || exit 1
+[ "$(grep -Fc 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/legacy-install.err")" -eq 1 ] || exit 1
+grep -F '/facility"' \
+  "$pkg_catalog_shape_tmp/legacy-install.err" >/dev/null || exit 1
+if grep -F 'pkg-install.initialization-failed' \
+  "$pkg_catalog_shape_tmp/legacy-install.err" >/dev/null
+then
+  printf '%s\n' 'pkg install duplicated the incomplete-legacy diagnostic' >&2
+  exit 1
+fi
+
+pkg_catalog_shape_after=
+if [ -d "$m_ROOT/pkg" ]
+then
+  pkg_catalog_shape_after="$(find "$m_ROOT/pkg" -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)" || exit 1
+fi
+[ "$pkg_catalog_shape_before" = "$pkg_catalog_shape_after" ] || exit 1
+
+printf '%s\n' 'PASS: public requirement and install reject an incomplete legacy catalog with one specific diagnostic and no package concrete installed'

@@ -29,8 +29,9 @@ FUNCTIONS
         <cache-root> must be existing real directories and <work-root>/catalog
         must not already exist. A snapshot containing both the versioned v1 root
         and flat legacy pkg/facility roots fails with status 3 and a
-        schema-roots-conflict diagnostic. A versioned v1 snapshot missing
-        either required pkg/ or facility/ root fails with status 4 and a
+        schema-roots-conflict diagnostic. A v1 or explicitly supported
+        unversioned legacy snapshot missing either required pkg/ or facility/
+        root fails with status 4 and a
         schema-root-incomplete diagnostic. Catalog refresh command output is kept
         off standard output; results are returned through the assigned variables.
 
@@ -86,7 +87,7 @@ RETURN STATUS
         or cannot be resolved.
     2   Invalid function invocation.
     3   Versioned and legacy catalog schema roots are both present.
-    4   A required root is missing from a versioned schema snapshot.
+    4   A required root is missing from the catalog schema snapshot.
 
 DEPENDENCIES
     pkg-common.lib.sh
