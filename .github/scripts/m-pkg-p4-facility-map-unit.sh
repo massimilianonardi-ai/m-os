@@ -117,21 +117,28 @@ map_v4="$map_root/web-control/4/all"
 printf '%s\n' '25.3.4.1
 25.3.4.1
 25.5.5.0.3' > "pkg/$graalvm_two/repository/versions"
+printf '%s\n' '25.3.4.1
+25.3.4.1
+25.5.5.0.3' > "pkg/$graalvm_one/repository/versions"
 reconcile || exit 17
 [ -L "$map_root/java/25/linux-arm64/${graalvm_one%!linux-arm64}" ] && [ -L "$map_root/java/25/linux-arm64/${graalvm_two%!linux-arm64}" ] || exit 18
-[ -L "$map_root/java/25/linux-arm64/graalvm@latest" ] || exit 19
+[ ! -e "$map_root/java/25/linux-arm64/graalvm@latest" ] && [ ! -L "$map_root/java/25/linux-arm64/graalvm@latest" ] || exit 19
 printf '%s\n' '25.3.4.1
 25.4.4.1.1
 25.5.5.0.3' > "pkg/$graalvm_two/repository/versions"
+printf '%s\n' '25.3.4.1
+25.4.4.1.1
+25.5.5.0.3' > "pkg/$graalvm_one/repository/versions"
 reconcile || exit 20
 [ "$(command -p -- readlink "$map_root/java/25/linux-arm64/graalvm@latest")" = "${graalvm_two%!linux-arm64}" ] || exit 21
 
 # Missing history on either concrete must not make the remaining release look
 # like a proven latest version.
 command -p -- rm -- "pkg/$graalvm_two/repository/versions"
+command -p -- rm -- "pkg/$graalvm_one/repository/versions"
 reconcile || exit 22
 [ -L "$map_root/java/25/linux-arm64/${graalvm_one%!linux-arm64}" ] && [ -L "$map_root/java/25/linux-arm64/${graalvm_two%!linux-arm64}" ] || exit 23
-[ -L "$map_root/java/25/linux-arm64/graalvm@latest" ] || exit 24
+[ ! -e "$map_root/java/25/linux-arm64/graalvm@latest" ] && [ ! -L "$map_root/java/25/linux-arm64/graalvm@latest" ] || exit 24
 
 command -p -- rm -rf -- "pkg/$fixture_two"
 reconcile || exit 12
