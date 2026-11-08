@@ -54,6 +54,9 @@ STATUS
     pkg-repository-graalvm.latest-release-request-failed,
     pkg-repository-graalvm.exact-release-request-failed, or
     pkg-repository-graalvm.artifact-metadata-request-failed.
+    Unsupported internal operation/path pairs are logged as
+    pkg-repository-graalvm.request-operation-unsupported with operation and
+    path fields, then return 2 before making an upstream request.
 
 DEPENDENCIES
     json.lib.sh

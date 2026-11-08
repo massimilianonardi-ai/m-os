@@ -109,6 +109,9 @@ _pkg_repository_graalvm_get()
       pkg_repository_graalvm_message=artifact-metadata-request-failed
       ;;
     *)
+      log error pkg-repository-graalvm request-operation-unsupported \
+        operation "$pkg_repository_graalvm_operation" \
+        path "$pkg_repository_graalvm_path" || :
       return 2
       ;;
   esac

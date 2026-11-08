@@ -99,6 +99,20 @@ fi
   echo 'FAIL: unknown request operation was not rejected before transport' >&2
   exit 1
 }
+grep -F '[error] [pkg-repository-graalvm.request-operation-unsupported]' \
+  "$work/unknown-operation.err" >/dev/null || {
+  cat "$work/unknown-operation.err" >&2
+  echo 'FAIL: unknown operation diagnostic identity missing' >&2
+  exit 1
+}
+grep -F 'operation="unknown_operation"' "$work/unknown-operation.err" >/dev/null || {
+  echo 'FAIL: unknown operation diagnostic field missing' >&2
+  exit 1
+}
+grep -F 'path="/releases/latest"' "$work/unknown-operation.err" >/dev/null || {
+  echo 'FAIL: unknown operation path field missing' >&2
+  exit 1
+}
 
 if _pkg_repository_graalvm_get /releases/unexpected pkg_repository_resolve_version \
   > "$work/unknown-path.out" \
@@ -111,6 +125,20 @@ else
 fi
 [ "$status" -eq 2 ] && [ ! -e "$GRAALVM_HTTP_FETCH_MARKER" ] || {
   echo 'FAIL: unknown request path was not rejected before transport' >&2
+  exit 1
+}
+grep -F '[error] [pkg-repository-graalvm.request-operation-unsupported]' \
+  "$work/unknown-path.err" >/dev/null || {
+  cat "$work/unknown-path.err" >&2
+  echo 'FAIL: unknown path diagnostic identity missing' >&2
+  exit 1
+}
+grep -F 'operation="pkg_repository_resolve_version"' "$work/unknown-path.err" >/dev/null || {
+  echo 'FAIL: unknown path operation field missing' >&2
+  exit 1
+}
+grep -F 'path="/releases/unexpected"' "$work/unknown-path.err" >/dev/null || {
+  echo 'FAIL: unknown path diagnostic field missing' >&2
   exit 1
 }
 
