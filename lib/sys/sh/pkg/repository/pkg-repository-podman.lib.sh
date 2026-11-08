@@ -82,6 +82,24 @@ _pkg_repository_podman_get()
   [ "$#" -eq 2 ] || return 2
   pkg_repository_podman_path=$1
   pkg_repository_podman_operation=$2
+  case "$pkg_repository_podman_operation:$pkg_repository_podman_path" in
+    pkg_repository_list_versions:/releases\?per_page=100\&page=*)
+      pkg_repository_podman_message_id=release-list-request-failed
+      ;;
+    pkg_repository_compare_versions:/releases/tags/*)
+      pkg_repository_podman_message_id=version-comparison-request-failed
+      ;;
+    pkg_repository_resolve_version:/releases/latest)
+      pkg_repository_podman_message_id=latest-release-request-failed
+      ;;
+    pkg_repository_resolve_version:/releases/tags/*)
+      pkg_repository_podman_message_id=exact-release-request-failed
+      ;;
+    pkg_repository_resolve_artifact:/releases/tags/*)
+      pkg_repository_podman_message_id=artifact-metadata-request-failed
+      ;;
+    *) return 2;;
+  esac
   pkg_repository_podman_url="https://api.github.com/repos/podman-container-tools/podman$pkg_repository_podman_path"
   http-fetch \
     -H 'Accept: application/vnd.github+json' \
@@ -89,9 +107,7 @@ _pkg_repository_podman_get()
     -- "$pkg_repository_podman_url"
   pkg_repository_podman_status=$?
   [ "$pkg_repository_podman_status" -eq 0 ] && return 0
-  log error execution execution-failed \
-    operation pkg-repository-podman \
-    reason upstream-request-failed \
+  log error pkg-repository-podman "$pkg_repository_podman_message_id" \
     function "$pkg_repository_podman_operation" \
     url "$pkg_repository_podman_url" \
     status "$pkg_repository_podman_status" || :

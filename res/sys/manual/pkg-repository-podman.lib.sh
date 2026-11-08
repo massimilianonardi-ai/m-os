@@ -22,10 +22,13 @@ DESCRIPTION
     configure Podman machine, launch agents or host services.
 
     Each metadata endpoint is requested once. HTTP transfer failures produce
-    the adapter's upstream-request diagnostic. A nonzero http-fetch status
-    (including HTTP API quota/rate-limit or upstream errors) is distinct from
-    malformed release or asset metadata, which is rejected by adapter
-    validation.
+    operation-specific error identities: release-list-request-failed,
+    latest-release-request-failed, exact-release-request-failed,
+    version-comparison-request-failed, or artifact-metadata-request-failed.
+    The diagnostic includes the adapter operation, URL and http-fetch status.
+    A nonzero http-fetch status (including HTTP API quota/rate-limit or
+    upstream errors) is distinct from malformed release or asset metadata,
+    which is rejected by adapter validation.
 
 FUNCTIONS
     pkg_repository_list_versions <repository-dir>

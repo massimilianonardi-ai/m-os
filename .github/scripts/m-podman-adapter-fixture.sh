@@ -18,6 +18,9 @@ for podman_fixture_argument
 do
   podman_fixture_url=$podman_fixture_argument
 done
+if [ "${PODMAN_FIXTURE_HTTP_FAILURE:-0}" -eq 1 ]; then
+  exit 18
+fi
 _podman_release_v613()
 {
   cat <<'EOF_PODMAN_V613'
@@ -92,5 +95,58 @@ case "$podman_fixture_artifact" in
   *'url=https://github.com/podman-container-tools/podman/releases/download/v6.1.4/podman-installer-macos-arm64.pkg'*'size=76099040'*'digest=sha256:48f675622f66233ca2116e67fdab41ed9dbcc25b48b78a8e6ef0be6549031d22'*) :;;
   *) printf 'Unexpected exact anchor artifact metadata:\n%s\n' "$podman_fixture_artifact" >&2; exit 1;;
 esac
+
+podman_fixture_assert_request_failure()
+{
+  podman_fixture_expected_identity=$1
+  podman_fixture_path=$2
+  podman_fixture_operation=$3
+  if m_LOG_LEVEL=error PODMAN_FIXTURE_HTTP_FAILURE=1 \
+    _pkg_repository_podman_get \
+      "$podman_fixture_path" "$podman_fixture_operation" \
+      >"$podman_fixture_tmp/out" 2>"$podman_fixture_tmp/err"
+  then
+    printf 'HTTP failure unexpectedly succeeded for %s\n' \
+      "$podman_fixture_operation" >&2
+    exit 1
+  else
+    podman_fixture_status=$?
+  fi
+  [ "$podman_fixture_status" -eq 1 ] || {
+    printf 'Unexpected adapter status %s for %s\n' \
+      "$podman_fixture_status" "$podman_fixture_operation" >&2
+    exit 1
+  }
+  [ ! -s "$podman_fixture_tmp/out" ] || exit 1
+  grep -F "[error] [pkg-repository-podman.$podman_fixture_expected_identity]" \
+    "$podman_fixture_tmp/err" >/dev/null || {
+      cat "$podman_fixture_tmp/err" >&2
+      printf 'Missing request-failure identity %s\n' \
+        "$podman_fixture_expected_identity" >&2
+      exit 1
+    }
+  grep -F '[status="18"]' "$podman_fixture_tmp/err" >/dev/null || exit 1
+}
+
+podman_fixture_assert_request_failure \
+  release-list-request-failed \
+  '/releases?per_page=100&page=1' \
+  pkg_repository_list_versions
+podman_fixture_assert_request_failure \
+  latest-release-request-failed \
+  /releases/latest \
+  pkg_repository_resolve_version
+podman_fixture_assert_request_failure \
+  exact-release-request-failed \
+  /releases/tags/v6.1.3 \
+  pkg_repository_resolve_version
+podman_fixture_assert_request_failure \
+  version-comparison-request-failed \
+  /releases/tags/v6.1.3 \
+  pkg_repository_compare_versions
+podman_fixture_assert_request_failure \
+  artifact-metadata-request-failed \
+  /releases/tags/v6.1.3 \
+  pkg_repository_resolve_artifact
 
 printf '%s\n' 'PASS: Podman release fixtures, stable tag filtering, exact/latest chronology and anchor asset metadata'
