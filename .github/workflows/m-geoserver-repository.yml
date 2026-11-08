@@ -47,19 +47,27 @@ jobs:
           printf '%s\n' "$latest"
           case "$exact" in *'temurin@21+35!'*) : ;; *) echo 'GeoServer 3.0.1 did not select Temurin 21' >&2; exit 1 ;; esac
           case "$latest" in *'temurin@21+35!'*) : ;; *) echo 'latest GeoServer did not select Temurin 21' >&2; exit 1 ;; esac
-      - name: Install exact and latest releases, exercise latest service over HTTP
+      - name: Install latest and exact releases, exercise the selected service over HTTP
         shell: sh
         run: |
           set -eu
-          ./m pkg install geoserver@3.0.1
-          ./m pkg install geoserver
           osarch=$(./m osarch)
+          ./m pkg install "geoserver!$osarch"
+          latest=$(./m pkg default geoserver)
+          case "$latest" in geoserver@*!"$osarch") ;; *) echo "latest install selected an unexpected package identity: $latest" >&2; exit 1 ;; esac
+          latest_version=${latest#geoserver@}
+          latest_version=${latest_version%%!*}
+          if [ "$latest" != "geoserver@3.0.1!$osarch" ]; then
+            ./m pkg install geoserver@3.0.1
+          fi
           versions=$(./m pkg versions geoserver)
           printf '%s\n' "$versions"
           case "$versions" in *"geoserver@3.0.1!$osarch"*) : ;; *) echo 'exact 3.0.1 install missing' >&2; exit 1 ;; esac
-          case "$versions" in *"geoserver@3.0.2!$osarch"*) : ;; *) echo 'latest request did not install 3.0.2' >&2; exit 1 ;; esac
+          case "$versions" in *"$latest"*) : ;; *) echo "latest install missing: $latest" >&2; exit 1 ;; esac
           ./m pkg provider default java temurin@21+35
-          ./m pkg provider default geoserver geoserver@3.0.2
+          ./m pkg provider default geoserver "$latest"
+          selected=$(./m pkg default geoserver)
+          [ "$selected" = "$latest" ] || { echo "GeoServer default is $selected, expected $latest" >&2; exit 1; }
           work=
           cleanup() {
             ./m srv stop geoserver >/dev/null 2>&1 || :
@@ -80,4 +88,4 @@ jobs:
           trap - EXIT HUP INT TERM
           rm -rf -- "$work"
           work=
-          echo 'PASS: exact/latest GeoServer installs, Temurin 21 planning, and live WFS service'
+          echo "PASS: exact 3.0.1 and latest $latest_version installs, Temurin 21 planning, selected-default live WFS service"
