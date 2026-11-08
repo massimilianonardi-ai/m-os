@@ -76,6 +76,29 @@ _pkg_repository_geoserver_get()
   [ "$#" -eq 2 ] || return 2
   pkg_repository_geoserver_path=$1
   pkg_repository_geoserver_operation=$2
+  case "$pkg_repository_geoserver_operation:$pkg_repository_geoserver_path" in
+    pkg_repository_list_versions:/releases\?*)
+      pkg_repository_geoserver_message_id=release-list-request-failed
+      ;;
+    pkg_repository_resolve_version:/releases/latest)
+      pkg_repository_geoserver_message_id=latest-release-request-failed
+      ;;
+    pkg_repository_resolve_version:/releases/tags/*)
+      pkg_repository_geoserver_message_id=exact-release-request-failed
+      ;;
+    pkg_repository_compare_versions:/releases/tags/*)
+      pkg_repository_geoserver_message_id=version-comparison-request-failed
+      ;;
+    pkg_repository_resolve_artifact:/releases/tags/*)
+      pkg_repository_geoserver_message_id=artifact-metadata-request-failed
+      ;;
+    *)
+      log error pkg-repository-geoserver request-operation-unsupported \
+        operation "$pkg_repository_geoserver_operation" \
+        path "$pkg_repository_geoserver_path" || :
+      return 2
+      ;;
+  esac
   pkg_repository_geoserver_url="https://api.github.com/repos/geoserver/geoserver$pkg_repository_geoserver_path"
   http-fetch \
     -H 'Accept: application/vnd.github+json' \
@@ -83,10 +106,8 @@ _pkg_repository_geoserver_get()
     -- "$pkg_repository_geoserver_url"
   pkg_repository_geoserver_status=$?
   [ "$pkg_repository_geoserver_status" -eq 0 ] && return 0
-  log error execution execution-failed \
-    operation pkg-repository-geoserver \
-    reason upstream-request-failed \
-    function "$pkg_repository_geoserver_operation" \
+  log error pkg-repository-geoserver "$pkg_repository_geoserver_message_id" \
+    operation "$pkg_repository_geoserver_operation" \
     url "$pkg_repository_geoserver_url" \
     status "$pkg_repository_geoserver_status" || :
   return 1

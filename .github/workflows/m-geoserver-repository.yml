@@ -37,6 +37,12 @@ jobs:
           conf=$(./m state-path system sys pkg conf)
           mkdir -p -- "$conf"
           printf '%s\n' "$GITHUB_WORKSPACE/catalog" > "$conf/catalog"
+      - name: Verify distinct upstream request diagnostics
+        shell: sh
+        run: |
+          set -eu
+          sh -n .github/scripts/m-geoserver-request-diagnostics-fixture.sh
+          .github/scripts/m-geoserver-request-diagnostics-fixture.sh
       - name: Resolve exact and latest GeoServer dependency plans
         shell: sh
         run: |

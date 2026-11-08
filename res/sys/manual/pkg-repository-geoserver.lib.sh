@@ -50,6 +50,15 @@ STATUS
     Public functions return 0 on success, 1 when repository/upstream/range data
     does not satisfy the adapter contract, and 2 for invalid function invocation.
 
+DIAGNOSTICS
+    Failed official GitHub requests emit a branch-specific error identity under
+    pkg-repository-geoserver: release-list-request-failed,
+    latest-release-request-failed, exact-release-request-failed,
+    version-comparison-request-failed, or artifact-metadata-request-failed.
+    Each record includes the operation, request URL and child status. An
+    unsupported internal request operation emits
+    request-operation-unsupported and returns status 2.
+
 DEPENDENCIES
     json.lib.sh
     pkg-repository-artifact.lib.sh
