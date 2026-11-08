@@ -143,8 +143,12 @@ pkg_catalog_init()
   if [ -e "$pkg_catalog_work/v1" ] || [ -L "$pkg_catalog_work/v1" ]
   then
     valid_dir "$pkg_catalog_work/v1" || return 1
-    [ ! -e "$pkg_catalog_work/pkg" ] && [ ! -L "$pkg_catalog_work/pkg" ] || return 1
-    [ ! -e "$pkg_catalog_work/facility" ] && [ ! -L "$pkg_catalog_work/facility" ] || return 1
+    if [ -e "$pkg_catalog_work/pkg" ] || [ -L "$pkg_catalog_work/pkg" ] ||
+      [ -e "$pkg_catalog_work/facility" ] || [ -L "$pkg_catalog_work/facility" ]
+    then
+      log error pkg-catalog schema-roots-conflict path "$pkg_catalog_work" || :
+      return 3
+    fi
     pkg_catalog_definition_root="$pkg_catalog_work/v1"
   fi
   valid_dir "$pkg_catalog_definition_root/pkg" || return 1
