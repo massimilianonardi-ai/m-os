@@ -8,6 +8,8 @@ on:
     paths:
       - .github/workflows/m-graalvm-repository.yml
       - .github/scripts/m-graalvm-diagnostics-test.sh
+      - .github/scripts/m-pkg-p4-facility-map-unit.sh
+      - lib/sys/sh/pkg/pkg-catalog.lib.sh
       - lib/sys/sh/pkg/repository/pkg-repository-graalvm.lib.sh
       - res/sys/manual/pkg-repository-graalvm.lib.sh
   workflow_dispatch:
