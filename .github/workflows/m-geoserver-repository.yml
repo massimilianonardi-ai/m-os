@@ -1,0 +1,41 @@
+name: GeoServer package repository integration
+
+on:
+  push:
+    branches: [codex/geoserver-repository-adapter]
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/m-geoserver-repository.yml
+      - lib/sys/sh/pkg/repository/pkg-repository-geoserver.lib.sh
+      - res/sys/manual/pkg-repository-geoserver.lib.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  geoserver-public-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Resolve exact and latest GeoServer dependency plans
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          exact=$(./m pkg depend geoserver@3.0.1)
+          latest=$(./m pkg depend geoserver)
+          printf '%s\n' "$exact"
+          printf '%s\n' "$latest"
+          case "$exact" in *'temurin@21+35!'*) : ;; *) echo 'GeoServer 3.0.1 did not select Temurin 21' >&2; exit 1 ;; esac
+          case "$latest" in *'temurin@21+35!'*) : ;; *) echo 'latest GeoServer did not select Temurin 21' >&2; exit 1 ;; esac
+      - name: Install the genuine exact GeoServer release through public pkg
+        shell: sh
+        run: |
+          set -eu
+          ./m pkg install geoserver@3.0.1
+          echo 'PASS: public GeoServer exact/latest planning and genuine 3.0.1 installation'
