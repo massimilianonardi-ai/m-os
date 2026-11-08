@@ -76,7 +76,7 @@ _pkg_repository_graalvm_validate_repository()
     [ -e "$pkg_repository_graalvm_item" ] || [ -L "$pkg_repository_graalvm_item" ] || continue
     pkg_repository_graalvm_name=${pkg_repository_graalvm_item##*/}
     case "$pkg_repository_graalvm_name" in
-      type|owner|repository)
+      type|owner|repository|versions)
         [ -f "$pkg_repository_graalvm_item" ] && [ ! -L "$pkg_repository_graalvm_item" ] &&
           [ -r "$pkg_repository_graalvm_item" ] && [ ! -x "$pkg_repository_graalvm_item" ] || return 1
         ;;
@@ -88,6 +88,46 @@ _pkg_repository_graalvm_validate_repository()
   pkg_repository_graalvm_repository="$(_pkg_repository_graalvm_scalar "$pkg_repository_graalvm_repository_dir/repository")" || return 1
   [ "$pkg_repository_graalvm_type" = graalvm ] || return 1
   [ "$pkg_repository_graalvm_owner" = graalvm ] && [ "$pkg_repository_graalvm_repository" = graalvm-ce-builds ] || return 1
+  if [ -e "$pkg_repository_graalvm_repository_dir/versions" ] || [ -L "$pkg_repository_graalvm_repository_dir/versions" ]
+  then
+    _pkg_repository_graalvm_validate_versions "$pkg_repository_graalvm_repository_dir/versions" || return 1
+  fi
+}
+
+_pkg_repository_graalvm_validate_versions()
+{
+  [ "$#" -eq 1 ] || return 2
+  pkg_repository_graalvm_versions_file=$1
+  [ -f "$pkg_repository_graalvm_versions_file" ] &&
+    [ ! -L "$pkg_repository_graalvm_versions_file" ] &&
+    [ -r "$pkg_repository_graalvm_versions_file" ] &&
+    [ ! -x "$pkg_repository_graalvm_versions_file" ] || return 1
+  LC_ALL=C command -p -- awk '
+    {
+      if ($0 !~ /^[A-Za-z0-9][A-Za-z0-9._+~-]*$/ || seen[$0]++) exit 1
+      count++
+    }
+    END { if (count == 0 || $0 == "") exit 1 }
+  ' "$pkg_repository_graalvm_versions_file"
+}
+
+_pkg_repository_graalvm_compare_index()
+{
+  [ "$#" -eq 3 ] || return 2
+  pkg_repository_graalvm_versions_file=$1
+  pkg_repository_graalvm_left=$2
+  pkg_repository_graalvm_right=$3
+  _pkg_repository_graalvm_validate_versions "$pkg_repository_graalvm_versions_file" || return 1
+  LC_ALL=C command -p -- awk -v left="$pkg_repository_graalvm_left" -v right="$pkg_repository_graalvm_right" '
+    $0 == left { left_rank=NR }
+    $0 == right { right_rank=NR }
+    END {
+      if (!left_rank || !right_rank) exit 1
+      if (left_rank < right_rank) print "-1"
+      else if (left_rank > right_rank) print "1"
+      else print "0"
+    }
+  ' "$pkg_repository_graalvm_versions_file"
 }
 
 _pkg_repository_graalvm_get()
@@ -298,6 +338,17 @@ pkg_repository_compare_versions()
   _pkg_repository_graalvm_validate_version "$pkg_repository_graalvm_right" || return 1
   if [ "$pkg_repository_graalvm_left" = "$pkg_repository_graalvm_right" ]
   then printf '0\n'; return 0; fi
+  if [ -f "$pkg_repository_graalvm_repository_dir/versions" ] && [ ! -L "$pkg_repository_graalvm_repository_dir/versions" ]
+  then
+    pkg_repository_graalvm_index_comparison="$(
+      _pkg_repository_graalvm_compare_index \
+        "$pkg_repository_graalvm_repository_dir/versions" \
+        "$pkg_repository_graalvm_left" "$pkg_repository_graalvm_right"
+    )" && {
+      printf '%s\n' "$pkg_repository_graalvm_index_comparison"
+      return 0
+    }
+  fi
   pkg_repository_graalvm_left_record="$(_pkg_repository_graalvm_find_release "$pkg_repository_graalvm_repository_dir" "$pkg_repository_graalvm_left")" || return 1
   pkg_repository_graalvm_right_record="$(_pkg_repository_graalvm_find_release "$pkg_repository_graalvm_repository_dir" "$pkg_repository_graalvm_right")" || return 1
   pkg_repository_graalvm_tab="$(printf '\t')"
@@ -329,6 +380,19 @@ pkg_repository_resolve_version()
   then
     pkg_repository_graalvm_version=$2
     _pkg_repository_graalvm_validate_version "$pkg_repository_graalvm_version" || return 1
+    if [ -e "$pkg_repository_graalvm_repository_dir/versions" ] ||
+      [ -L "$pkg_repository_graalvm_repository_dir/versions" ]
+    then
+      _pkg_repository_graalvm_validate_versions \
+        "$pkg_repository_graalvm_repository_dir/versions" || return 1
+      if LC_ALL=C command -p -- awk -v version="$pkg_repository_graalvm_version" \
+        '$0 == version { found=1 } END { exit !found }' \
+        "$pkg_repository_graalvm_repository_dir/versions"
+      then
+        printf '%s\n' "$pkg_repository_graalvm_version"
+        return 0
+      fi
+    fi
     _pkg_repository_graalvm_find_release "$pkg_repository_graalvm_repository_dir" "$pkg_repository_graalvm_version" >/dev/null || return 1
     printf '%s\n' "$pkg_repository_graalvm_version"
     return 0

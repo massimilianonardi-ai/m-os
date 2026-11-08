@@ -2,12 +2,14 @@ name: GraalVM package repository integration
 
 on:
   push:
-    branches: [master, codex/graalvm-repository-adapter]
+    branches: [master, codex/graalvm-repository-adapter, codex/p4-graalvm-local-order]
   pull_request:
     branches: [master]
     paths:
       - .github/workflows/m-graalvm-repository.yml
       - .github/scripts/m-graalvm-diagnostics-test.sh
+      - .github/scripts/m-pkg-p4-facility-map-unit.sh
+      - lib/sys/sh/pkg/pkg-catalog.lib.sh
       - lib/sys/sh/pkg/repository/pkg-repository-graalvm.lib.sh
       - res/sys/manual/pkg-repository-graalvm.lib.sh
   workflow_dispatch:
@@ -27,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: massimilianonardi-ai/pkg-catalog
-          ref: 0b69223a5ebe7bc042aad50012ee8bc7e4a00442
+          ref: 50faddb36f9c3e7c12fa53d46b94dd8098fa857b
           path: catalog
           persist-credentials: false
       - name: Configure isolated runtime to use pinned catalog
@@ -45,6 +47,12 @@ jobs:
           sh -n .github/scripts/m-graalvm-diagnostics-test.sh
           GRAALVM_DIAGNOSTIC_TMP_BASE="$GITHUB_WORKSPACE/.graalvm-diagnostic-test" \
             SHELL=/bin/sh ./m shell -c '. .github/scripts/m-graalvm-diagnostics-test.sh'
+      - name: Run offline GraalVM facility-map regression
+        shell: sh
+        run: |
+          set -eu
+          sh -n .github/scripts/m-pkg-p4-facility-map-unit.sh
+          /bin/sh .github/scripts/m-pkg-p4-facility-map-unit.sh
       - name: Resolve exact and stable-latest package requests
         shell: sh
         run: |

@@ -85,6 +85,26 @@ check_failed_request \
   pkg_repository_resolve_artifact \
   artifact
 
+mkdir -p "$work/repository"
+printf '%s\n' graalvm > "$work/repository/type"
+printf '%s\n' graalvm > "$work/repository/owner"
+printf '%s\n' graalvm-ce-builds > "$work/repository/repository"
+printf '%s\n' 25.3.4.1 25.5.5.0.3 > "$work/repository/versions"
+rm -f "$GRAALVM_HTTP_FETCH_MARKER"
+pkg_repository_graalvm_resolved="$(set +e; pkg_repository_resolve_version \
+  "$work/repository" 25.3.4.1)" || {
+  echo 'FAIL: indexed exact GraalVM version did not resolve offline' >&2
+  exit 1
+}
+[ "$pkg_repository_graalvm_resolved" = 25.3.4.1 ] || {
+  echo "FAIL: indexed exact GraalVM version resolved incorrectly: $pkg_repository_graalvm_resolved" >&2
+  exit 1
+}
+[ ! -e "$GRAALVM_HTTP_FETCH_MARKER" ] || {
+  echo 'FAIL: indexed exact GraalVM resolution used upstream transport' >&2
+  exit 1
+}
+
 rm -f "$GRAALVM_HTTP_FETCH_MARKER"
 if _pkg_repository_graalvm_get /releases/latest unknown_operation \
   > "$work/unknown-operation.out" \
@@ -145,12 +165,16 @@ grep -F 'path="/releases/unexpected"' "$work/unknown-path.err" >/dev/null || {
 rm -f \
   "$work/bin/http-fetch" \
   "$work/http-fetch-called" \
+  "$work/repository/type" \
+  "$work/repository/owner" \
+  "$work/repository/repository" \
+  "$work/repository/versions" \
   "$work/list.out" "$work/list.err" \
   "$work/latest.out" "$work/latest.err" \
   "$work/exact.out" "$work/exact.err" \
   "$work/artifact.out" "$work/artifact.err" \
   "$work/unknown-operation.out" "$work/unknown-operation.err" \
   "$work/unknown-path.out" "$work/unknown-path.err"
-rmdir "$work/bin" "$work"
+rmdir "$work/repository" "$work/bin" "$work"
 
-echo 'PASS: GraalVM upstream failures have stable operation-specific identities'
+echo 'PASS: GraalVM exact-index resolution is offline and upstream failures have stable operation-specific identities'
