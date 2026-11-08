@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: massimilianonardi-ai/pkg-catalog
-          ref: 50faddb5cd6f6a430da919ccae64a2a8883264d8
+          ref: 50faddb36f9c3e7c12fa53d46b94dd8098fa857b
           path: catalog
           persist-credentials: false
       - name: Configure isolated runtime to use pinned catalog
