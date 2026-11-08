@@ -57,7 +57,7 @@ jobs:
           case "$latest" in geoserver@*) ;; *) echo "latest install selected an unexpected package identity: $latest" >&2; exit 1 ;; esac
           latest_version=${latest#geoserver@}
           latest_version=${latest_version%%!*}
-          if [ "$latest" != "geoserver@3.0.1!$osarch" ]; then
+          if [ "$latest" != "geoserver@3.0.1" ] && [ "$latest" != "geoserver@3.0.1!$osarch" ]; then
             ./m pkg install geoserver@3.0.1
           fi
           versions=$(./m pkg versions geoserver)
