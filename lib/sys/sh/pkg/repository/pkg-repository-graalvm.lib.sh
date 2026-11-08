@@ -95,6 +95,23 @@ _pkg_repository_graalvm_get()
   [ "$#" -eq 2 ] || return 2
   pkg_repository_graalvm_path=$1
   pkg_repository_graalvm_operation=$2
+  case "$pkg_repository_graalvm_operation:$pkg_repository_graalvm_path" in
+    pkg_repository_list_versions:/releases\?per_page=100\&page=*)
+      pkg_repository_graalvm_message=release-list-request-failed
+      ;;
+    pkg_repository_resolve_version:/releases/latest)
+      pkg_repository_graalvm_message=latest-release-request-failed
+      ;;
+    pkg_repository_resolve_version:/releases/tags/*)
+      pkg_repository_graalvm_message=exact-release-request-failed
+      ;;
+    pkg_repository_resolve_artifact:/releases/tags/*)
+      pkg_repository_graalvm_message=artifact-metadata-request-failed
+      ;;
+    *)
+      return 2
+      ;;
+  esac
   pkg_repository_graalvm_url="https://api.github.com/repos/graalvm/graalvm-ce-builds$pkg_repository_graalvm_path"
   http-fetch \
     -H 'Accept: application/vnd.github+json' \
@@ -102,9 +119,8 @@ _pkg_repository_graalvm_get()
     -- "$pkg_repository_graalvm_url"
   pkg_repository_graalvm_status=$?
   [ "$pkg_repository_graalvm_status" -eq 0 ] && return 0
-  log error execution execution-failed \
-    operation pkg-repository-graalvm \
-    reason upstream-request-failed \
+  log error pkg-repository-graalvm "$pkg_repository_graalvm_message" \
+    operation upstream-request \
     function "$pkg_repository_graalvm_operation" \
     url "$pkg_repository_graalvm_url" \
     status "$pkg_repository_graalvm_status" || :

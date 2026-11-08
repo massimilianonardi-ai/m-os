@@ -49,6 +49,11 @@ FUNCTIONS
 STATUS
     Public functions return 0 on success, 1 when repository/upstream/range data
     does not satisfy the adapter contract, and 2 for invalid function invocation.
+    Upstream request failures are logged with operation-specific identities:
+    pkg-repository-graalvm.release-list-request-failed,
+    pkg-repository-graalvm.latest-release-request-failed,
+    pkg-repository-graalvm.exact-release-request-failed, or
+    pkg-repository-graalvm.artifact-metadata-request-failed.
 
 DEPENDENCIES
     json.lib.sh

@@ -7,6 +7,7 @@ on:
     branches: [master]
     paths:
       - .github/workflows/m-graalvm-repository.yml
+      - .github/scripts/m-graalvm-diagnostics-test.sh
       - lib/sys/sh/pkg/repository/pkg-repository-graalvm.lib.sh
       - res/sys/manual/pkg-repository-graalvm.lib.sh
   workflow_dispatch:
@@ -37,6 +38,13 @@ jobs:
           conf=$(./m state-path system sys pkg conf)
           mkdir -p -- "$conf"
           printf '%s\n' "$GITHUB_WORKSPACE/catalog" > "$conf/catalog"
+      - name: Check operation-specific upstream request diagnostics
+        shell: sh
+        run: |
+          set -eu
+          sh -n .github/scripts/m-graalvm-diagnostics-test.sh
+          GRAALVM_DIAGNOSTIC_TMP_BASE="$GITHUB_WORKSPACE/.graalvm-diagnostic-test" \
+            SHELL=/bin/sh ./m shell -c '. .github/scripts/m-graalvm-diagnostics-test.sh'
       - name: Resolve exact and stable-latest package requests
         shell: sh
         run: |
