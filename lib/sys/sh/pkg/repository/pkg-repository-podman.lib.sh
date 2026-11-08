@@ -83,12 +83,21 @@ _pkg_repository_podman_get()
   pkg_repository_podman_path=$1
   pkg_repository_podman_operation=$2
   pkg_repository_podman_url="https://api.github.com/repos/podman-container-tools/podman$pkg_repository_podman_path"
-  http-fetch \
-    -H 'Accept: application/vnd.github+json' \
-    -H 'X-GitHub-Api-Version: 2026-03-10' \
-    -- "$pkg_repository_podman_url"
-  pkg_repository_podman_status=$?
-  [ "$pkg_repository_podman_status" -eq 0 ] && return 0
+  pkg_repository_podman_attempt=1
+  while [ "$pkg_repository_podman_attempt" -le 3 ]
+  do
+    http-fetch \
+      -H 'Accept: application/vnd.github+json' \
+      -H 'X-GitHub-Api-Version: 2026-03-10' \
+      -- "$pkg_repository_podman_url"
+    pkg_repository_podman_status=$?
+    [ "$pkg_repository_podman_status" -eq 0 ] && return 0
+    if [ "$pkg_repository_podman_attempt" -lt 3 ]
+    then
+      sleep "$pkg_repository_podman_attempt" || return 1
+    fi
+    pkg_repository_podman_attempt=$((pkg_repository_podman_attempt + 1))
+  done
   log error execution execution-failed \
     operation pkg-repository-podman \
     reason upstream-request-failed \
