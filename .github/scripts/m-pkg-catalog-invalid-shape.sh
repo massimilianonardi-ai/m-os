@@ -68,6 +68,7 @@ pkg_catalog_shape_repo="$pkg_catalog_shape_tmp/catalog"
 mkdir -p -- "$pkg_catalog_shape_repo/v1/pkg" \
   "$pkg_catalog_shape_repo/pkg" "$pkg_catalog_shape_repo/facility" || exit 1
 printf '%s\n' versioned > "$pkg_catalog_shape_repo/v1/marker" || exit 1
+printf '%s\n' versioned-package > "$pkg_catalog_shape_repo/v1/pkg/marker" || exit 1
 printf '%s\n' legacy > "$pkg_catalog_shape_repo/pkg/marker" || exit 1
 printf '%s\n' legacy > "$pkg_catalog_shape_repo/facility/marker" || exit 1
 git -C "$pkg_catalog_shape_repo" init -b main >/dev/null 2>&1 || exit 1
@@ -152,6 +153,11 @@ fi
 [ ! -s "$pkg_catalog_shape_tmp/incomplete-requirement.out" ] || exit 1
 grep -F 'pkg-catalog.schema-root-incomplete' \
   "$pkg_catalog_shape_tmp/incomplete-requirement.err" >/dev/null || exit 1
+grep -F '/v1/facility"' \
+  "$pkg_catalog_shape_tmp/incomplete-requirement.err" >/dev/null || {
+    cat "$pkg_catalog_shape_tmp/incomplete-requirement.err" >&2
+    exit 1
+  }
 
 if ./m pkg install jsc@v0.1.0 \
   >"$pkg_catalog_shape_tmp/incomplete-install.out" \
@@ -166,6 +172,8 @@ fi
 [ ! -s "$pkg_catalog_shape_tmp/incomplete-install.out" ] || exit 1
 [ "$(grep -Fc 'pkg-catalog.schema-root-incomplete' \
   "$pkg_catalog_shape_tmp/incomplete-install.err")" -eq 1 ] || exit 1
+grep -F '/v1/facility"' \
+  "$pkg_catalog_shape_tmp/incomplete-install.err" >/dev/null || exit 1
 if grep -F 'pkg-install.initialization-failed' \
   "$pkg_catalog_shape_tmp/incomplete-install.err" >/dev/null
 then
@@ -206,6 +214,8 @@ fi
 [ ! -s "$pkg_catalog_shape_tmp/missing-pkg-requirement.out" ] || exit 1
 grep -F 'pkg-catalog.schema-root-incomplete' \
   "$pkg_catalog_shape_tmp/missing-pkg-requirement.err" >/dev/null || exit 1
+grep -F '/v1/pkg"' \
+  "$pkg_catalog_shape_tmp/missing-pkg-requirement.err" >/dev/null || exit 1
 
 if ./m pkg install jsc@v0.1.0 \
   >"$pkg_catalog_shape_tmp/missing-pkg-install.out" \
@@ -220,6 +230,8 @@ fi
 [ ! -s "$pkg_catalog_shape_tmp/missing-pkg-install.out" ] || exit 1
 [ "$(grep -Fc 'pkg-catalog.schema-root-incomplete' \
   "$pkg_catalog_shape_tmp/missing-pkg-install.err")" -eq 1 ] || exit 1
+grep -F '/v1/pkg"' \
+  "$pkg_catalog_shape_tmp/missing-pkg-install.err" >/dev/null || exit 1
 if grep -F 'pkg-install.initialization-failed' \
   "$pkg_catalog_shape_tmp/missing-pkg-install.err" >/dev/null
 then
