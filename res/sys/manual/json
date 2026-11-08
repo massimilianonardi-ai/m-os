@@ -2,7 +2,7 @@ NAME
     json - POSIX JSON query and validation utility
 
 SYNOPSIS
-    json [-c] [-r] [-e] [filter] [file ...]
+    json [-c] [-r] [-e] [filter [file ...]]
     json [-c] [-r] [-e] -f filter-file [file ...]
     json --check [file ...]
 
@@ -12,7 +12,9 @@ DESCRIPTION
     does not require jq, Node.js, Python, an initialized m environment, or
     non-POSIX utilities.
 
-    With no filter, '.' selects each complete JSON input. With no input files,
+    When no filter argument is supplied, '.' selects each complete JSON input.
+    The first positional argument is always the filter, so supply '.' before a
+    file operand when the complete JSON input is desired. With no input files,
     standard input is read. With multiple file operands, each is read
     independently, in order. A '-' file operand selects standard input.
     A stream may contain multiple JSON values, which are processed separately.
@@ -64,7 +66,10 @@ OPTIONS
 
 OPERANDS
     filter
-        Optional read-only jq-style filter; default '.'.
+        Optional read-only jq-style filter; default '.'. In the positional-filter
+        form, a file operand must follow a filter argument; use '.' to select the
+        complete JSON input. With -f or --check, input files may follow the option
+        and its required operands.
     file
         Optional path to an input file; '-' means standard input.
 
@@ -107,6 +112,9 @@ EXAMPLES
 
     json -c '.packages[0]' packages.json
         Compact JSON for the first package.
+
+    json . file.json
+        Format the complete JSON value from file.json.
 
     json -e '.enabled' config.json >/dev/null
         Exit 0 if the final value is neither false nor null.
