@@ -181,3 +181,57 @@ fi
 [ "$pkg_catalog_shape_before" = "$pkg_catalog_shape_after" ] || exit 1
 
 printf '%s\n' 'PASS: public requirement and install reject an incomplete v1 catalog with one specific diagnostic and no package concrete installed'
+
+# Exercise the other mandatory v1 root independently. Keep the fixture history
+# linear so the product's normal cached-checkout refresh path remains genuine.
+rm -rf -- "$pkg_catalog_shape_repo/v1/pkg"
+mkdir -p -- "$pkg_catalog_shape_repo/v1/facility" || exit 1
+printf '%s\n' facility > "$pkg_catalog_shape_repo/v1/facility/marker" || exit 1
+git -C "$pkg_catalog_shape_repo" add -A || exit 1
+git -C "$pkg_catalog_shape_repo" \
+  -c user.name=Validation \
+  -c user.email=validation@example.invalid \
+  commit -m 'test fixture: missing versioned package root' >/dev/null 2>&1 || exit 1
+
+if ./m pkg requirement list jsc@v0.1.0 \
+  >"$pkg_catalog_shape_tmp/missing-pkg-requirement.out" \
+  2>"$pkg_catalog_shape_tmp/missing-pkg-requirement.err"
+then
+  printf '%s\n' 'pkg requirement list accepted a v1 catalog missing pkg/' >&2
+  exit 1
+else
+  pkg_catalog_shape_requirement_status=$?
+fi
+[ "$pkg_catalog_shape_requirement_status" -eq 1 ] || exit 1
+[ ! -s "$pkg_catalog_shape_tmp/missing-pkg-requirement.out" ] || exit 1
+grep -F 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/missing-pkg-requirement.err" >/dev/null || exit 1
+
+if ./m pkg install jsc@v0.1.0 \
+  >"$pkg_catalog_shape_tmp/missing-pkg-install.out" \
+  2>"$pkg_catalog_shape_tmp/missing-pkg-install.err"
+then
+  printf '%s\n' 'pkg install accepted a v1 catalog missing pkg/' >&2
+  exit 1
+else
+  pkg_catalog_shape_install_status=$?
+fi
+[ "$pkg_catalog_shape_install_status" -eq 1 ] || exit 1
+[ ! -s "$pkg_catalog_shape_tmp/missing-pkg-install.out" ] || exit 1
+[ "$(grep -Fc 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/missing-pkg-install.err")" -eq 1 ] || exit 1
+if grep -F 'pkg-install.initialization-failed' \
+  "$pkg_catalog_shape_tmp/missing-pkg-install.err" >/dev/null
+then
+  printf '%s\n' 'pkg install duplicated the missing-pkg schema diagnostic' >&2
+  exit 1
+fi
+
+pkg_catalog_shape_after=
+if [ -d "$m_ROOT/pkg" ]
+then
+  pkg_catalog_shape_after="$(find "$m_ROOT/pkg" -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)" || exit 1
+fi
+[ "$pkg_catalog_shape_before" = "$pkg_catalog_shape_after" ] || exit 1
+
+printf '%s\n' 'PASS: public requirement and install reject a v1 catalog missing pkg/ with one specific diagnostic and no package concrete installed'
