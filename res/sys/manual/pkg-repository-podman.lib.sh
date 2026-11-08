@@ -21,10 +21,11 @@ DESCRIPTION
     existing pkgutil expansion path; it does not run the package installer or
     configure Podman machine, launch agents or host services.
 
-    HTTP transfer failures produce the adapter's upstream-request diagnostic.
-    A nonzero http-fetch status (including HTTP API quota/rate-limit or
-    upstream errors) is distinct from malformed release or asset metadata,
-    which is rejected by adapter validation.
+    Each metadata endpoint is requested once. HTTP transfer failures produce
+    the adapter's upstream-request diagnostic. A nonzero http-fetch status
+    (including HTTP API quota/rate-limit or upstream errors) is distinct from
+    malformed release or asset metadata, which is rejected by adapter
+    validation.
 
 FUNCTIONS
     pkg_repository_list_versions <repository-dir>
