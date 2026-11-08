@@ -4,14 +4,18 @@ NAME
 DESCRIPTION
     Resolves the official Podman GitHub Releases for the macOS ARM64 catalog
     package. Repository metadata is catalog scoped and contains type=podman,
-    the exact v6.1.2 package URL, version anchor and SHA-256 digest.
+    the exact current package URL, version anchor and SHA-256 digest.
 
     Version discovery and unversioned selection use GitHub's stable release
     endpoints. Stable tags must have the form vMAJOR.MINOR.PATCH; drafts and
-    prereleases are excluded. Exact version selection validates that the tag
-    exists as a published stable release. Artifact resolution validates the
-    corresponding official release asset, positive size, HTTPS URL, archive
-    name and SHA-256 digest. The v6.1.2 result must match the catalog anchor.
+    prereleases are excluded. A release-candidate tag with the exact form
+    vMAJOR.MINOR.PATCH-rcNUMBER is also excluded if upstream incorrectly marks
+    it as stable. Other unexpected stable tag forms fail closed. Exact version
+    selection validates that the tag exists as a published stable release.
+    Version comparison uses each exact release's creation/publication
+    chronology. Artifact resolution validates the corresponding official
+    release asset, positive size, HTTPS URL, archive name and SHA-256 digest.
+    The catalog anchor result must match its declared URL and digest.
 
     The artifact is a macOS .pkg archive. m extracts its payload using the
     existing pkgutil expansion path; it does not run the package installer or

@@ -35,6 +35,14 @@ BEGIN { exit(version ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ ? 0 : 1) }
 '
 }
 
+_pkg_repository_podman_is_release_candidate()
+{
+  [ "$#" -eq 1 ] || return 2
+  LC_ALL=C command -p -- awk -v tag="$1" '
+BEGIN { exit(tag ~ /^v[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$/ ? 0 : 1) }
+'
+}
+
 _pkg_repository_podman_validate_repository()
 {
   [ "$#" -eq 1 ] || return 2
@@ -180,6 +188,15 @@ _pkg_repository_podman_release_records()
           b:false) :;;
           *) return 1;;
         esac
+        case "$pkg_repository_podman_tag_token" in
+          s:*) pkg_repository_podman_tag=${pkg_repository_podman_tag_token#s:};;
+          *) return 1;;
+        esac
+        if ! _pkg_repository_podman_validate_version "$pkg_repository_podman_tag"
+        then
+          _pkg_repository_podman_is_release_candidate "$pkg_repository_podman_tag" && continue
+          return 1
+        fi
         pkg_repository_podman_record="$( _pkg_repository_podman_release_tokens \
           "$pkg_repository_podman_tag_token" \
           "$pkg_repository_podman_draft_token" \
@@ -236,21 +253,48 @@ pkg_repository_compare_versions()
   _pkg_repository_podman_validate_version "$pkg_repository_podman_right" || return 1
   if [ "$pkg_repository_podman_left" = "$pkg_repository_podman_right" ]
   then printf '0\n'; return 0; fi
-  pkg_repository_podman_records="$( _pkg_repository_podman_release_records "$pkg_repository_podman_repository_dir" )" || return 1
-  [ -n "$pkg_repository_podman_records" ] || return 1
+
+  pkg_repository_podman_left_body="$( _pkg_repository_podman_get \
+    "/releases/tags/$pkg_repository_podman_left" \
+    pkg_repository_compare_versions )" || return 1
+  pkg_repository_podman_left_record="$( _pkg_repository_podman_release_body_validate \
+    "$pkg_repository_podman_left_body" "$pkg_repository_podman_left" )" || return 1
+  pkg_repository_podman_right_body="$( _pkg_repository_podman_get \
+    "/releases/tags/$pkg_repository_podman_right" \
+    pkg_repository_compare_versions )" || return 1
+  pkg_repository_podman_right_record="$( _pkg_repository_podman_release_body_validate \
+    "$pkg_repository_podman_right_body" "$pkg_repository_podman_right" )" || return 1
   pkg_repository_podman_tab="$(printf '\t')"
-  printf '%s\n' "$pkg_repository_podman_records" | \
-    LC_ALL=C command -p -- awk -F "$pkg_repository_podman_tab" \
-      -v left="$pkg_repository_podman_left" \
-      -v right="$pkg_repository_podman_right" '
-NF != 3 { exit 1 }
-$3 == left { left_position=NR }
-$3 == right { right_position=NR }
-END {
-  if (!left_position || !right_position) exit 1
-  if (left_position < right_position) print "-1"
-  else if (left_position > right_position) print "1"
-  else print "0"
+  IFS="$pkg_repository_podman_tab" read -r \
+    pkg_repository_podman_left_created \
+    pkg_repository_podman_left_published \
+    pkg_repository_podman_left_tag \
+    pkg_repository_podman_left_extra <<EOF_PODMAN_LEFT_RELEASE
+$pkg_repository_podman_left_record
+EOF_PODMAN_LEFT_RELEASE
+  [ -z "$pkg_repository_podman_left_extra" ] &&
+    [ "$pkg_repository_podman_left_tag" = "$pkg_repository_podman_left" ] || return 1
+  IFS="$pkg_repository_podman_tab" read -r \
+    pkg_repository_podman_right_created \
+    pkg_repository_podman_right_published \
+    pkg_repository_podman_right_tag \
+    pkg_repository_podman_right_extra <<EOF_PODMAN_RIGHT_RELEASE
+$pkg_repository_podman_right_record
+EOF_PODMAN_RIGHT_RELEASE
+  [ -z "$pkg_repository_podman_right_extra" ] &&
+    [ "$pkg_repository_podman_right_tag" = "$pkg_repository_podman_right" ] || return 1
+  if [ "$pkg_repository_podman_left_created" = "$pkg_repository_podman_right_created" ] &&
+    [ "$pkg_repository_podman_left_published" = "$pkg_repository_podman_right_published" ]
+  then return 1; fi
+  LC_ALL=C command -p -- awk \
+    -v left_created="$pkg_repository_podman_left_created" \
+    -v left_published="$pkg_repository_podman_left_published" \
+    -v right_created="$pkg_repository_podman_right_created" \
+    -v right_published="$pkg_repository_podman_right_published" '
+BEGIN {
+  if (left_created < right_created ||
+      (left_created == right_created && left_published < right_published)) print "-1"
+  else print "1"
 }
 '
 )
@@ -264,14 +308,22 @@ pkg_repository_resolve_version()
   then
     pkg_repository_podman_version=$2
     _pkg_repository_podman_validate_version "$pkg_repository_podman_version" || return 1
-    pkg_repository_podman_records="$( _pkg_repository_podman_release_records "$pkg_repository_podman_repository_dir" )" || return 1
+    pkg_repository_podman_body="$( _pkg_repository_podman_get \
+      "/releases/tags/$pkg_repository_podman_version" \
+      pkg_repository_resolve_version )" || return 1
+    pkg_repository_podman_record="$( _pkg_repository_podman_release_body_validate \
+      "$pkg_repository_podman_body" "$pkg_repository_podman_version" )" || return 1
     pkg_repository_podman_tab="$(printf '\t')"
-    printf '%s\n' "$pkg_repository_podman_records" | \
-      LC_ALL=C command -p -- awk -F "$pkg_repository_podman_tab" -v version="$pkg_repository_podman_version" '
-NF != 3 { exit 1 }
-$3 == version { count++ }
-END { if (count != 1) exit 1; print version }
-'
+    IFS="$pkg_repository_podman_tab" read -r \
+      pkg_repository_podman_created \
+      pkg_repository_podman_published \
+      pkg_repository_podman_tag \
+      pkg_repository_podman_extra <<EOF_PODMAN_EXACT_RELEASE
+$pkg_repository_podman_record
+EOF_PODMAN_EXACT_RELEASE
+    [ -z "$pkg_repository_podman_extra" ] &&
+      [ "$pkg_repository_podman_tag" = "$pkg_repository_podman_version" ] || return 1
+    printf '%s\n' "$pkg_repository_podman_version"
     return
   fi
   pkg_repository_podman_body="$( _pkg_repository_podman_get /releases/latest pkg_repository_resolve_version )" || return 1
