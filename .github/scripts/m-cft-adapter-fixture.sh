@@ -3,7 +3,9 @@
 # isolated fake http-fetch executable and exact catalog-shaped descriptors.
 set -eu
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/m-cft-adapter.XXXXXXXX") || exit 1
+work_base=${CFT_FIXTURE_TMP_BASE:-$(pwd -P)/.tmp-cft-adapter}
+command -p -- mkdir -p -- "$work_base" || exit 1
+work=$(mktemp -d "$work_base/m-cft-adapter.XXXXXXXX") || exit 1
 trap 'command -p -- rm -rf -- "$work"' 0
 trap 'exit 3' HUP INT TERM
 
