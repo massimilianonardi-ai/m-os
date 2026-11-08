@@ -1,0 +1,57 @@
+name: m Podman macOS ARM64 repository integration
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'lib/sys/sh/pkg/repository/pkg-repository-podman.lib.sh'
+      - 'res/sys/manual/pkg-repository-podman.lib.sh'
+      - '.github/workflows/m-podman-repository.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  podman:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout m runtime
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout pinned package catalog
+        uses: actions/checkout@v4
+        with:
+          repository: massimilianonardi-ai/pkg-catalog
+          ref: 0b69223a5ebe7bc042aad50012ee8bc7e4a00442
+          path: catalog
+          persist-credentials: false
+      - name: Configure m with pinned catalog
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          conf=$(./m state-path system sys pkg conf)
+          mkdir -p -- "$conf"
+          printf '%s\n' "$GITHUB_WORKSPACE/catalog" > "$conf/catalog"
+      - name: Resolve latest and exact catalog anchor through public pkg commands
+        shell: sh
+        run: |
+          set -eu
+          # Unversioned install exercises stable-latest resolution and its
+          # live asset metadata; this invokes extraction only, never installer.
+          ./m pkg depend podman
+          ./m pkg install podman
+          latest=$(./m pkg default podman)
+          case "$latest" in
+            podman@v[0-9]*.[0-9]*.[0-9]*!*) : ;;
+            *) printf 'Unexpected latest concrete: %s\n' "$latest" >&2; exit 1 ;;
+          esac
+          ./m podman --version
+          # v6.1.2 is the exact version/digest anchor in this catalog pin.
+          ./m pkg depend podman@v6.1.2
+          ./m pkg install podman@v6.1.2
+          [ "$(./m pkg default podman)" = podman@v6.1.2 ]
+          ./m podman --version
