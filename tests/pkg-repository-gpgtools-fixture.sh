@@ -4,7 +4,7 @@ set -eu
 # Run through `./m shell -c '. ./tests/pkg-repository-gpgtools-fixture.sh'`.
 # The fake transport keeps this check deterministic and prevents downloads.
 _gpgtools_fixture_dir=$(pwd -P)
-_gpgtools_fixture_catalog=${GPGTOOLS_FIXTURE_CATALOG:-/m/src/git/chatgpt/tmp/catalog-graalvm}
+_gpgtools_fixture_catalog=${GPGTOOLS_FIXTURE_CATALOG:-${GITHUB_WORKSPACE:-$(pwd -P)}/catalog}
 source "$_gpgtools_fixture_dir/lib/sys/sh/core.lib.sh"
 loadsyslib pkg/repository/pkg-repository-gpgtools
 
