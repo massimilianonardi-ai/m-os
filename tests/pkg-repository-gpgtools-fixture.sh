@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -eu
 
 # Run through `./m shell -c '. ./tests/pkg-repository-gpgtools-fixture.sh'`.
