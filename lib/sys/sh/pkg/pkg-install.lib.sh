@@ -175,6 +175,7 @@ _pkg_install_init()
   case "$pkg_install_catalog_status" in
     0) return 0;;
     3) return 8;;
+    4) return 9;;
     *) return 7;;
   esac
 }
@@ -219,7 +220,7 @@ pkg_install()
   _pkg_install_init_status=$?
   case "$_pkg_install_init_status" in
     0) :;;
-    8) return 1;;
+    8|9) return 1;;
     *) fatal 1 pkg-install initialization-failed operation pkg-install;;
   esac
 

@@ -129,3 +129,58 @@ fi
 [ "$pkg_catalog_shape_before" = "$pkg_catalog_shape_after" ] || exit 1
 
 printf '%s\n' 'PASS: public requirement and install reject mixed catalog roots with one specific diagnostic and no package concrete installed'
+
+# A versioned v1 snapshot must contain both required roots. Exercise the public
+# query and install commands with an isolated catalog that omits facility/.
+rm -rf -- "$pkg_catalog_shape_repo"
+mkdir -p -- "$pkg_catalog_shape_repo/v1/pkg" || exit 1
+printf '%s\n' versioned > "$pkg_catalog_shape_repo/v1/marker" || exit 1
+git -C "$pkg_catalog_shape_repo" init -b main >/dev/null 2>&1 || exit 1
+git -C "$pkg_catalog_shape_repo" add v1 || exit 1
+git -C "$pkg_catalog_shape_repo" \
+  -c user.name=Validation \
+  -c user.email=validation@example.invalid \
+  commit -m 'test fixture: incomplete versioned catalog roots' >/dev/null 2>&1 || exit 1
+
+if ./m pkg requirement list jsc@v0.1.0 \
+  >"$pkg_catalog_shape_tmp/incomplete-requirement.out" \
+  2>"$pkg_catalog_shape_tmp/incomplete-requirement.err"
+then
+  printf '%s\n' 'pkg requirement list accepted an incomplete v1 catalog' >&2
+  exit 1
+else
+  pkg_catalog_shape_requirement_status=$?
+fi
+[ "$pkg_catalog_shape_requirement_status" -eq 1 ] || exit 1
+[ ! -s "$pkg_catalog_shape_tmp/incomplete-requirement.out" ] || exit 1
+grep -F 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/incomplete-requirement.err" >/dev/null || exit 1
+
+if ./m pkg install jsc@v0.1.0 \
+  >"$pkg_catalog_shape_tmp/incomplete-install.out" \
+  2>"$pkg_catalog_shape_tmp/incomplete-install.err"
+then
+  printf '%s\n' 'pkg install accepted an incomplete v1 catalog' >&2
+  exit 1
+else
+  pkg_catalog_shape_install_status=$?
+fi
+[ "$pkg_catalog_shape_install_status" -eq 1 ] || exit 1
+[ ! -s "$pkg_catalog_shape_tmp/incomplete-install.out" ] || exit 1
+[ "$(grep -Fc 'pkg-catalog.schema-root-incomplete' \
+  "$pkg_catalog_shape_tmp/incomplete-install.err")" -eq 1 ] || exit 1
+if grep -F 'pkg-install.initialization-failed' \
+  "$pkg_catalog_shape_tmp/incomplete-install.err" >/dev/null
+then
+  printf '%s\n' 'pkg install duplicated the incomplete-schema diagnostic' >&2
+  exit 1
+fi
+
+pkg_catalog_shape_after=
+if [ -d "$m_ROOT/pkg" ]
+then
+  pkg_catalog_shape_after="$(find "$m_ROOT/pkg" -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)" || exit 1
+fi
+[ "$pkg_catalog_shape_before" = "$pkg_catalog_shape_after" ] || exit 1
+
+printf '%s\n' 'PASS: public requirement and install reject an incomplete v1 catalog with one specific diagnostic and no package concrete installed'
