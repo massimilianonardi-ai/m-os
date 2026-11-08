@@ -163,7 +163,7 @@ JAVA_ROOT_EXPECTED="$java_concrete/root" JAVA_CONCRETE_EXPECTED="$java_concrete"
   once=$PATH
   context "pkg=${JAVA_CONCRETE_EXPECTED##*/}" || exit 8
   [ "$PATH" = "$once" ] || exit 9
-  context || exit 10
+  context reset || exit 10
   [ "$PATH" = "$before_context" ] || exit 11
   [ "$JAVA_HOME" = "$JAVA_ROOT_EXPECTED" ] || exit 12
 ' || exit 43

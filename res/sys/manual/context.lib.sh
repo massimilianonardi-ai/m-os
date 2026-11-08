@@ -14,11 +14,40 @@ DESCRIPTION
     that child environment.
 
 FUNCTIONS
-    context [pkg=<package>@<version>[!<osarch>] ...]
+    context
+    context [pkg=<package>@<version>[!<osarch>] | preset=<name> ...]
+    context reset
+    context defaults set pkg=<package>@<version>[!<osarch>] ...
+    context defaults clear
+    context preset set <name> pkg=<package>@<version>[!<osarch>] ...
+    context preset clear <name>
 
-        With no arguments, clear the current context-owned package command
-        selections and remove the previously published command/library block
-        from PATH and Java JAR contributions from CLASSPATH.
+        With no arguments, replace the active context with the current
+        POSIX account's saved package defaults. Missing preferences mean an
+        empty package selection; they are never imported from global current
+        links or package/facility defaults. `context reset` clears active
+        package selections and restores the host PATH/CLASSPATH contributions.
+
+        `context defaults set` updates only the package dimensions supplied
+        and preserves other saved dimensions. `context defaults clear` removes
+        persisted defaults but leaves the active context unchanged.
+        `context preset set` replaces a named data-only package selection list;
+        `preset=<name>` expands that list inline. `context preset clear` removes
+        only the named preset. These operations do not change package defaults,
+        facility defaults, consumer bindings or global current selectors.
+
+        Account preferences are stored under
+        `$m_ROOT/state/<effective-UID>/context/`. The effective UID comes from
+        `id -u` and identifies only the preference owner, not the logical m
+        user or an authentication principal. Records use versioned plain data,
+        are never sourced as shell code, and use private 0700 directories and
+        0600 files. `$m_ROOT/state` must not be group- or world-writable. A
+        protected shared installation requires an administrator-provisioned
+        account directory. Unsafe or unavailable storage fails closed; no
+        `$HOME` fallback is used.
+
+        `context reset` is distinct from `context defaults clear`: the former
+        affects only this shell, while the latter affects future initialization.
 
         With one or more pkg= arguments, select each installed concrete.
         Arguments are evaluated left-to-right. A later selection for the same
@@ -84,11 +113,31 @@ RETURN STATUS
     17   CLASSPATH is readonly in the invoking shell
     18   v2 installed command link target no longer satisfies its validated
          concrete-local direct or wrapper layout
+    19   account default storage is unavailable or unsafe during initialization
+    20   named preset is unavailable
+    21   preference/preset record is unsafe or invalid
+    22   preference/preset record version is unsupported
+    23   preference/preset record contains an invalid line
+    24   preference/preset record is empty or incomplete
+    25   default clear could not remove its record
+    26   preset clear could not remove its record
+    27   account default update could not be committed atomically
+    28   named preset update could not be committed atomically
+    29   preset storage is unavailable or unsafe during activation
+    30   default clear could not access account storage
+    31   default clear found an unsafe preference record
+    32   preset clear could not access account storage
+    33   preset clear found an unsafe preset record
+    34   default update could not access account storage
+    35   preset update could not access account storage
+    36   selected preset record is unsafe
 
 LIMITATIONS
-    This is the first package-command and library selection increment of the broader
-    context design. It does not yet accept facility, provider, profile,
-    locale, user/system, full-context or inheritance-policy operands.
+    This increment persists package concrete selections and named package
+    presets. It does not yet apply facility/provider, system profile, logical
+    user-state, locale or protected inheritance selections. It does not
+    propagate a validated context envelope to child m processes. An unsupported
+    context dimension fails before changing the shell or persisted records.
     Only sh and Java ordinary library search views are supported; other
     runtimes need their own defined import/loader semantics. CLASSPATH may be
     overridden by explicit Java -cp or launcher-specific class loading;

@@ -15,7 +15,7 @@ work=$(mktemp -d) || exit 4
 
 cleanup()
 {
-  context >/dev/null 2>&1 || :
+  context reset >/dev/null 2>&1 || :
   command -p -- rm -f -- "$selector"
   command -p -- rm -rf -- "$concrete" "$work" "$m_STATE_SYS_DIR/pkg/$name"
 }
@@ -67,7 +67,7 @@ context "pkg=$name@1" || exit 15
 . sample.lib.sh
 [ "$SAMPLE_VERSION" = v2 ] || exit 17
 [ "$(CLASSPATH="$CLASSPATH:$work/consumer" java Consumer)" = v2 ] || exit 18
-context || exit 19
+context reset || exit 19
 [ "$PATH" = "$baseline" ] || exit 20
 [ "${CLASSPATH+x}" != x ] || exit 21
 pkg_default_apply "$name" "" || exit 22

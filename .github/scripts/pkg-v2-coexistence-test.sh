@@ -58,6 +58,6 @@ before_reapply=$PATH
 context "pkg=$CONCRETE" || exit 28
 [ "$PATH" = "$before_reapply" ] || exit 29
 
-context || exit 21
+context reset || exit 21
 [ "$PATH" = "$baseline" ] || exit 22
 printf '%s\n' 'PASS: v1 + v2 installed views, context selection and reset'
