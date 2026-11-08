@@ -15,6 +15,14 @@ DESCRIPTION
     closed. If the upstream page no longer has the expected shape, resolution
     fails rather than returning a stale catalog value as latest.
 
+    Latest-index transport failures emit the
+    pkg-repository-gpgtools.latest-index-fetch-failed diagnostic. A successful
+    response whose page does not match the expected index format emits the
+    distinct pkg-repository-gpgtools.latest-index-invalid diagnostic. Both
+    include the index URL and originating status; fetch failures include the
+    http-fetch status, while malformed-page diagnostics include the parser
+    status.
+
 FUNCTIONS
     pkg_repository_list_versions <repository-dir>
         Print the catalog-pinned release and current upstream Latest Hotfix in

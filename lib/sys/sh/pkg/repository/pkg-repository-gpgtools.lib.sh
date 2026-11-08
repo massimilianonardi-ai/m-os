@@ -102,7 +102,7 @@ _pkg_repository_gpgtools_latest_release()
 
   pkg_repository_gpgtools_lf='
 '
-  printf '%s\n' "$pkg_repository_gpgtools_body" | LC_ALL=C command -p -- awk '
+  pkg_repository_gpgtools_latest="$(printf '%s\n' "$pkg_repository_gpgtools_body" | LC_ALL=C command -p -- awk '
 function fail() { invalid=1; exit 1 }
 function field(row, marker, closing,    start, rest, finish, after) {
   start=index(row, marker)
@@ -165,6 +165,15 @@ END {
   print date "\t" version "\t" url "\t" tolower(digest)
 }
 '
+  )"
+  pkg_repository_gpgtools_parse_status=$?
+  if [ "$pkg_repository_gpgtools_parse_status" -ne 0 ]
+  then
+    log error pkg-repository-gpgtools latest-index-invalid \
+      url "$pkg_repository_gpgtools_url" status "$pkg_repository_gpgtools_parse_status" || :
+    return 3
+  fi
+  printf '%s\n' "$pkg_repository_gpgtools_latest"
 )
 
 pkg_repository_list_versions()

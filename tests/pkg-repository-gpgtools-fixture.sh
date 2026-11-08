@@ -24,9 +24,12 @@ calls=$(cat "$GPGTOOLS_FIXTURE_TMP_CALLS")
 printf '%s\n' "$((calls + 1))" > "$GPGTOOLS_FIXTURE_TMP_CALLS"
 case "$*" in
   *'https://releases.gpgtools.com/nightlies/')
-    if [ "$(cat "$GPGTOOLS_FIXTURE_STATE")" = malformed ]; then
+    case "$(cat "$GPGTOOLS_FIXTURE_STATE")" in
+    fetch-failed) exit 23;;
+    malformed)
       printf '%s\n' '<div class="latest"><table><tr><td>broken</td></tr></table></div>'
-    else
+      ;;
+    *)
       cat <<'EOF_GPGTOOLS_PAGE'
 <div class="latest">
 <table>
@@ -39,7 +42,8 @@ case "$*" in
 </table>
 </div>
 EOF_GPGTOOLS_PAGE
-    fi
+      ;;
+    esac
     ;;
   *'-l -- https://releases.gpgtools.com/nightlies/GPG_Suite-3633n.dmg') printf '%s\n' 67104027;;
   *) exit 1;;
@@ -65,8 +69,44 @@ case "$_gpgtools_artifact" in
 esac
 
 printf '%s\n' malformed > "$GPGTOOLS_FIXTURE_STATE"
-if _pkg_repository_gpgtools_latest_release >/dev/null 2>&1; then
+if _pkg_repository_gpgtools_latest_release >"$_gpgtools_fixture_tmp/malformed.out" 2>"$_gpgtools_fixture_tmp/malformed.log"; then
   echo 'malformed latest index unexpectedly accepted' >&2
   exit 1
+else
+  _gpgtools_fixture_status=$?
 fi
-echo 'PASS: GPGTools fixture parsing, exact anchor, live latest, artifact metadata and malformed-index rejection'
+[ "$_gpgtools_fixture_status" -eq 3 ] || { echo "malformed latest index returned status $_gpgtools_fixture_status, expected 3" >&2; exit 1; }
+grep -F '[pkg-repository-gpgtools.latest-index-invalid]' "$_gpgtools_fixture_tmp/malformed.log" >/dev/null || {
+  echo 'malformed latest index diagnostic identity missing' >&2
+  exit 1
+}
+grep -F 'url="https://releases.gpgtools.com/nightlies/"' "$_gpgtools_fixture_tmp/malformed.log" >/dev/null || {
+  echo 'malformed latest index diagnostic URL missing' >&2
+  exit 1
+}
+grep -F 'status="1"' "$_gpgtools_fixture_tmp/malformed.log" >/dev/null || {
+  echo 'malformed latest index parser status missing' >&2
+  exit 1
+}
+
+printf '%s\n' fetch-failed > "$GPGTOOLS_FIXTURE_STATE"
+if _pkg_repository_gpgtools_latest_release >"$_gpgtools_fixture_tmp/fetch.out" 2>"$_gpgtools_fixture_tmp/fetch.log"; then
+  echo 'failed latest-index fetch unexpectedly accepted' >&2
+  exit 1
+else
+  _gpgtools_fixture_status=$?
+fi
+[ "$_gpgtools_fixture_status" -eq 1 ] || { echo "latest-index fetch returned status $_gpgtools_fixture_status, expected 1" >&2; exit 1; }
+grep -F '[pkg-repository-gpgtools.latest-index-fetch-failed]' "$_gpgtools_fixture_tmp/fetch.log" >/dev/null || {
+  echo 'latest-index fetch diagnostic identity missing' >&2
+  exit 1
+}
+grep -F 'url="https://releases.gpgtools.com/nightlies/"' "$_gpgtools_fixture_tmp/fetch.log" >/dev/null || {
+  echo 'latest-index fetch diagnostic URL missing' >&2
+  exit 1
+}
+grep -F 'status="23"' "$_gpgtools_fixture_tmp/fetch.log" >/dev/null || {
+  echo 'latest-index fetch child status missing' >&2
+  exit 1
+}
+echo 'PASS: GPGTools fixture parsing, exact anchor, live latest, artifact metadata and distinct upstream failure diagnostics'
