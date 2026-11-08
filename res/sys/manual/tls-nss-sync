@@ -46,6 +46,13 @@ ENVIRONMENT
 
 
 EXIT STATUS
+
+    Bootstrap failure:
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    Runtime/platform library load failures are reported as 29 and 30
+    below.
+
     0     The owned NSS projection is reconciled or no work is necessary.
     2-28  Specific validation, dependency, locking, NSS or filesystem
           failure, diagnosed on stderr with tls-nss-sync.<branch> identity.

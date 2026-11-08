@@ -189,7 +189,15 @@ NATIVE-COMMAND MIGRATION
 
         m pkg default <package>@<selected-version>[!<osarch>]
 
-    Leave previously unselected classes without a default. Confirm native
+    A reinstall can automatically select the installed concrete as the class
+    default. If the recorded pre-migration state had no default, explicitly
+    clear that selection after reinstall:
+
+        m pkg default -u -- <package-class>
+
+    Query pkg default <package-class> and verify it reports no selection before
+    restarting consumers. Leave previously unselected classes without a
+    default. Confirm native
     cmd/env content, command execution, managed configuration and service
     state before restarting consumers. Respect provider references: the
     manager can refuse removal of a still-referenced provider. Handle
@@ -222,6 +230,14 @@ ENVIRONMENT
 
 
 EXIT STATUS
+
+    Bootstrap failures (before operation dispatch):
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    2    The m shell runtime could not be loaded.
+    Operation-specific failures below may also use these numeric
+    statuses; stderr identifies the bootstrap or operation branch.
+
     0   The requested operation succeeded.
     1   The requested package operation could not be completed after a valid
         invocation, or the requested installed class/default could not be resolved

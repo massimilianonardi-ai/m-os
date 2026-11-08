@@ -1,0 +1,1 @@
+fatal 2 language.locale-unavailable locale ${locale} owner ${owner}

@@ -32,6 +32,15 @@ ENVIRONMENT
 
 
 EXIT STATUS
+
+    Bootstrap failures (before operation dispatch):
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    2    The m shell runtime could not be loaded.
+    Operation-specific failures below may also use these numeric
+    statuses; stderr identifies the bootstrap or operation branch.
+
     0   Success.
-    2   Invalid invocation or unsupported algorithm.
-    Other non-zero status indicates input, backend or digest-validation failure.
+    1   Input, backend or returned-digest validation failure.
+    2   Invalid invocation or unsupported algorithm. This status is also used
+        when the m shell runtime cannot be loaded before operation dispatch.
