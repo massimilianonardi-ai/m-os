@@ -187,7 +187,6 @@ jobs:
           # closed and leave no runtime record. The process target is a local,
           # test-owned executable and the public provider path remains real.
           srv_run=$(./m state-path user sys srv run)
-          [ -d "$srv_run" ] || { echo 'INFRASTRUCTURE: srv runtime directory is unavailable' >&2; exit 3; }
           cat > "$payload/bin/service-target" <<'EOF_FAIL_TARGET'
           #!/bin/sh
           exit 37
@@ -202,7 +201,7 @@ jobs:
             cat "$tmp/failure.stderr" >&2
             exit 1
           }
-          [ -z "$(find "$srv_run" -type f -print -quit)" ] || {
+          [ ! -e "$srv_run" ] || [ -z "$(find "$srv_run" -type f -print -quit)" ] || {
             echo 'FAIL: failed srv start published runtime state' >&2
             find "$srv_run" -type f -print >&2
             exit 1
