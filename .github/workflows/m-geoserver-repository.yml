@@ -53,9 +53,18 @@ jobs:
           set -eu
           ./m pkg install geoserver@3.0.1
           ./m pkg install geoserver
+          osarch=$(./m osarch)
+          versions=$(./m pkg versions geoserver)
+          printf '%s\n' "$versions"
+          case "$versions" in *"geoserver@3.0.1!$osarch"*) : ;; *) echo 'exact 3.0.1 install missing' >&2; exit 1 ;; esac
+          case "$versions" in *"geoserver@3.0.2!$osarch"*) : ;; *) echo 'latest request did not install 3.0.2' >&2; exit 1 ;; esac
           ./m pkg provider default java temurin@21+35
           ./m pkg provider default geoserver geoserver@3.0.2
-          cleanup() { ./m srv stop geoserver >/dev/null 2>&1 || :; }
+          work=
+          cleanup() {
+            ./m srv stop geoserver >/dev/null 2>&1 || :
+            if [ -n "$work" ]; then rm -rf -- "$work"; fi
+          }
           trap cleanup EXIT HUP INT TERM
           ./m srv start geoserver
           work=$(mktemp -d)
@@ -70,4 +79,5 @@ jobs:
           ./m srv stop geoserver
           trap - EXIT HUP INT TERM
           rm -rf -- "$work"
+          work=
           echo 'PASS: exact/latest GeoServer installs, Temurin 21 planning, and live WFS service'
