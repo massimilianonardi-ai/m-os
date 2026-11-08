@@ -380,6 +380,19 @@ pkg_repository_resolve_version()
   then
     pkg_repository_graalvm_version=$2
     _pkg_repository_graalvm_validate_version "$pkg_repository_graalvm_version" || return 1
+    if [ -e "$pkg_repository_graalvm_repository_dir/versions" ] ||
+      [ -L "$pkg_repository_graalvm_repository_dir/versions" ]
+    then
+      _pkg_repository_graalvm_validate_versions \
+        "$pkg_repository_graalvm_repository_dir/versions" || return 1
+      if LC_ALL=C command -p -- awk -v version="$pkg_repository_graalvm_version" \
+        '$0 == version { found=1 } END { exit !found }' \
+        "$pkg_repository_graalvm_repository_dir/versions"
+      then
+        printf '%s\n' "$pkg_repository_graalvm_version"
+        return 0
+      fi
+    fi
     _pkg_repository_graalvm_find_release "$pkg_repository_graalvm_repository_dir" "$pkg_repository_graalvm_version" >/dev/null || return 1
     printf '%s\n' "$pkg_repository_graalvm_version"
     return 0
