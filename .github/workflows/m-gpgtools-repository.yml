@@ -42,7 +42,7 @@ jobs:
         shell: sh
         run: |
           set -eu
-          GPGTOOLS_FIXTURE_CATALOG="$GITHUB_WORKSPACE/catalog" SHELL=/bin/bash ./m shell -c '. ./tests/pkg-repository-gpgtools-fixture.sh'
+          GPGTOOLS_FIXTURE_CATALOG="$GITHUB_WORKSPACE/catalog" GPGTOOLS_FIXTURE_TMP_BASE="$GITHUB_WORKSPACE/.gpgtools-fixture" SHELL=/bin/bash ./m shell -c '. ./tests/pkg-repository-gpgtools-fixture.sh'
       - name: Resolve and install the pinned GPGTools package
         shell: sh
         run: |

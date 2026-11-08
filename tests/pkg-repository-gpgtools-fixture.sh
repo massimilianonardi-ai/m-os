@@ -1,26 +1,33 @@
-#!/bin/bash
+#!/bin/sh
 set -eu
 
 # Run through `./m shell -c '. ./tests/pkg-repository-gpgtools-fixture.sh'`.
 # The fake transport keeps this check deterministic and prevents downloads.
 _gpgtools_fixture_dir=$(pwd -P)
 _gpgtools_fixture_catalog=${GPGTOOLS_FIXTURE_CATALOG:-${GITHUB_WORKSPACE:-$(pwd -P)}/catalog}
-source "$_gpgtools_fixture_dir/lib/sys/sh/core.lib.sh"
+. "$_gpgtools_fixture_dir/lib/sys/sh/core.lib.sh"
 loadsyslib pkg/repository/pkg-repository-gpgtools
 
 _gpgtools_fixture_repo=$_gpgtools_fixture_catalog/v1/pkg/macgpg/macos-arm64/repository
 _gpgtools_fixture_range=$_gpgtools_fixture_catalog/v1/pkg/macgpg/macos-arm64/n0001=2026.1+3633n
-_gpgtools_fixture_calls=0
-_gpgtools_fixture_index=valid
-http-fetch()
-{
-  _gpgtools_fixture_calls=$((_gpgtools_fixture_calls + 1))
-  case "$*" in
-    *'https://releases.gpgtools.com/nightlies/')
-      if [ "$_gpgtools_fixture_index" = malformed ]; then
-        printf '%s\n' '<div class="latest"><table><tr><td>broken</td></tr></table></div>'
-      else
-        cat <<'EOF_GPGTOOLS_FIXTURE'
+_gpgtools_fixture_tmp=$(mktemp -d "${GPGTOOLS_FIXTURE_TMP_BASE:-$(pwd -P)/.tmp-gpgtools-fixture}.XXXXXX")
+trap 'rm -rf -- "$_gpgtools_fixture_tmp"' 0 HUP INT TERM
+mkdir -p "$_gpgtools_fixture_tmp/bin"
+export GPGTOOLS_FIXTURE_STATE="$_gpgtools_fixture_tmp/state"
+printf '%s\n' valid > "$GPGTOOLS_FIXTURE_STATE"
+GPGTOOLS_FIXTURE_TMP_CALLS="$_gpgtools_fixture_tmp/calls"
+export GPGTOOLS_FIXTURE_TMP_CALLS
+printf '%s\n' 0 > "$GPGTOOLS_FIXTURE_TMP_CALLS"
+cat > "$_gpgtools_fixture_tmp/bin/http-fetch" <<'EOF_GPGTOOLS_COMMAND'
+#!/bin/sh
+calls=$(cat "$GPGTOOLS_FIXTURE_TMP_CALLS")
+printf '%s\n' "$((calls + 1))" > "$GPGTOOLS_FIXTURE_TMP_CALLS"
+case "$*" in
+  *'https://releases.gpgtools.com/nightlies/')
+    if [ "$(cat "$GPGTOOLS_FIXTURE_STATE")" = malformed ]; then
+      printf '%s\n' '<div class="latest"><table><tr><td>broken</td></tr></table></div>'
+    else
+      cat <<'EOF_GPGTOOLS_PAGE'
 <div class="latest">
 <table>
 <tr>
@@ -31,21 +38,22 @@ http-fetch()
 </tr>
 </table>
 </div>
-EOF_GPGTOOLS_FIXTURE
-      fi
-      ;;
-    *'-l -- https://releases.gpgtools.com/nightlies/GPG_Suite-3633n.dmg')
-      printf '%s\n' 67104027
-      ;;
-    *) return 1;;
-  esac
-}
+EOF_GPGTOOLS_PAGE
+    fi
+    ;;
+  *'-l -- https://releases.gpgtools.com/nightlies/GPG_Suite-3633n.dmg') printf '%s\n' 67104027;;
+  *) exit 1;;
+esac
+EOF_GPGTOOLS_COMMAND
+chmod +x "$_gpgtools_fixture_tmp/bin/http-fetch"
+PATH="$_gpgtools_fixture_tmp/bin:$PATH"
+export PATH
 
 _gpgtools_anchor_url=$(cat "$_gpgtools_fixture_repo/url")
 [ "$_gpgtools_anchor_url" = 'https://releases.gpgtools.com/nightlies/GPG_Suite-3633n.dmg' ]
-_gpgtools_before=$_gpgtools_fixture_calls
+_gpgtools_before=$(cat "$GPGTOOLS_FIXTURE_TMP_CALLS")
 [ "$(pkg_repository_resolve_version "$_gpgtools_fixture_repo" '2026.1+3633n')" = '2026.1+3633n' ]
-[ "$_gpgtools_fixture_calls" -eq "$_gpgtools_before" ] # pinned exact is local
+[ "$(cat "$GPGTOOLS_FIXTURE_TMP_CALLS")" -eq "$_gpgtools_before" ] # pinned exact is local
 [ "$(pkg_repository_resolve_version "$_gpgtools_fixture_repo")" = '2026.1+3633n' ] # live latest
 [ "${_gpgtools_fixture_range##*/}" = 'n0001=2026.1+3633n' ] # catalog range entry covers live latest
 [ "$(pkg_repository_list_versions "$_gpgtools_fixture_repo")" = '2026.1+3633n' ]
@@ -56,7 +64,7 @@ case "$_gpgtools_artifact" in
   *) printf '%s\n' "unexpected descriptor: $_gpgtools_artifact" >&2; exit 1;;
 esac
 
-_gpgtools_fixture_index=malformed
+printf '%s\n' malformed > "$GPGTOOLS_FIXTURE_STATE"
 if _pkg_repository_gpgtools_latest_release >/dev/null 2>&1; then
   echo 'malformed latest index unexpectedly accepted' >&2
   exit 1
