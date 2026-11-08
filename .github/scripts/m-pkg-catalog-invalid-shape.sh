@@ -132,11 +132,8 @@ printf '%s\n' 'PASS: public requirement and install reject mixed catalog roots w
 
 # A versioned v1 snapshot must contain both required roots. Exercise the public
 # query and install commands with an isolated catalog that omits facility/.
-rm -rf -- "$pkg_catalog_shape_repo"
-mkdir -p -- "$pkg_catalog_shape_repo/v1/pkg" || exit 1
-printf '%s\n' versioned > "$pkg_catalog_shape_repo/v1/marker" || exit 1
-git -C "$pkg_catalog_shape_repo" init -b main >/dev/null 2>&1 || exit 1
-git -C "$pkg_catalog_shape_repo" add v1 || exit 1
+rm -rf -- "$pkg_catalog_shape_repo/pkg" "$pkg_catalog_shape_repo/facility"
+git -C "$pkg_catalog_shape_repo" add -A || exit 1
 git -C "$pkg_catalog_shape_repo" \
   -c user.name=Validation \
   -c user.email=validation@example.invalid \
