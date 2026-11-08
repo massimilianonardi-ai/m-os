@@ -1,0 +1,47 @@
+name: m Chrome for Testing Linux ARM64
+
+on:
+  pull_request:
+    paths:
+      - 'lib/sys/sh/pkg/repository/pkg-repository-chrome-for-testing.lib.sh'
+      - 'res/sys/manual/pkg-repository-chrome-for-testing.lib.sh'
+      - '.github/scripts/m-cft-adapter-fixture.sh'
+      - '.github/workflows/m-cft-arm64-live.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cft-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate adapter fixtures and POSIX shell syntax
+        shell: sh
+        run: |
+          set -eu
+          sh -n lib/sys/sh/pkg/repository/pkg-repository-chrome-for-testing.lib.sh
+          sh -n .github/scripts/m-cft-adapter-fixture.sh
+          .github/scripts/m-cft-adapter-fixture.sh
+          ./m manual --no-pager pkg-repository-chrome-for-testing.lib.sh > /dev/null
+      - name: Resolve and install exact anchor and current Stable from public catalog
+        shell: sh
+        run: |
+          set -eu
+          ./m osarch update
+          ./m pkg install 'chromium@153.0.8010.12!linux-arm64'
+          exact=chromium@153.0.8010.12!linux-arm64
+          [ -d "pkg/$exact/root" ]
+
+          ./m pkg install 'chromium!linux-arm64'
+          versions=$(./m pkg versions chromium)
+          printf '%s\n' "$versions"
+          printf '%s\n' "$versions" | grep -F '153.0.8010.12!linux-arm64' > /dev/null
+          latest=$(./m pkg default chromium)
+          case "$latest" in chromium@*'!linux-arm64') :;; *) printf 'Unexpected Chromium default: %s\n' "$latest" >&2; exit 1;; esac
+          [ -d "pkg/$latest/root" ]
+          printf 'PASS: exact CfT anchor and current Stable installed through public pkg; latest=%s\n' "$latest"
