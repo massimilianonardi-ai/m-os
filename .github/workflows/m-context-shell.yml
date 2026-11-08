@@ -45,7 +45,7 @@ jobs:
             printf "%s\n" "#!/bin/sh" "exit 0" > "$m_PKG_DIR/context-core@1/cmd/pkg"
             chmod +x "$m_PKG_DIR/"context-*/cmd/*
             baseline=$PATH
-            context
+            context reset
             [ "$PATH" = "$baseline" ]
             context pkg=context-a@1
             [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@1/cmd/alpha" ]
@@ -66,7 +66,7 @@ jobs:
             context pkg=context-a@1
             case "$PATH" in *"/tmp/context-host"*) : ;; *) exit 24 ;; esac
             [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@1/cmd/alpha" ]
-            context
+            context reset
             case "$PATH" in *"$m_PKG_DIR/context-a@"*) exit 25 ;; esac
             case "$PATH" in *"$m_PKG_DIR/context-b@"*) exit 26 ;; esac
             echo "PASS: POSIX context command selection/replacement"
