@@ -7,6 +7,12 @@ on:
       - 'lib/sys/sh/pkg/repository/pkg-repository-podman.lib.sh'
       - 'res/sys/manual/pkg-repository-podman.lib.sh'
       - '.github/workflows/m-podman-repository.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'lib/sys/sh/pkg/repository/pkg-repository-podman.lib.sh'
+      - 'res/sys/manual/pkg-repository-podman.lib.sh'
+      - '.github/workflows/m-podman-repository.yml'
   workflow_dispatch:
 
 permissions:
