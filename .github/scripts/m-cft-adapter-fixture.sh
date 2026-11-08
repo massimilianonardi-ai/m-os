@@ -22,6 +22,8 @@ case "$*" in
   *LATEST_RELEASE_STABLE*) printf '%s\n' '157.0.8103.38'; exit 0;;
 esac
 case "${CFT_FIXTURE_MODE:-valid}" in
+  fetch-fail) exit 28;;
+  bad-json) printf '%s\n' 'not-json'; exit 0;;
   wrong-name) name=incorrect/object.zip;;
   *)
     case "$*" in
@@ -52,10 +54,30 @@ chmod 700 "$work/bin/http-fetch" || exit 5
   printf "%s\n" "$artifact" | grep -F "size=195926016" >/dev/null || exit 15
   printf "%s\n" "$artifact" | grep -F "digest=md5:72f3441dd3fde1ccdb2ef2ddcc8d5de0" >/dev/null || exit 16
 
-  for mode in wrong-name bad-size bad-md5; do
+  expect_metadata_failure() {
+    mode=$1
+    expected_status=$2
+    expected_identity=$3
     CFT_FIXTURE_MODE=$mode; export CFT_FIXTURE_MODE
-    if pkg_repository_resolve_version "$repo" 153.0.8010.12 >/dev/null 2>&1; then exit 17; fi
-  done
+    diagnostic=${repo%/*}/diagnostic
+    if _pkg_repository_chrome_for_testing_metadata "$repo" 153.0.8010.12 >/dev/null 2>"$diagnostic"; then
+      exit 17
+    else
+      actual_status=$?
+    fi
+    [ "$actual_status" -eq "$expected_status" ] || exit 18
+    grep -F "[pkg-repository-cft.$expected_identity]" "$diagnostic" >/dev/null || exit 19
+    if pkg_repository_resolve_version "$repo" 153.0.8010.12 >/dev/null 2>&1; then
+      exit 20
+    else
+      [ "$?" -eq 1 ] || exit 21
+    fi
+  }
+  expect_metadata_failure fetch-fail 4 metadata-fetch-failed
+  expect_metadata_failure bad-json 5 metadata-json-invalid
+  expect_metadata_failure wrong-name 7 metadata-name-mismatch
+  expect_metadata_failure bad-size 9 metadata-size-value-invalid
+  expect_metadata_failure bad-md5 11 metadata-md5-encoding-invalid
   CFT_FIXTURE_MODE=valid; export CFT_FIXTURE_MODE
 
   printf "%s\n" "wrong-archive" > "$range/archive_regex"

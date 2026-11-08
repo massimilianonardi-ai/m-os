@@ -32,7 +32,28 @@ FUNCTIONS
 
 STATUS
     Public functions return 0 on success, 1 for invalid descriptor, version,
-    range or upstream evidence, and 2 for invalid invocation.
+    range or upstream evidence, and 2 for invalid invocation. Metadata failures
+    emit distinct pkg-repository-cft diagnostic identities for fetch, JSON,
+    object-name, size-type, size-value, MD5-type and MD5-encoding failures;
+    public status remains 1.
+
+DIAGNOSTICS
+    pkg-repository-cft.metadata-fetch-failed
+    pkg-repository-cft.metadata-json-invalid
+    pkg-repository-cft.metadata-name-invalid
+    pkg-repository-cft.metadata-name-mismatch
+    pkg-repository-cft.metadata-size-type-invalid
+    pkg-repository-cft.metadata-size-value-invalid
+    pkg-repository-cft.metadata-md5-type-invalid
+    pkg-repository-cft.metadata-md5-encoding-invalid
+
+INTERNAL METADATA FAILURE STATUS
+    The private metadata resolver returns distinct local statuses: 1 invalid
+    invocation, 2 invalid repository descriptor, 3 invalid version, 4 metadata
+    fetch failure, 5 invalid metadata JSON, 6 invalid object-name type, 7 object
+    name mismatch, 8 invalid size type, 9 invalid size value, 10 invalid MD5
+    type, and 11 invalid Base64 MD5. Public functions map these failures to the
+    documented status 1.
 
 DEPENDENCIES
     json.lib.sh

@@ -65,24 +65,72 @@ BEGIN {
 
 _pkg_repository_chrome_for_testing_metadata()
 (
-  [ "$#" -eq 2 ] || return 2
-  _pkg_repository_chrome_for_testing_validate_repository "$1" || return 1
+  [ "$#" -eq 2 ] || return 1
+  _pkg_repository_chrome_for_testing_validate_repository "$1" || return 2
   pkg_repository_cft_version=$2
-  _pkg_repository_chrome_for_testing_version "$pkg_repository_cft_version" || return 1
+  _pkg_repository_chrome_for_testing_version "$pkg_repository_cft_version" || return 3
   pkg_repository_cft_object="$pkg_repository_cft_version/linux-arm64/chrome-linux-arm64.zip"
   pkg_repository_cft_encoded="${pkg_repository_cft_version}%2Flinux-arm64%2Fchrome-linux-arm64.zip"
   pkg_repository_cft_url="https://storage.googleapis.com/storage/v1/b/chrome-for-testing-public/o/$pkg_repository_cft_encoded?fields=name%2Csize%2Cmd5Hash"
-  pkg_repository_cft_body="$(http-fetch -- "$pkg_repository_cft_url")" || return 1
+  pkg_repository_cft_body="$(http-fetch -- "$pkg_repository_cft_url")"
+  pkg_repository_cft_fetch_status=$?
+  if [ "$pkg_repository_cft_fetch_status" -ne 0 ]; then
+    log error pkg-repository-cft metadata-fetch-failed \
+      version "$pkg_repository_cft_version" status "$pkg_repository_cft_fetch_status" || :
+    return 4
+  fi
   json_object_read name pkg_repository_cft_name size pkg_repository_cft_size md5Hash pkg_repository_cft_md5 <<EOF_JSON
 $pkg_repository_cft_body
 EOF_JSON
-  [ "$?" -eq 0 ] || return 1
-  case "$pkg_repository_cft_name" in s:*) pkg_repository_cft_name=${pkg_repository_cft_name#s:};; *) return 1;; esac
-  [ "$pkg_repository_cft_name" = "$pkg_repository_cft_object" ] || return 1
-  case "$pkg_repository_cft_size" in s:*) pkg_repository_cft_size=${pkg_repository_cft_size#s:};; *) return 1;; esac
-  case "$pkg_repository_cft_size" in ''|0|0[0-9]*|*[!0-9]*) return 1;; esac
-  case "$pkg_repository_cft_md5" in s:*) pkg_repository_cft_md5=${pkg_repository_cft_md5#s:};; *) return 1;; esac
-  pkg_repository_cft_md5_hex="$(_pkg_repository_chrome_for_testing_md5_hex "$pkg_repository_cft_md5")" || return 1
+  pkg_repository_cft_json_status=$?
+  if [ "$pkg_repository_cft_json_status" -ne 0 ]; then
+    log error pkg-repository-cft metadata-json-invalid \
+      version "$pkg_repository_cft_version" status "$pkg_repository_cft_json_status" || :
+    return 5
+  fi
+  case "$pkg_repository_cft_name" in
+    s:*) pkg_repository_cft_name=${pkg_repository_cft_name#s:};;
+    *)
+      log error pkg-repository-cft metadata-name-invalid \
+        version "$pkg_repository_cft_version" || :
+      return 6
+      ;;
+  esac
+  if [ "$pkg_repository_cft_name" != "$pkg_repository_cft_object" ]; then
+    log error pkg-repository-cft metadata-name-mismatch \
+      version "$pkg_repository_cft_version" object "$pkg_repository_cft_name" || :
+    return 7
+  fi
+  case "$pkg_repository_cft_size" in
+    s:*) pkg_repository_cft_size=${pkg_repository_cft_size#s:};;
+    *)
+      log error pkg-repository-cft metadata-size-type-invalid \
+        version "$pkg_repository_cft_version" || :
+      return 8
+      ;;
+  esac
+  case "$pkg_repository_cft_size" in
+    ''|0|0[0-9]*|*[!0-9]*)
+      log error pkg-repository-cft metadata-size-value-invalid \
+        version "$pkg_repository_cft_version" size "$pkg_repository_cft_size" || :
+      return 9
+      ;;
+  esac
+  case "$pkg_repository_cft_md5" in
+    s:*) pkg_repository_cft_md5=${pkg_repository_cft_md5#s:};;
+    *)
+      log error pkg-repository-cft metadata-md5-type-invalid \
+        version "$pkg_repository_cft_version" || :
+      return 10
+      ;;
+  esac
+  pkg_repository_cft_md5_hex="$(_pkg_repository_chrome_for_testing_md5_hex "$pkg_repository_cft_md5")"
+  pkg_repository_cft_md5_status=$?
+  if [ "$pkg_repository_cft_md5_status" -ne 0 ]; then
+    log error pkg-repository-cft metadata-md5-encoding-invalid \
+      version "$pkg_repository_cft_version" || :
+    return 11
+  fi
   printf '%s\t%s\t%s\n' chrome-linux-arm64.zip "$pkg_repository_cft_size" "$pkg_repository_cft_md5_hex"
 )
 
