@@ -546,8 +546,30 @@ _context_store_set_defaults()
 )
 
 _context_store_define_preset()
-{
+(
   [ "$#" -ge 2 ] || return 2
+  _context_store_lock_dir=
+  _context_store_lock_token_path=
+  _context_store_lock_token_owned=0
+  trap '_context_defaults_lock_cleanup' 0
+  trap 'exit 1' HUP INT TERM
+  if _context_store_lock "$m_ROOT"
+  then
+    _context_store_lock_status=0
+  else
+    _context_store_lock_status=$?
+  fi
+  case "$_context_store_lock_status" in
+    0) : ;;
+    3)
+      _context_error context-default-store-busy "$m_ROOT/state"
+      return 22
+      ;;
+    *)
+      _context_error context-default-store-invalid "$m_ROOT/state"
+      return 19
+      ;;
+  esac
   _context_preset_name=$1
   _context_store_name="preset.$_context_preset_name"
   _context_store_name_valid "$_context_store_name" || {
@@ -562,7 +584,7 @@ _context_store_define_preset()
     _context_error context-preset-store-write-failed "$_context_preset_name"
     return 21
   }
-}
+)
 
 _context_store_delete_defaults()
 (
@@ -596,8 +618,31 @@ _context_store_delete_defaults()
 )
 
 _context_store_delete_preset()
-{
+(
   [ "$#" -eq 1 ] || return 2
+  _context_store_lock_dir=
+  _context_store_lock_token_path=
+  _context_store_lock_token_owned=0
+  trap '_context_defaults_lock_cleanup' 0
+  trap 'exit 1' HUP INT TERM
+  if _context_store_lock "$m_ROOT" existing
+  then
+    _context_store_lock_status=0
+  else
+    _context_store_lock_status=$?
+  fi
+  case "$_context_store_lock_status" in
+    0) : ;;
+    5) return 0 ;;
+    3)
+      _context_error context-default-store-busy "$m_ROOT/state"
+      return 22
+      ;;
+    *)
+      _context_error context-default-store-invalid "$m_ROOT/state"
+      return 19
+      ;;
+  esac
   _context_store_name="preset.$1"
   _context_store_name_valid "$_context_store_name" || {
     _context_error context-preset-name-invalid "$1"
@@ -607,7 +652,7 @@ _context_store_delete_preset()
     _context_error context-preset-store-invalid "$1"
     return 19
   }
-}
+)
 
 # Apply only after resolution; caller PATH and active selection remain unchanged
 # on invalid operands, missing concretes, or a lost PATH ownership marker.

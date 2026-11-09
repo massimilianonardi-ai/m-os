@@ -143,12 +143,13 @@ LIMITATIONS
     command symlink already placed on PATH; package-local materialization
     remains the immutable installation owned by pkg.
 
-    Concurrent default updates serialize their read/merge/write sequence so
-    changes to separate package selections are retained. If an uncatchable
-    termination leaves the private update-lock directory behind, updates fail
-    closed after a bounded wait. The account owner may remove that lock and any
-    matching `._defaults-owner.*` marker only after confirming no context
-    default update is running.
+    All account-record mutations (default merge/clear and preset create/delete)
+    serialize through one private lock, so replacement and deletion cannot
+    race another context-store mutation. If an uncatchable termination leaves
+    the private update-lock directory behind, mutations fail closed after a
+    bounded wait. The account owner may remove that lock and any matching
+    `._defaults-owner.*` marker only after confirming no context store mutation
+    is running.
 
 DEPENDENCIES
     m_ROOT, m_PKG_DIR, optionally m_OSARCH, m_BIN_SYS_DIR and

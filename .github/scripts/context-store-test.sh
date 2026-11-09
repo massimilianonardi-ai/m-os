@@ -3,6 +3,7 @@ set -eu
 
 [ -n "${m_ROOT-}" ] || exit 1
 . "$m_LIB_DIR/sys/sh/core.lib.sh"
+loadsyslib "base"
 
 work="$m_ROOT/.tmp/context-store-test.$$"
 normal="$work/normal"
@@ -12,13 +13,9 @@ race="$work/race"
 fakebin="$work/fakebin"
 marker="$work/fake-ran"
 test_uid=$(command -p id -u)
-m_account="$m_ROOT/state/$test_uid"
-m_context_dir="$m_account/context"
 signal_marker="$work/lock-ready"
 signal_writer=
 old_path=$PATH
-
-[ ! -e "$m_account" ] && [ ! -L "$m_account" ] || exit 9
 
 cleanup()
 {
@@ -28,7 +25,6 @@ cleanup()
     command -p kill -TERM "$signal_writer" 2>/dev/null || :
     wait "$signal_writer" 2>/dev/null || :
   fi
-  command -p rm -rf "$m_context_dir/.defaults.lock" "$m_context_dir" "$m_account" 2>/dev/null || :
   command -p chmod 755 "$work/readonly/state" 2>/dev/null || :
   command -p rm -rf "$work"
 }
@@ -145,6 +141,16 @@ _context_store_delete "$normal" preset.fakecheck || exit 39
 PATH=$old_path
 export PATH
 
+# Named preset records use the same validated atomic store primitives.
+_context_store_write "$normal" preset.race "$record_a" || exit 55
+_context_store_read "$normal" preset.race || exit 56
+[ "$CONTEXT_STORE_PACKAGES" = 'pkg=context-a@1' ] || exit 57
+_context_store_write "$normal" preset.race "$record_b" || exit 58
+_context_store_read "$normal" preset.race || exit 59
+[ "$CONTEXT_STORE_PACKAGES" = 'pkg=context-b@1' ] || exit 60
+_context_store_delete "$normal" preset.race || exit 61
+[ ! -e "$normal/state/$test_uid/context/preset.race" ] || exit 62
+
 # A handled termination after lock acquisition releases its own lock and token.
 (
   _context_store_lock_dir=
@@ -152,7 +158,7 @@ export PATH
   _context_store_lock_token_owned=0
   trap '_context_defaults_lock_cleanup' 0
   trap 'exit 143' HUP INT TERM
-  _context_store_lock "$m_ROOT" || exit 46
+  _context_store_lock "$race" || exit 46
   command -p sleep 30 &
   lock_sleep=$!
   printf '%s\n' "$lock_sleep" > "$signal_marker"
@@ -172,12 +178,10 @@ command -p kill -TERM "$signal_writer" "$signal_sleep" || exit 49
 if wait "$signal_writer"; then exit 50; else signal_status=$?; fi
 signal_writer=
 [ "$signal_status" -eq 143 ] || exit 51
-[ ! -e "$m_context_dir/.defaults.lock" ] && [ ! -L "$m_context_dir/.defaults.lock" ] || exit 52
-for token in "$m_context_dir"/._defaults-owner.*
+[ ! -e "$race/state/$test_uid/context/.defaults.lock" ] && [ ! -L "$race/state/$test_uid/context/.defaults.lock" ] || exit 52
+for token in "$race/state/$test_uid/context"/._defaults-owner.*
 do
   [ -e "$token" ] || [ -L "$token" ] || continue
   exit 53
 done
-command -p rmdir "$m_context_dir" "$m_account" || exit 54
-
 printf '%s\n' 'PASS: account context store ownership, atomic records, isolation and hostile-input checks'
