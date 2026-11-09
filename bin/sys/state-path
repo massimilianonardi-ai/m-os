@@ -22,6 +22,16 @@ state_path_instance=${5-}
 
 case "$state_path_scope" in
   system)
+    if _m_system_state_selector_validate
+    then
+      :
+    else
+      state_path_selector_status=$?
+      case "$state_path_selector_status" in
+        3) : ;; # Pure resolution may report the semantic path before setup.
+        *) fatal 3 execution system-state-selector-invalid selector "$m_STATE_SYS_DIR" ;;
+      esac
+    fi
     state_path_root=$m_STATE_SYS_DIR
     ;;
   user)

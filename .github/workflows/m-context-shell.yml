@@ -135,6 +135,11 @@ jobs:
         run: |
           set -eu
           ./m sh .github/scripts/context-store-test.sh
+      - name: System state selector escape refusal
+        shell: sh
+        run: |
+          set -eu
+          ./m sh .github/scripts/state-selector-security-test.sh
       - name: Real package integration and runtime-specific library lookup
         shell: sh
         run: |

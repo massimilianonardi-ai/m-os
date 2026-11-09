@@ -52,6 +52,51 @@ valid_namespace_name()
   done
 }
 
+# Validate the legacy system profile selector without resolving the semantic
+# state pathname. Return 3 when it is absent; bootstrap may allow that state.
+_m_system_state_selector_validate()
+{
+  [ "$#" -eq 0 ] || return 2
+  [ -n "${m_ROOT-}" ] || return 1
+
+  _m_system_state_root="$m_ROOT/state/system"
+  _m_system_state_profiles="$_m_system_state_root/profile"
+  _m_system_state_selector="$_m_system_state_root/current"
+
+  if [ ! -e "$_m_system_state_selector" ] && [ ! -L "$_m_system_state_selector" ]
+  then
+    return 3
+  fi
+
+  [ -d "$m_ROOT/state" ] && [ ! -L "$m_ROOT/state" ] || return 1
+  [ -d "$_m_system_state_root" ] && [ ! -L "$_m_system_state_root" ] || return 1
+  [ -d "$_m_system_state_profiles" ] && [ ! -L "$_m_system_state_profiles" ] || return 1
+  [ -L "$_m_system_state_selector" ] || return 1
+
+  _m_system_state_target=$(
+    command -p -- readlink -- "$_m_system_state_selector" 2>/dev/null &&
+      printf x
+  ) || return 1
+  case "$_m_system_state_target" in
+    *x) _m_system_state_target=${_m_system_state_target%x} ;;
+    *) return 1 ;;
+  esac
+  _m_system_state_newline=$(printf '\nX')
+  _m_system_state_newline=${_m_system_state_newline%X}
+  case "$_m_system_state_target" in
+    profile/*"$_m_system_state_newline") : ;;
+    *) return 1 ;;
+  esac
+  _m_system_state_target=${_m_system_state_target%"$_m_system_state_newline"}
+  _m_system_state_identity=${_m_system_state_target#profile/}
+  case "$_m_system_state_identity" in
+    '' | */* | [!abcdefghijklmnopqrstuvwxyz0123456789]* | *[!abcdefghijklmnopqrstuvwxyz0123456789._-]* | *[._-]) return 1 ;;
+  esac
+
+  _m_system_state_profile="$_m_system_state_profiles/$_m_system_state_identity"
+  [ -d "$_m_system_state_profile" ] && [ ! -L "$_m_system_state_profile" ]
+}
+
 valid_dir()
 {
   [ "$#" -eq 1 ] || return 1

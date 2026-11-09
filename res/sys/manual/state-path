@@ -8,7 +8,11 @@ DESCRIPTION
     state-path is the public resolver for managed mutable state. It prints the
     semantic pathname for the requested state location and does not create the
     directory, mutate selectors, select package versions, or canonicalize a
-    selected binding target.
+    selected binding target. For system scope, an existing system/current
+    selector must be a direct relative profile/<identity> symlink to a real
+    profile directory under state/system/profile. A missing selector remains
+    resolvable as a semantic pathname, but state materialization requires a
+    valid selected profile.
 
     On success exactly one absolute pathname followed by a newline is written to
     standard output.
@@ -52,6 +56,8 @@ ENVIRONMENT
 EXIT STATUS
     0   The pathname was resolved and written successfully.
     2   The invocation, scope, owner, identity, area, or State Instance is invalid.
+    3   An existing system state selector is malformed or does not select a
+        real managed profile directory.
 
     A lower-level output failure is returned as a non-zero status from the command.
 

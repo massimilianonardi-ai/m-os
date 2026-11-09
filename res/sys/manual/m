@@ -12,6 +12,12 @@ DESCRIPTION
     exposes the final technical command path, and then performs command dispatch
     or managed-shell entry.
 
+    If state/system/current exists, bootstrap validates that it is a direct
+    relative profile/<identity> symlink to a real directory directly under
+    state/system/profile before sourcing generated system environment files.
+    An absent current selector is allowed during bootstrap; malformed, chained,
+    absolute, or escaping selectors fail closed.
+
     With no command operand, m starts the managed shell through the shell
     facility.
 

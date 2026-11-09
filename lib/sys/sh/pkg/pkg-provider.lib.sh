@@ -1061,6 +1061,7 @@ _pkg_provider_global_environment_restore()
 pkg_provider_global_environment_materialize()
 (
   [ "$#" -eq 0 ] || return 2
+  _m_system_state_selector_validate || return 1
 
   pkg_provider_materialize_cache="$m_STATE_SYS_DIR/sys/environment/cache"
   umask 022

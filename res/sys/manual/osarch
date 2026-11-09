@@ -34,6 +34,11 @@ DESCRIPTION
     osarch update detects the host operating system and architecture through the
     m OS/architecture facility and selects the resulting normalized osarch.
 
+    Every invocation requires state/system/current to be a direct relative
+    profile/<identity> link to a real managed profile directory. A missing or
+    malformed system selector is rejected before osarch reads or writes its
+    environment selector.
+
     osarch set <osarch> selects the explicit supported normalized identity.
 
     The normalized identity has the form:
