@@ -93,6 +93,17 @@ export -- m_LOG_LEVEL
 
 . "$m_LIB_DIR/sys/sh/core.lib.sh"
 
+if _m_system_state_selector_validate
+then
+  :
+else
+  m_system_state_selector_status=$?
+  case "$m_system_state_selector_status" in
+    3) : ;; # No current profile is permitted during bootstrap.
+    *) fatal execution system-state-selector-invalid selector "$m_STATE_SYS_DIR" ;;
+  esac
+fi
+
 #-------------------------------------------------------------------------------
 # GLOBAL EXECUTION ENVIRONMENT
 #-------------------------------------------------------------------------------
