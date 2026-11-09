@@ -8,27 +8,61 @@ DESCRIPTION
     non-executable shell source lookup through PATH and selected Java JAR
     directories through CLASSPATH. It does not create filesystem projections and
     does not resolve package dependencies or facility provider environments.
+    It stores package-only per-account defaults and named package presets in
+    the strict context-store library. The generalized profile/provider/state
+    dimensions and child envelope are not implemented in this increment.
 
     The caller must invoke the function in the shell whose PATH should change.
     Calling it in a pipeline, subshell or command substitution changes only
     that child environment.
 
 FUNCTIONS
-    context [pkg=<package>@<version>[!<osarch>] ...]
+    context [pkg=<package>@<version>[!<osarch>] | full-context=<name> ...]
 
-        With no arguments, clear the current context-owned package command
-        selections and remove the previously published command/library block
-        from PATH and Java JAR contributions from CLASSPATH.
+        With no arguments, initialize the package selection from the persisted
+        per-account defaults. If the defaults record is absent in an available
+        account store, this package-only increment applies an empty package
+        selection and removes the previous context-owned command and library
+        blocks from PATH and CLASSPATH. Installation-managed baseline
+        resolution is not implemented yet.
 
-        With one or more pkg= arguments, select each installed concrete.
-        Arguments are evaluated left-to-right. A later selection for the same
-        package name replaces the earlier one; selections for other package
-        names are retained across calls. The most recently selected package
-        directory appears first in the context-owned PATH block. A v1 concrete
-        contributes cmd and lib/sh/lib/java views; a v2 concrete contributes
-        link/bin and link/lib/sh/link/lib/java views. Each selected concrete's
-        shell libraries join PATH and its Java JAR view contributes one literal
-        wildcard entry (<directory>/*) to CLASSPATH.
+        Each pkg= operand selects one installed concrete; a full-context= operand
+        expands a saved named preset at its command-line position. Selections
+        start from persisted defaults and fold left-to-right. A later
+        selection for the same package replaces its earlier version, and
+        selections for other packages in the defaults remain. The most recent
+        package directory appears first in the context-owned PATH block. A v1
+        concrete contributes cmd and lib/sh/lib/java views; a v2 concrete
+        contributes link/bin and link/lib/sh/link/lib/java views. Each selected
+        concrete's shell libraries join PATH and its Java JAR view contributes
+        one literal wildcard entry (<directory>/*) to CLASSPATH.
+
+    context --set-defaults pkg=<package>@<version>[!<osarch>] ...
+
+        Validate the complete merged package-default selection, then atomically
+        replace the supplied package dimensions in the current POSIX account's
+        defaults. Unspecified package defaults are retained. This operation
+        does not change the current shell context and does not install packages.
+
+    context --clear-defaults
+
+        Remove the current POSIX account's persisted package defaults. This is
+        idempotent, leaves the active shell context unchanged, and leaves saved
+        presets intact. A later no-argument context applies an empty package
+        selection in this increment. The generalized installation-managed
+        baseline resolver is not implemented yet.
+
+    context --define-preset <name> pkg=<package>@<version>[!<osarch>] ...
+
+        Validate and atomically create or replace a named package-selection
+        preset under the current POSIX account. Preset names contain only ASCII
+        letters, digits, underscore, dot or hyphen and begin with a letter or
+        digit. Preset definitions do not change the active shell context.
+
+    context --delete-preset <name>
+
+        Delete one saved preset. Deleting an absent preset succeeds; the active
+        shell context and other saved selections are unchanged.
 
         An osarch-qualified concrete must match the current m_OSARCH.
         A generic concrete has no osarch suffix. The installed concrete and
@@ -84,11 +118,16 @@ RETURN STATUS
     17   CLASSPATH is readonly in the invoking shell
     18   v2 installed command link target no longer satisfies its validated
          concrete-local direct or wrapper layout
+    19   account context store missing, unsafe, malformed or inaccessible
+    20   invalid or unavailable named preset
+    21   account default or preset could not be atomically written
+    22   account default update lock remained busy beyond the bounded wait
 
 LIMITATIONS
     This is the first package-command and library selection increment of the broader
     context design. It does not yet accept facility, provider, profile,
-    locale, user/system, full-context or inheritance-policy operands.
+    locale, user/system, or inheritance-policy operands. Presets currently
+    contain only package concrete selections.
     Only sh and Java ordinary library search views are supported; other
     runtimes need their own defined import/loader semantics. CLASSPATH may be
     overridden by explicit Java -cp or launcher-specific class loading;
@@ -103,6 +142,13 @@ LIMITATIONS
     validation cannot prevent subsequent external mutation of a direct
     command symlink already placed on PATH; package-local materialization
     remains the immutable installation owned by pkg.
+
+    Concurrent default updates serialize their read/merge/write sequence so
+    changes to separate package selections are retained. If an uncatchable
+    termination leaves the private update-lock directory behind, updates fail
+    closed after a bounded wait. The account owner may remove that lock and any
+    matching `._defaults-owner.*` marker only after confirming no context
+    default update is running.
 
 DEPENDENCIES
     m_ROOT, m_PKG_DIR, optionally m_OSARCH, m_BIN_SYS_DIR and

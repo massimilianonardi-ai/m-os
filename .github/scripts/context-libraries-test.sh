@@ -71,7 +71,7 @@ CLASSPATH="$CLASSPATH:$work/consumer" java Consumer > "$work/observed"
 
 before_path=$PATH
 before_classpath=$CLASSPATH
-if context pkg=context-ci-other@1
+if context pkg=context-ci-lib@2 pkg=context-ci-other@1
 then
   echo 'FAIL: duplicate exported shell library accepted' >&2
   exit 15

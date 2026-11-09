@@ -1,4 +1,5 @@
 loadsyslib "pkg/pkg-common"
+loadsyslib "context-store"
 
 _context_error()
 {
@@ -24,11 +25,14 @@ _context_views_set()
   esac
 }
 
-# Compute the active, most-recent-first concrete list without modifying the
-# calling shell. The caller applies it only after all checks succeed.
-_context_resolve()
+# Compute a most-recent-first concrete list from a data-only baseline followed
+# by ordered pkg= operands. The caller applies it only after every check passes.
+_context_resolve_list()
 (
-  if [ "$#" -eq 0 ]
+  [ "$#" -eq 2 ] || return 2
+  _context_initial_operands=$1
+  _context_ordered_operands=$2
+  if [ -z "$_context_initial_operands" ] && [ -z "$_context_ordered_operands" ]
   then
     return 0
   fi
@@ -38,12 +42,32 @@ _context_resolve()
   # variables other than the PATH/CLASSPATH owned by context.
   loadsyslib "osarch" || return 1
 
-  _context_resolved=${m_CONTEXT_PACKAGES-}
+  _context_resolved=
   _context_newline='
 '
+  _context_remaining_operands=$_context_initial_operands
+  if [ -n "$_context_ordered_operands" ]
+  then
+    if [ -n "$_context_remaining_operands" ]
+    then
+      _context_remaining_operands="$_context_remaining_operands$_context_newline$_context_ordered_operands"
+    else
+      _context_remaining_operands=$_context_ordered_operands
+    fi
+  fi
 
-  for _context_operand
+  while [ -n "$_context_remaining_operands" ]
   do
+    case "$_context_remaining_operands" in
+      *"$_context_newline"*)
+        _context_operand=${_context_remaining_operands%%"$_context_newline"*}
+        _context_remaining_operands=${_context_remaining_operands#*"$_context_newline"}
+        ;;
+      *)
+        _context_operand=$_context_remaining_operands
+        _context_remaining_operands=
+        ;;
+    esac
     case "$_context_operand" in
       pkg=*) _context_requested=${_context_operand#pkg=} ;;
       *) _context_error context-operand-invalid "$_context_operand"; return 2 ;;
@@ -317,6 +341,274 @@ _context_libraries_validate()
   done
 )
 
+_context_store_load_defaults()
+{
+  [ "$#" -eq 0 ] || return 2
+  _context_store_read "$m_ROOT" defaults
+  _context_store_status=$?
+  case "$_context_store_status" in
+    0) return 0 ;;
+    5)
+      CONTEXT_STORE_RECORD=
+      CONTEXT_STORE_PACKAGES=
+      return 0
+      ;;
+    *)
+      _context_error context-default-store-invalid "$m_ROOT/state"
+      return 19
+      ;;
+  esac
+}
+
+_context_record_from_concretes()
+{
+  [ "$#" -eq 1 ] || return 2
+  _context_record_items=$1
+  _context_record_newline=$(printf '\nX')
+  _context_record_newline=${_context_record_newline%X}
+  _context_store_record=m-context-record-v1
+  while [ -n "$_context_record_items" ]
+  do
+    case "$_context_record_items" in
+      *"$_context_record_newline"*)
+        _context_record_item=${_context_record_items%%"$_context_record_newline"*}
+        _context_record_items=${_context_record_items#*"$_context_record_newline"}
+        ;;
+      *)
+        _context_record_item=$_context_record_items
+        _context_record_items=
+        ;;
+    esac
+    _context_store_record="$_context_store_record$_context_record_newline"pkg=$_context_record_item
+  done
+}
+
+_context_defaults_lock_cleanup()
+{
+  [ "${_context_store_lock_token_owned-0}" -eq 1 ] || return 0
+  if [ -n "${_context_store_lock_dir-}" ] &&
+     [ -f "$_context_store_lock_dir/owner" ] &&
+     [ ! -L "$_context_store_lock_dir/owner" ]
+  then
+    IFS= read -r _context_cleanup_owner < "$_context_store_lock_dir/owner" || _context_cleanup_owner=
+    if [ "$_context_cleanup_owner" = "$_context_store_lock_token_path" ]; then
+      _context_store_unlock "$_context_store_lock_dir" >/dev/null 2>&1 || :
+      return 0
+    fi
+  fi
+  command -p rm -f "$_context_store_lock_token_path" 2>/dev/null || :
+  _context_store_lock_token_owned=0
+}
+
+_context_operand_append()
+{
+  [ "$#" -eq 2 ] || return 2
+  _context_operand_buffer=$1
+  _context_operand_value=$2
+  _context_operand_newline=$(printf '\nX')
+  _context_operand_newline=${_context_operand_newline%X}
+  if [ -n "$_context_operand_buffer" ]
+  then
+    _context_operand_buffer="$_context_operand_buffer$_context_operand_newline$_context_operand_value"
+  else
+    _context_operand_buffer=$_context_operand_value
+  fi
+}
+
+_context_build_pkg_operands()
+{
+  _context_requested_operands=
+  _context_operand_newline=$(printf '\nX')
+  _context_operand_newline=${_context_operand_newline%X}
+  _context_operand_cr=$(printf '\r')
+  for _context_operand
+  do
+    case "$_context_operand" in
+      *"$_context_operand_newline"* | *"$_context_operand_cr"*)
+        _context_error context-operand-invalid "$_context_operand"
+        return 2
+        ;;
+      pkg=*) _context_operand_append "$_context_requested_operands" "$_context_operand"; _context_requested_operands=$_context_operand_buffer ;;
+      *) _context_error context-operand-invalid "$_context_operand"; return 2 ;;
+    esac
+  done
+  [ -n "$_context_requested_operands" ] || {
+    _context_error context-operand-invalid "missing package selector"
+    return 2
+  }
+}
+
+_context_build_activation_operands()
+{
+  _context_requested_operands=
+  _context_operand_newline=$(printf '\nX')
+  _context_operand_newline=${_context_operand_newline%X}
+  _context_operand_cr=$(printf '\r')
+  for _context_operand
+  do
+    case "$_context_operand" in
+      *"$_context_operand_newline"* | *"$_context_operand_cr"*)
+        _context_error context-operand-invalid "$_context_operand"
+        return 2
+        ;;
+      pkg=*)
+        _context_operand_append "$_context_requested_operands" "$_context_operand"
+        _context_requested_operands=$_context_operand_buffer
+        ;;
+      full-context=*)
+        _context_preset_name=${_context_operand#full-context=}
+        _context_store_name="preset.$_context_preset_name"
+        _context_store_name_valid "$_context_store_name" || {
+          _context_error context-preset-name-invalid "$_context_preset_name"
+          return 20
+        }
+        _context_store_read "$m_ROOT" "$_context_store_name"
+        _context_store_status=$?
+        case "$_context_store_status" in
+          0) : ;;
+          5)
+            _context_error context-preset-unavailable "$_context_preset_name"
+            return 20
+            ;;
+          *)
+            _context_error context-preset-store-invalid "$_context_preset_name"
+            return 19
+            ;;
+        esac
+        _context_preset_operands=$CONTEXT_STORE_PACKAGES
+        while [ -n "$_context_preset_operands" ]
+        do
+          case "$_context_preset_operands" in
+            *"$_context_operand_newline"*)
+              _context_preset_operand=${_context_preset_operands%%"$_context_operand_newline"*}
+              _context_preset_operands=${_context_preset_operands#*"$_context_operand_newline"}
+              ;;
+            *)
+              _context_preset_operand=$_context_preset_operands
+              _context_preset_operands=
+              ;;
+          esac
+          _context_operand_append "$_context_requested_operands" "$_context_preset_operand"
+          _context_requested_operands=$_context_operand_buffer
+        done
+        ;;
+      *) _context_error context-operand-invalid "$_context_operand"; return 2 ;;
+    esac
+  done
+}
+
+_context_prepare_packages()
+(
+  [ "$#" -eq 2 ] || return 2
+  _context_prepared=$(_context_resolve_list "$1" "$2") || return $?
+  _context_commands_validate "$_context_prepared" || return $?
+  _context_libraries_validate "$_context_prepared" || return $?
+  printf '%s' "$_context_prepared"
+)
+
+_context_store_set_defaults()
+(
+  [ "$#" -gt 0 ] || {
+    _context_error context-operand-invalid "missing default selector"
+    return 2
+  }
+  _context_store_lock_dir=
+  _context_store_lock_token_path=
+  _context_store_lock_token_owned=0
+  trap '_context_defaults_lock_cleanup' 0
+  trap 'exit 1' HUP INT TERM
+  if _context_store_lock "$m_ROOT"
+  then
+    _context_store_lock_status=0
+  else
+    _context_store_lock_status=$?
+  fi
+  case "$_context_store_lock_status" in
+    0) : ;;
+    3)
+      _context_error context-default-store-busy "$m_ROOT/state"
+      return 22
+      ;;
+    *)
+      _context_error context-default-store-invalid "$m_ROOT/state"
+      return 19
+      ;;
+  esac
+  _context_store_load_defaults || return $?
+  _context_default_operands=$CONTEXT_STORE_PACKAGES
+  _context_build_pkg_operands "$@" || return $?
+  _context_next=$(_context_prepare_packages "$_context_default_operands" "$_context_requested_operands") || return $?
+  _context_record_from_concretes "$_context_next"
+  _context_store_write "$m_ROOT" defaults "$_context_store_record" || {
+    _context_error context-default-store-write-failed "$m_ROOT/state"
+    return 21
+  }
+)
+
+_context_store_define_preset()
+{
+  [ "$#" -ge 2 ] || return 2
+  _context_preset_name=$1
+  _context_store_name="preset.$_context_preset_name"
+  _context_store_name_valid "$_context_store_name" || {
+    _context_error context-preset-name-invalid "$_context_preset_name"
+    return 20
+  }
+  shift
+  _context_build_pkg_operands "$@" || return $?
+  _context_next=$(_context_prepare_packages '' "$_context_requested_operands") || return $?
+  _context_record_from_concretes "$_context_next"
+  _context_store_write "$m_ROOT" "$_context_store_name" "$_context_store_record" || {
+    _context_error context-preset-store-write-failed "$_context_preset_name"
+    return 21
+  }
+}
+
+_context_store_delete_defaults()
+(
+  _context_store_lock_dir=
+  _context_store_lock_token_path=
+  _context_store_lock_token_owned=0
+  trap '_context_defaults_lock_cleanup' 0
+  trap 'exit 1' HUP INT TERM
+  if _context_store_lock "$m_ROOT" existing
+  then
+    _context_store_lock_status=0
+  else
+    _context_store_lock_status=$?
+  fi
+  case "$_context_store_lock_status" in
+    0) : ;;
+    5) return 0 ;;
+    3)
+      _context_error context-default-store-busy "$m_ROOT/state"
+      return 22
+      ;;
+    *)
+      _context_error context-default-store-invalid "$m_ROOT/state"
+      return 19
+      ;;
+  esac
+  _context_store_delete "$m_ROOT" defaults || {
+    _context_error context-default-store-invalid "$m_ROOT/state"
+    return 19
+  }
+)
+
+_context_store_delete_preset()
+{
+  [ "$#" -eq 1 ] || return 2
+  _context_store_name="preset.$1"
+  _context_store_name_valid "$_context_store_name" || {
+    _context_error context-preset-name-invalid "$1"
+    return 20
+  }
+  _context_store_delete "$m_ROOT" "$_context_store_name" || {
+    _context_error context-preset-store-invalid "$1"
+    return 19
+  }
+}
+
 # Apply only after resolution; caller PATH and active selection remain unchanged
 # on invalid operands, missing concretes, or a lost PATH ownership marker.
 context()
@@ -329,8 +621,42 @@ context()
     *:*) _context_error context-path-unsupported "$m_PKG_DIR"; return 7 ;;
   esac
 
-  # Resolve and validate both lookup surfaces before touching the shell.
-  _context_next="$(_context_resolve "$@")" || return $?
+  case "${1-}" in
+    --clear-defaults)
+      [ "$#" -eq 1 ] || { _context_error context-operand-invalid --clear-defaults; return 2; }
+      _context_store_delete_defaults
+      return $?
+      ;;
+    --set-defaults)
+      shift
+      _context_store_set_defaults "$@"
+      return $?
+      ;;
+    --define-preset)
+      [ "$#" -ge 3 ] || { _context_error context-operand-invalid --define-preset; return 2; }
+      _context_preset_name=$2
+      shift 2
+      _context_store_define_preset "$_context_preset_name" "$@"
+      return $?
+      ;;
+    --delete-preset)
+      [ "$#" -eq 2 ] || { _context_error context-operand-invalid --delete-preset; return 2; }
+      _context_store_delete_preset "$2"
+      return $?
+      ;;
+  esac
+
+  _context_store_load_defaults || return $?
+  _context_default_operands=$CONTEXT_STORE_PACKAGES
+  if [ "$#" -gt 0 ]
+  then
+    _context_build_activation_operands "$@" || return $?
+  else
+    _context_requested_operands=
+  fi
+
+  # Resolve the persisted baseline and ordered overrides before touching shell state.
+  _context_next="$(_context_prepare_packages "$_context_default_operands" "$_context_requested_operands")" || return $?
   _context_path_unapply "${PATH-}" "${m_CONTEXT_PATH_PREFIX-}" || return $?
   _context_host_path=$_context_path_base
 
