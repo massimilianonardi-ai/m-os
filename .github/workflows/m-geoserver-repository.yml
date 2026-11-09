@@ -33,6 +33,10 @@ jobs:
         shell: sh
         run: |
           set -eu
+          # pkg refreshes its catalog cache with `git pull --ff-only` on
+          # every invocation. The pinned checkout is detached, so give that
+          # immutable revision a local branch before pkg clones it.
+          git -C "$GITHUB_WORKSPACE/catalog" switch --create m-geoserver-pinned-catalog
           ./m osarch update
           conf=$(./m state-path system sys pkg conf)
           mkdir -p -- "$conf"
@@ -72,8 +76,8 @@ jobs:
           case "$versions" in *"$latest"*) : ;; *) echo "latest install missing: $latest" >&2; exit 1 ;; esac
           ./m pkg provider default java temurin@21+35
           ./m pkg provider default geoserver "$latest"
-          selected=$(./m pkg default geoserver)
-          [ "$selected" = "$latest" ] || { echo "GeoServer default is $selected, expected $latest" >&2; exit 1; }
+          selected=$(./m pkg provider default geoserver)
+          [ "$selected" = "$latest" ] || { echo "GeoServer provider default is $selected, expected $latest" >&2; exit 1; }
           work=
           cleanup() {
             ./m srv stop geoserver >/dev/null 2>&1 || :
