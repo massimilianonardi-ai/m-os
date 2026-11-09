@@ -151,6 +151,27 @@ _context_store_read "$normal" preset.race || exit 59
 _context_store_delete "$normal" preset.race || exit 61
 [ ! -e "$normal/state/$test_uid/context/preset.race" ] || exit 62
 
+# Public preset mutators must fail closed while another account update holds
+# the shared lock, and leave the existing preset unchanged.
+_context_store_write "$normal" preset.locked "$record_a" || exit 63
+(
+  _context_store_lock_dir=
+  _context_store_lock_token_path=
+  _context_store_lock_token_owned=0
+  trap '_context_defaults_lock_cleanup' 0
+  trap 'exit 1' HUP INT TERM
+  _context_store_lock "$normal" || exit 64
+  m_ROOT=$normal
+  export m_ROOT
+  if context --define-preset locked pkg=context-b@1; then exit 65; else status=$?; fi
+  [ "$status" -eq 22 ] || exit 66
+  if context --delete-preset locked; then exit 67; else status=$?; fi
+  [ "$status" -eq 22 ] || exit 68
+) || exit 69
+_context_store_read "$normal" preset.locked || exit 70
+[ "$CONTEXT_STORE_PACKAGES" = 'pkg=context-a@1' ] || exit 71
+_context_store_delete "$normal" preset.locked || exit 72
+
 # A handled termination after lock acquisition releases its own lock and token.
 (
   _context_store_lock_dir=
