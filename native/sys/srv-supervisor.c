@@ -599,7 +599,7 @@ static int launch_server(const char *root, const char *dir, const char *socket_p
             grandchild = fork();
             if (grandchild < 0) _exit(1);
             if (grandchild > 0) _exit(0);
-            chdir("/");
+            if (chdir("/") < 0) _exit(1);
             environ = empty_environment;
             { int fd = open("/dev/null", O_RDWR); if (fd >= 0) { dup2(fd, 0); dup2(fd, 1); dup2(fd, 2); if (fd > 2) close(fd); } }
             _exit(server_main(root, socket_path, lock_path, pidfile));
