@@ -1,4 +1,5 @@
 loadsyslib "pkg/pkg-common"
+loadsyslib "pkg/facility/pkg-dependency"
 loadsyslib "context-store"
 loadsyslib "context-profile-registry"
 
@@ -6,6 +7,16 @@ _context_error()
 {
   [ "$#" -eq 2 ] || return 2
   log error execution "$1" operation context value "$2"
+}
+
+_context_host_osarch_ensure()
+{
+  [ "$#" -eq 0 ] || return 2
+  if [ -z "${m_OSARCH-}" ]
+  then
+    loadsyslib osarch || return 1
+  fi
+  pkg_osarch_valid "$m_OSARCH"
 }
 
 # Resolve the selected concrete's schema once for command and library views.
@@ -41,7 +52,7 @@ _context_resolve_list()
   # Detect the active host platform in this subshell: selecting an exact
   # concrete must work in a fresh m sh session without changing caller
   # variables other than the PATH/CLASSPATH owned by context.
-  loadsyslib "osarch" || return 1
+  _context_host_osarch_ensure || return 1
 
   _context_resolved=
   _context_newline='
@@ -353,7 +364,11 @@ _context_store_load_defaults()
       CONTEXT_STORE_RECORD=
       CONTEXT_STORE_VERSION=
       CONTEXT_STORE_SYSTEM=
+      CONTEXT_STORE_USER=
+      CONTEXT_STORE_LOCALE=
+      CONTEXT_STORE_OSARCH=
       CONTEXT_STORE_PACKAGES=
+      CONTEXT_STORE_PROVIDERS=
       return 0
       ;;
     *)
@@ -362,6 +377,137 @@ _context_store_load_defaults()
       ;;
   esac
 }
+
+_context_user_identity_resolve()
+{
+  [ "$#" -eq 1 ] || return 2
+  _context_user_identity=$1
+  _context_profile_registry_identity_valid "$_context_user_identity" || return 1
+  if [ -e "$m_ROOT/state" ] || [ -L "$m_ROOT/state" ]
+  then
+    [ -d "$m_ROOT/state" ] && [ ! -L "$m_ROOT/state" ] || return 1
+  fi
+  if [ -e "$m_ROOT/state/user" ] || [ -L "$m_ROOT/state/user" ]
+  then
+    [ -d "$m_ROOT/state/user" ] && [ ! -L "$m_ROOT/state/user" ] || return 1
+  fi
+  _context_user_identity_path="$m_ROOT/state/user/$_context_user_identity"
+  if [ -e "$_context_user_identity_path" ] || [ -L "$_context_user_identity_path" ]
+  then
+    [ -d "$_context_user_identity_path" ] && [ ! -L "$_context_user_identity_path" ] || return 1
+  fi
+  _context_user_identity_resolved=$_context_user_identity_path
+}
+
+_context_locale_resolve()
+{
+  [ "$#" -eq 1 ] || return 2
+  _context_locale_requested=$1
+  _context_store_locale_valid "$_context_locale_requested" || return 1
+  [ -d "$m_LANG_DIR" ] && [ ! -L "$m_LANG_DIR" ] || return 1
+  _context_locale_path="$m_LANG_DIR/$_context_locale_requested"
+  [ -d "$_context_locale_path" ] && [ ! -L "$_context_locale_path" ] || return 1
+  _context_locale_selected=$_context_locale_requested
+}
+
+_context_global_locale_resolve()
+{
+  [ "$#" -eq 0 ] || return 2
+  _context_global_locale_selected=
+  if [ -L "$m_LANG_CURRENT_DIR" ]
+  then
+    _context_global_locale_selected=$(command -p readlink "$m_LANG_CURRENT_DIR" 2>/dev/null) || return 1
+  fi
+  [ -n "$_context_global_locale_selected" ] || _context_global_locale_selected=${m_LANGUAGE_FALLBACK:-en_US}
+  _context_locale_resolve "$_context_global_locale_selected"
+}
+
+_context_provider_pins_set()
+{
+  [ "$#" -eq 3 ] || return 2
+  _context_provider_pins_current=$1
+  _context_provider_pins_facility=$2
+  _context_provider_pins_selector=$3
+  _pkg_facility_name_valid "$_context_provider_pins_facility" || return 1
+  pkg_request_read _context_provider_pkg _context_provider_version _context_provider_arch "$_context_provider_pins_selector" || return 1
+  _context_provider_pins_newline='
+'
+  _context_provider_pins_next=
+  _context_provider_pins_found=0
+  _context_provider_pins_remaining=$_context_provider_pins_current
+  while [ -n "$_context_provider_pins_remaining" ]
+  do
+    case "$_context_provider_pins_remaining" in
+      *"$_context_provider_pins_newline"*)
+        _context_provider_pins_line=${_context_provider_pins_remaining%%"$_context_provider_pins_newline"*}
+        _context_provider_pins_remaining=${_context_provider_pins_remaining#*"$_context_provider_pins_newline"}
+        ;;
+      *) _context_provider_pins_line=$_context_provider_pins_remaining; _context_provider_pins_remaining= ;;
+    esac
+    _context_provider_pins_line_facility=${_context_provider_pins_line#provider.}
+    _context_provider_pins_line_facility=${_context_provider_pins_line_facility%%=*}
+    if [ "$_context_provider_pins_line_facility" = "$_context_provider_pins_facility" ]
+    then
+      _context_provider_pins_line="provider.$_context_provider_pins_facility=$_context_provider_pins_selector"
+      _context_provider_pins_found=1
+    fi
+    if [ -n "$_context_provider_pins_next" ]; then
+      _context_provider_pins_next="$_context_provider_pins_next$_context_provider_pins_newline$_context_provider_pins_line"
+    else
+      _context_provider_pins_next=$_context_provider_pins_line
+    fi
+  done
+  if [ "$_context_provider_pins_found" -eq 0 ]
+  then
+    if [ -n "$_context_provider_pins_next" ]; then
+      _context_provider_pins_next="$_context_provider_pins_next$_context_provider_pins_newline"
+    fi
+    _context_provider_pins_next="${_context_provider_pins_next}provider.$_context_provider_pins_facility=$_context_provider_pins_selector"
+  fi
+  _context_provider_pins_result=$_context_provider_pins_next
+}
+
+# Resolve every provider pin against the selected package target and require
+# that the installed concrete actually publishes the named facility. This is
+# run during preparation and inherited-envelope validation, before activation.
+_context_provider_pins_validate()
+(
+  [ "$#" -eq 2 ] || return 2
+  _context_provider_validate_remaining=$1
+  _context_provider_validate_osarch=$2
+  _context_provider_validate_newline='
+'
+  while [ -n "$_context_provider_validate_remaining" ]
+  do
+    case "$_context_provider_validate_remaining" in
+      *"$_context_provider_validate_newline"*)
+        _context_provider_validate_line=${_context_provider_validate_remaining%%"$_context_provider_validate_newline"*}
+        _context_provider_validate_remaining=${_context_provider_validate_remaining#*"$_context_provider_validate_newline"}
+        ;;
+      *) _context_provider_validate_line=$_context_provider_validate_remaining; _context_provider_validate_remaining= ;;
+    esac
+    case "$_context_provider_validate_line" in provider.*=*) : ;; *) return 1 ;; esac
+    _context_provider_validate_facility=${_context_provider_validate_line#provider.}
+    _context_provider_validate_facility=${_context_provider_validate_facility%%=*}
+    _pkg_facility_name_valid "$_context_provider_validate_facility" || return 1
+    _context_provider_validate_selector=${_context_provider_validate_line#*=}
+    _context_provider_validate_concrete=$(pkg_provider_selector_resolve \
+      "$_context_provider_validate_selector" "$_context_provider_validate_osarch") || return 1
+    _context_provider_validate_file="$m_PKG_DIR/$_context_provider_validate_concrete/facility"
+    _pkg_facility_file_validate "$_context_provider_validate_file" || return 1
+    _context_provider_validate_found=0
+    while IFS= read -r _context_provider_validate_entry
+    do
+      _pkg_facility_line_parse "$_context_provider_validate_entry" || return 1
+      if [ "$pkg_facility_name" = "$_context_provider_validate_facility" ]
+      then
+        _context_provider_validate_found=1
+        break
+      fi
+    done < "$_context_provider_validate_file"
+    [ "$_context_provider_validate_found" -eq 1 ] || return 1
+  done
+)
 
 _context_profile_resolve()
 {
@@ -394,18 +540,58 @@ _context_profile_resolve()
 
 _context_envelope_build()
 {
-  [ "$#" -eq 3 ] || return 2
+  [ "$#" -eq 7 ] || return 2
   _context_envelope_system=$1
-  _context_envelope_packages=$2
-  _context_envelope_classpath_host_set=$3
+  _context_envelope_user=$2
+  _context_envelope_locale=$3
+  _context_envelope_osarch=$4
+  _context_envelope_providers=$5
+  _context_envelope_packages=$6
+  _context_envelope_classpath_host_set=$7
   _context_envelope_uid=$(command -p id -u 2>/dev/null) || return 1
   case "$_context_envelope_uid" in '' | *[!0-9]*) return 1 ;; esac
   case "$m_ROOT" in *'
 '*) return 1 ;; esac
   case "$_context_envelope_classpath_host_set" in 0 | 1) : ;; *) return 1 ;; esac
+  _context_profile_registry_identity_valid "$_context_envelope_system" || return 1
+  _context_user_identity_resolve "$_context_envelope_user" || return 1
+  _context_locale_resolve "$_context_envelope_locale" || return 1
+  pkg_osarch_valid "$_context_envelope_osarch" || return 1
   _context_envelope_newline='
 '
-  _context_envelope_value="m-context-envelope-v1$_context_envelope_newline"root=$m_ROOT$_context_envelope_newline"uid=$_context_envelope_uid$_context_envelope_newline"system=$_context_envelope_system$_context_envelope_newline"classpath-host-set=$_context_envelope_classpath_host_set"
+  _context_envelope_value=$(printf '%s\n' \
+    m-context-envelope-v2 \
+    "root=$m_ROOT" \
+    "uid=$_context_envelope_uid" \
+    "system=$_context_envelope_system" \
+    "user=$_context_envelope_user" \
+    "locale=$_context_envelope_locale" \
+    "osarch=$_context_envelope_osarch" \
+    "classpath-host-set=$_context_envelope_classpath_host_set") || return 1
+  _context_envelope_remaining=$_context_envelope_providers
+  while [ -n "$_context_envelope_remaining" ]
+  do
+    case "$_context_envelope_remaining" in
+      *"$_context_envelope_newline"*)
+        _context_envelope_item=${_context_envelope_remaining%%"$_context_envelope_newline"*}
+        _context_envelope_remaining=${_context_envelope_remaining#*"$_context_envelope_newline"}
+        ;;
+      *) _context_envelope_item=$_context_envelope_remaining; _context_envelope_remaining= ;;
+    esac
+    case "$_context_envelope_item" in
+      provider.*=*)
+        _context_envelope_facility=${_context_envelope_item#provider.}
+        _context_envelope_facility=${_context_envelope_facility%%=*}
+        _pkg_facility_name_valid "$_context_envelope_facility" || return 1
+        _context_envelope_selector=${_context_envelope_item#*=}
+        pkg_request_read _context_envelope_pkg _context_envelope_version _context_envelope_arch "$_context_envelope_selector" || return 1
+        ;;
+      *) return 1 ;;
+    esac
+    _context_envelope_value="$_context_envelope_value$_context_envelope_newline$_context_envelope_item"
+  done
+  _context_provider_pins_validate "$_context_envelope_providers" \
+    "$_context_envelope_osarch" || return 1
   _context_envelope_remaining=$_context_envelope_packages
   while [ -n "$_context_envelope_remaining" ]
   do
@@ -419,7 +605,7 @@ _context_envelope_build()
         _context_envelope_remaining=
         ;;
     esac
-    _context_envelope_value="$_context_envelope_value$_context_envelope_newline"package=$_context_envelope_item
+    _context_envelope_value="${_context_envelope_value}${_context_envelope_newline}package=$_context_envelope_item"
   done
   [ "${#_context_envelope_value}" -le 16383 ] || return 1
   printf '%s\n' "$_context_envelope_value"
@@ -436,6 +622,10 @@ _context_envelope_validate()
   _context_envelope_root=
   _context_envelope_uid=
   _context_envelope_system=
+  _context_envelope_user=
+  _context_envelope_locale=
+  _context_envelope_osarch=
+  _context_envelope_providers=
   _context_envelope_classpath_host_set=
   _context_envelope_packages=
   _context_envelope_package_ids=
@@ -443,10 +633,16 @@ _context_envelope_validate()
 '
   _context_envelope_line_count=0
   _context_envelope_header=1
+  _context_envelope_format_version=
   _context_envelope_root_seen=0
   _context_envelope_uid_seen=0
   _context_envelope_system_seen=0
+  _context_envelope_user_seen=0
+  _context_envelope_locale_seen=0
+  _context_envelope_osarch_seen=0
   _context_envelope_classpath_seen=0
+  _context_envelope_provider_seen=
+  _context_envelope_phase=0
   _context_envelope_newline='
 '
   _context_envelope_cr=$(printf '\r')
@@ -457,43 +653,103 @@ _context_envelope_validate()
     case "$_context_envelope_line" in *"$_context_envelope_cr"*) return 1 ;; esac
     if [ "$_context_envelope_header" -eq 1 ]
     then
-      [ "$_context_envelope_line" = m-context-envelope-v1 ] || return 1
+      case "$_context_envelope_line" in
+        m-context-envelope-v1) _context_envelope_format_version=1 ;;
+        m-context-envelope-v2) _context_envelope_format_version=2 ;;
+        *) return 1 ;;
+      esac
       _context_envelope_header=0
       continue
     fi
     case "$_context_envelope_line" in
       root=*)
-        [ "$_context_envelope_root_seen" -eq 0 ] || return 1
+        [ "$_context_envelope_phase" -eq 0 ] && [ "$_context_envelope_root_seen" -eq 0 ] || return 1
         _context_envelope_root=${_context_envelope_line#root=}
         _context_envelope_root_seen=1
+        _context_envelope_phase=1
         ;;
       uid=*)
-        [ "$_context_envelope_uid_seen" -eq 0 ] || return 1
+        [ "$_context_envelope_phase" -eq 1 ] && [ "$_context_envelope_uid_seen" -eq 0 ] || return 1
         _context_envelope_uid=${_context_envelope_line#uid=}
         case "$_context_envelope_uid" in '' | *[!0-9]*) return 1 ;; esac
         _context_envelope_uid_seen=1
+        _context_envelope_phase=2
         ;;
       system=*)
-        [ "$_context_envelope_system_seen" -eq 0 ] || return 1
+        [ "$_context_envelope_phase" -eq 2 ] && [ "$_context_envelope_system_seen" -eq 0 ] || return 1
         _context_envelope_system=${_context_envelope_line#system=}
         _context_profile_registry_identity_valid "$_context_envelope_system" || return 1
         _context_envelope_system_seen=1
+        _context_envelope_phase=3
+        ;;
+      user=*)
+        [ "$_context_envelope_format_version" -eq 2 ] && [ "$_context_envelope_phase" -eq 3 ] && [ "$_context_envelope_user_seen" -eq 0 ] || return 1
+        _context_envelope_user=${_context_envelope_line#user=}
+        _context_user_identity_resolve "$_context_envelope_user" || return 1
+        _context_envelope_user_seen=1
+        _context_envelope_phase=4
+        ;;
+      locale=*)
+        [ "$_context_envelope_format_version" -eq 2 ] && [ "$_context_envelope_phase" -eq 4 ] && [ "$_context_envelope_locale_seen" -eq 0 ] || return 1
+        _context_envelope_locale=${_context_envelope_line#locale=}
+        _context_locale_resolve "$_context_envelope_locale" || return 1
+        _context_envelope_locale_seen=1
+        _context_envelope_phase=5
+        ;;
+      osarch=*)
+        [ "$_context_envelope_format_version" -eq 2 ] && [ "$_context_envelope_phase" -eq 5 ] && [ "$_context_envelope_osarch_seen" -eq 0 ] || return 1
+        _context_envelope_osarch=${_context_envelope_line#osarch=}
+        pkg_osarch_valid "$_context_envelope_osarch" || return 1
+        _context_envelope_osarch_seen=1
+        _context_envelope_phase=6
         ;;
       classpath-host-set=*)
         [ "$_context_envelope_classpath_seen" -eq 0 ] || return 1
+        if [ "$_context_envelope_format_version" -eq 2 ]
+        then
+          [ "$_context_envelope_phase" -eq 6 ] || return 1
+        else
+          [ "$_context_envelope_phase" -eq 3 ] || return 1
+        fi
         _context_envelope_classpath_host_set=${_context_envelope_line#classpath-host-set=}
         case "$_context_envelope_classpath_host_set" in 0 | 1) : ;; *) return 1 ;; esac
         _context_envelope_classpath_seen=1
+        _context_envelope_phase=7
+        ;;
+      provider.*=*)
+        [ "$_context_envelope_format_version" -eq 2 ] && [ "$_context_envelope_phase" -eq 7 ] || return 1
+        _context_envelope_facility=${_context_envelope_line#provider.}
+        _context_envelope_facility=${_context_envelope_facility%%=*}
+        _pkg_facility_name_valid "$_context_envelope_facility" || return 1
+        case "$_context_envelope_provider_seen$_context_envelope_newline" in
+          *"$_context_envelope_newline$_context_envelope_facility$_context_envelope_newline"*) return 1 ;;
+        esac
+        _context_envelope_selector=${_context_envelope_line#*=}
+        pkg_request_read _context_envelope_provider _context_envelope_provider_version _context_envelope_provider_arch "$_context_envelope_selector" || return 1
+        _context_operand_append "$_context_envelope_provider_seen" "$_context_envelope_facility"
+        _context_envelope_provider_seen=$_context_operand_buffer
+        _context_operand_append "$_context_envelope_providers" "$_context_envelope_line"
+        _context_envelope_providers=$_context_operand_buffer
         ;;
       package=*)
         [ "$_context_envelope_classpath_seen" -eq 1 ] || return 1
+        if [ "$_context_envelope_format_version" -eq 2 ]
+        then
+          [ "$_context_envelope_phase" -eq 7 ] || [ "$_context_envelope_phase" -eq 8 ] || return 1
+        else
+          [ "$_context_envelope_phase" -eq 7 ] || [ "$_context_envelope_phase" -eq 8 ] || return 1
+        fi
         _context_envelope_package=${_context_envelope_line#package=}
-        pkg_concrete_read _context_envelope_pkg _context_envelope_version _context_envelope_osarch "$_context_envelope_package" || return 1
+        pkg_concrete_read _context_envelope_pkg _context_envelope_package_version _context_envelope_package_osarch "$_context_envelope_package" || return 1
         [ -d "$m_PKG_DIR/$_context_envelope_package" ] && [ ! -L "$m_PKG_DIR/$_context_envelope_package" ] || return 1
+        case "$_context_envelope_package_ids$_context_envelope_newline" in
+          *"$_context_envelope_newline$_context_envelope_package$_context_envelope_newline"*) return 1 ;;
+        esac
         _context_operand_append "$_context_envelope_packages" "pkg=$_context_envelope_package"
         _context_envelope_packages=$_context_operand_buffer
         _context_operand_append "$_context_envelope_package_ids" "$_context_envelope_package"
         _context_envelope_package_ids=$_context_operand_buffer
+        _context_envelope_phase=8
         ;;
       *) return 1 ;;
     esac
@@ -506,9 +762,25 @@ EOF_CONTEXT_ENVELOPE
   [ "$_context_envelope_system_seen" -eq 1 ] &&
   [ "$_context_envelope_classpath_seen" -eq 1 ] || return 1
   [ "$_context_envelope_root" = "$m_ROOT" ] || return 1
+  if [ "$_context_envelope_format_version" -eq 2 ]
+  then
+    [ "$_context_envelope_user_seen" -eq 1 ] &&
+    [ "$_context_envelope_locale_seen" -eq 1 ] &&
+    [ "$_context_envelope_osarch_seen" -eq 1 ] || return 1
+  else
+    _context_envelope_user=default
+    _context_global_locale_resolve || return 1
+    _context_envelope_locale=$_context_locale_selected
+    _context_host_osarch_ensure || return 1
+    _context_envelope_osarch=$m_OSARCH
+  fi
   _context_envelope_current_uid=$(command -p id -u 2>/dev/null) || return 1
   [ "$_context_envelope_uid" = "$_context_envelope_current_uid" ] || return 1
   _context_profile_resolve "$_context_envelope_system" || return 1
+  _context_user_identity_resolve "$_context_envelope_user" || return 1
+  _context_locale_resolve "$_context_envelope_locale" || return 1
+  _context_provider_pins_validate "$_context_envelope_providers" \
+    "$_context_envelope_osarch" || return 1
   _context_envelope_resolved=$(_context_resolve_list '' "$_context_envelope_packages") || return 1
   [ "$_context_envelope_resolved" = "$_context_envelope_package_ids" ] || return 1
   _context_envelope_packages=$_context_envelope_resolved
@@ -556,42 +828,50 @@ EOF_CONTEXT_ENVELOPE
     fi
   done
   m_STATE_SYS_DIR=$_context_profile_path
+  m_STATE_USER_DIR=$_context_user_identity_resolved
   m_CONTEXT_SYSTEM_PROFILE=$_context_envelope_system
+  m_CONTEXT_USER_IDENTITY=$_context_envelope_user
+  m_CONTEXT_LOCALE=$_context_envelope_locale
+  m_CONTEXT_OSARCH=$_context_envelope_osarch
+  m_CONTEXT_PROVIDER_PINS=$_context_envelope_providers
   m_CONTEXT_PACKAGES=$_context_envelope_packages
   m_CONTEXT_PATH_PREFIX=$_context_envelope_path_prefix
   m_CONTEXT_CLASSPATH_PREFIX=$_context_envelope_classpath_prefix
   m_CONTEXT_CLASSPATH_HOST_SET=$_context_envelope_classpath_host_set
-  export m_CONTEXT_SYSTEM_PROFILE m_CONTEXT_PACKAGES
+  export m_CONTEXT_SYSTEM_PROFILE m_CONTEXT_USER_IDENTITY m_CONTEXT_LOCALE
+  export m_CONTEXT_OSARCH m_CONTEXT_PROVIDER_PINS m_CONTEXT_PACKAGES
   export m_CONTEXT_PATH_PREFIX m_CONTEXT_CLASSPATH_PREFIX m_CONTEXT_CLASSPATH_HOST_SET
 }
 
 _context_record_from_concretes()
 {
-  [ "$#" -eq 2 ] || return 2
+  [ "$#" -eq 6 ] || return 2
   _context_record_system=$1
-  _context_record_items=$2
-  _context_record_newline=$(printf '\nX')
-  _context_record_newline=${_context_record_newline%X}
-  _context_store_record=m-context-record-v2
-  if [ -n "$_context_record_system" ]
-  then
-    _context_profile_registry_identity_valid "$_context_record_system" || return 2
-    _context_store_record="$_context_store_record$_context_record_newline"system=$_context_record_system
-  fi
-  while [ -n "$_context_record_items" ]
+  _context_record_user=$2
+  _context_record_locale=$3
+  _context_record_osarch=$4
+  _context_record_packages=$5
+  _context_record_providers=$6
+  _context_record_newline='
+'
+  _context_record_prefixed_packages=
+  while [ -n "$_context_record_packages" ]
   do
-    case "$_context_record_items" in
+    case "$_context_record_packages" in
       *"$_context_record_newline"*)
-        _context_record_item=${_context_record_items%%"$_context_record_newline"*}
-        _context_record_items=${_context_record_items#*"$_context_record_newline"}
+        _context_record_package=${_context_record_packages%%"$_context_record_newline"*}
+        _context_record_packages=${_context_record_packages#*"$_context_record_newline"}
         ;;
-      *)
-        _context_record_item=$_context_record_items
-        _context_record_items=
-        ;;
+      *) _context_record_package=$_context_record_packages; _context_record_packages= ;;
     esac
-    _context_store_record="$_context_store_record$_context_record_newline"pkg=$_context_record_item
+    [ -n "$_context_record_prefixed_packages" ] &&
+      _context_record_prefixed_packages="$_context_record_prefixed_packages$_context_record_newline"
+    _context_record_prefixed_packages="${_context_record_prefixed_packages}pkg=$_context_record_package"
   done
+  _context_store_record_build "$_context_record_system" "$_context_record_user" \
+    "$_context_record_locale" "$_context_record_osarch" \
+    "$_context_record_prefixed_packages" "$_context_record_providers"
+  _context_store_record=$CONTEXT_STORE_RECORD
 }
 
 _context_defaults_lock_cleanup()
@@ -626,43 +906,9 @@ _context_operand_append()
   fi
 }
 
-_context_build_pkg_operands()
-{
-  [ "$#" -ge 1 ] || return 2
-  _context_requested_system=$1
-  shift
-  _context_requested_operands=
-  _context_operand_newline=$(printf '\nX')
-  _context_operand_newline=${_context_operand_newline%X}
-  _context_operand_cr=$(printf '\r')
-  for _context_operand
-  do
-    case "$_context_operand" in
-      *"$_context_operand_newline"* | *"$_context_operand_cr"*)
-        _context_error context-operand-invalid "$_context_operand"
-        return 2
-        ;;
-      pkg=*) _context_operand_append "$_context_requested_operands" "$_context_operand"; _context_requested_operands=$_context_operand_buffer ;;
-      system=*)
-        _context_requested_system=${_context_operand#system=}
-        _context_profile_registry_identity_valid "$_context_requested_system" || {
-          _context_error context-profile-invalid "$_context_requested_system"
-          return 23
-        }
-        ;;
-      *) _context_error context-operand-invalid "$_context_operand"; return 2 ;;
-    esac
-  done
-  [ -n "$_context_requested_operands" ] || [ -n "$_context_requested_system" ] || {
-    _context_error context-operand-invalid "missing context selector"
-    return 2
-  }
-}
-
 _context_build_activation_operands()
 {
   _context_requested_operands=
-  _context_requested_system=${CONTEXT_STORE_SYSTEM-}
   _context_operand_newline=$(printf '\nX')
   _context_operand_newline=${_context_operand_newline%X}
   _context_operand_cr=$(printf '\r')
@@ -684,6 +930,37 @@ _context_build_activation_operands()
           return 23
         }
         ;;
+      user=*)
+        _context_requested_user=${_context_operand#user=}
+        _context_user_identity_resolve "$_context_requested_user" || {
+          _context_error context-user-identity-invalid "$_context_requested_user"
+          return 26
+        }
+        ;;
+      locale=*)
+        _context_requested_locale=${_context_operand#locale=}
+        _context_locale_resolve "$_context_requested_locale" || {
+          _context_error context-locale-invalid "$_context_requested_locale"
+          return 27
+        }
+        ;;
+      osarch=*)
+        _context_requested_osarch=${_context_operand#osarch=}
+        pkg_osarch_valid "$_context_requested_osarch" || {
+          _context_error context-osarch-invalid "$_context_requested_osarch"
+          return 28
+        }
+        ;;
+      provider.*=*)
+        _context_requested_provider_facility=${_context_operand#provider.}
+        _context_requested_provider_facility=${_context_requested_provider_facility%%=*}
+        _context_requested_provider_selector=${_context_operand#*=}
+        _context_provider_pins_set "$_context_requested_providers" "$_context_requested_provider_facility" "$_context_requested_provider_selector" || {
+          _context_error context-provider-invalid "$_context_operand"
+          return 29
+        }
+        _context_requested_providers=$_context_provider_pins_result
+        ;;
       full-context=*)
         _context_preset_name=${_context_operand#full-context=}
         _context_store_name="preset.$_context_preset_name"
@@ -704,11 +981,27 @@ _context_build_activation_operands()
             return 19
             ;;
         esac
-        _context_preset_operands=$CONTEXT_STORE_PACKAGES
-        if [ -n "${CONTEXT_STORE_SYSTEM-}" ]
-        then
-          _context_requested_system=$CONTEXT_STORE_SYSTEM
-        fi
+        [ -z "${CONTEXT_STORE_SYSTEM-}" ] || _context_requested_system=$CONTEXT_STORE_SYSTEM
+        [ -z "${CONTEXT_STORE_USER-}" ] || _context_requested_user=$CONTEXT_STORE_USER
+        [ -z "${CONTEXT_STORE_LOCALE-}" ] || _context_requested_locale=$CONTEXT_STORE_LOCALE
+        [ -z "${CONTEXT_STORE_OSARCH-}" ] || _context_requested_osarch=$CONTEXT_STORE_OSARCH
+        _context_preset_provider_remaining=${CONTEXT_STORE_PROVIDERS-}
+        while [ -n "$_context_preset_provider_remaining" ]
+        do
+          case "$_context_preset_provider_remaining" in
+            *"$_context_operand_newline"*)
+              _context_preset_provider=${_context_preset_provider_remaining%%"$_context_operand_newline"*}
+              _context_preset_provider_remaining=${_context_preset_provider_remaining#*"$_context_operand_newline"}
+              ;;
+            *) _context_preset_provider=$_context_preset_provider_remaining; _context_preset_provider_remaining= ;;
+          esac
+          _context_preset_provider_facility=${_context_preset_provider#provider.}
+          _context_preset_provider_facility=${_context_preset_provider_facility%%=*}
+          _context_preset_provider_selector=${_context_preset_provider#*=}
+          _context_provider_pins_set "$_context_requested_providers" "$_context_preset_provider_facility" "$_context_preset_provider_selector" || return 29
+          _context_requested_providers=$_context_provider_pins_result
+        done
+        _context_preset_operands=${CONTEXT_STORE_PACKAGES-}
         while [ -n "$_context_preset_operands" ]
         do
           case "$_context_preset_operands" in
@@ -769,13 +1062,40 @@ _context_store_set_defaults()
   esac
   _context_store_load_defaults || return $?
   _context_default_operands=$CONTEXT_STORE_PACKAGES
-  _context_build_pkg_operands "$CONTEXT_STORE_SYSTEM" "$@" || return $?
+  _context_requested_system=${CONTEXT_STORE_SYSTEM-}
+  _context_requested_user=${CONTEXT_STORE_USER-}
+  _context_requested_locale=${CONTEXT_STORE_LOCALE-}
+  _context_requested_osarch=${CONTEXT_STORE_OSARCH-}
+  _context_requested_providers=${CONTEXT_STORE_PROVIDERS-}
+  _context_requested_operands=
+  _context_build_activation_operands "$@" || return $?
   if [ -n "$_context_requested_system" ]
   then
     _context_profile_resolve "$_context_requested_system" || return $?
   fi
+  if [ -n "$_context_requested_user" ]
+  then
+    _context_user_identity_resolve "$_context_requested_user" || return 26
+  fi
+  if [ -n "$_context_requested_locale" ]
+  then
+    _context_locale_resolve "$_context_requested_locale" || return 27
+  fi
+  if [ -n "$_context_requested_osarch" ]
+  then
+    pkg_osarch_valid "$_context_requested_osarch" || return 28
+  fi
+  _context_host_osarch_ensure || return 28
+  _context_selected_osarch=${_context_requested_osarch:-$m_OSARCH}
+  _context_provider_pins_validate "$_context_requested_providers" \
+    "$_context_selected_osarch" || {
+      _context_error context-provider-invalid "$_context_requested_providers"
+      return 29
+    }
   _context_next=$(_context_prepare_packages "$_context_default_operands" "$_context_requested_operands") || return $?
-  _context_record_from_concretes "$_context_requested_system" "$_context_next"
+  _context_record_from_concretes "$_context_requested_system" "$_context_requested_user" \
+    "$_context_requested_locale" "$_context_requested_osarch" "$_context_next" \
+    "$_context_requested_providers"
   _context_store_write "$m_ROOT" defaults "$_context_store_record" || {
     _context_error context-default-store-write-failed "$m_ROOT/state"
     return 21
@@ -814,13 +1134,40 @@ _context_store_define_preset()
     return 20
   }
   shift
-  _context_build_pkg_operands '' "$@" || return $?
+  _context_requested_system=
+  _context_requested_user=
+  _context_requested_locale=
+  _context_requested_osarch=
+  _context_requested_providers=
+  _context_requested_operands=
+  _context_build_activation_operands "$@" || return $?
   if [ -n "$_context_requested_system" ]
   then
     _context_profile_resolve "$_context_requested_system" || return $?
   fi
+  if [ -n "$_context_requested_user" ]
+  then
+    _context_user_identity_resolve "$_context_requested_user" || return 26
+  fi
+  if [ -n "$_context_requested_locale" ]
+  then
+    _context_locale_resolve "$_context_requested_locale" || return 27
+  fi
+  if [ -n "$_context_requested_osarch" ]
+  then
+    pkg_osarch_valid "$_context_requested_osarch" || return 28
+  fi
+  _context_host_osarch_ensure || return 28
+  _context_selected_osarch=${_context_requested_osarch:-$m_OSARCH}
+  _context_provider_pins_validate "$_context_requested_providers" \
+    "$_context_selected_osarch" || {
+      _context_error context-provider-invalid "$_context_requested_providers"
+      return 29
+    }
   _context_next=$(_context_prepare_packages '' "$_context_requested_operands") || return $?
-  _context_record_from_concretes "$_context_requested_system" "$_context_next"
+  _context_record_from_concretes "$_context_requested_system" "$_context_requested_user" \
+    "$_context_requested_locale" "$_context_requested_osarch" "$_context_next" \
+    "$_context_requested_providers"
   _context_store_write "$m_ROOT" "$_context_store_name" "$_context_store_record" || {
     _context_error context-preset-store-write-failed "$_context_preset_name"
     return 21
@@ -855,6 +1202,105 @@ _context_store_delete_defaults()
   _context_store_delete "$m_ROOT" defaults || {
     _context_error context-default-store-invalid "$m_ROOT/state"
     return 19
+  }
+)
+
+# Import only direct, validated legacy selectors. Existing account choices win,
+# so repeated migration is idempotent and never overwrites a user's decision.
+_context_store_migrate_legacy()
+(
+  [ "$#" -eq 0 ] || return 2
+  _context_store_lock_dir=
+  _context_store_lock_token_path=
+  _context_store_lock_token_owned=0
+  trap '_context_defaults_lock_cleanup' 0
+  trap 'exit 1' HUP INT TERM
+  if _context_store_lock "$m_ROOT"; then
+    _context_migrate_lock_status=0
+  else
+    _context_migrate_lock_status=$?
+  fi
+  case "$_context_migrate_lock_status" in
+    0) : ;;
+    3)
+      _context_error context-default-store-busy "$m_ROOT/state"
+      return 22
+      ;;
+    *)
+      _context_error context-default-store-invalid "$m_ROOT/state"
+      return 19
+      ;;
+  esac
+  _context_store_load_defaults || return $?
+  _context_migrate_system=${CONTEXT_STORE_SYSTEM-}
+  _context_migrate_user=${CONTEXT_STORE_USER-}
+  _context_migrate_locale=${CONTEXT_STORE_LOCALE-}
+  _context_migrate_osarch=${CONTEXT_STORE_OSARCH-}
+  _context_migrate_packages=${CONTEXT_STORE_PACKAGES-}
+  _context_migrate_providers=${CONTEXT_STORE_PROVIDERS-}
+  _context_migrate_changed=0
+
+  _context_migrate_system_link="$m_ROOT/state/system/current"
+  if [ -z "$_context_migrate_system" ] && [ -L "$_context_migrate_system_link" ]
+  then
+    _context_migrate_system_target=$(command -p readlink "$_context_migrate_system_link" 2>/dev/null) || return 24
+    case "$_context_migrate_system_target" in
+      profile/*) _context_migrate_identity=${_context_migrate_system_target#profile/} ;;
+      *) return 24 ;;
+    esac
+    case "$_context_migrate_identity" in '' | */*) return 24 ;; esac
+    _context_profile_resolve "$_context_migrate_identity" || return $?
+    _context_migrate_system=$_context_migrate_identity
+    _context_migrate_changed=1
+  fi
+
+  _context_migrate_user_link="$m_ROOT/state/user/current"
+  if [ -z "$_context_migrate_user" ] && [ -L "$_context_migrate_user_link" ]
+  then
+    _context_migrate_user_target=$(command -p readlink "$_context_migrate_user_link" 2>/dev/null) || return 26
+    case "$_context_migrate_user_target" in '' | */* | . | ..) return 26 ;; esac
+    _context_user_identity_resolve "$_context_migrate_user_target" || return 26
+    [ -d "$_context_user_identity_resolved" ] && [ ! -L "$_context_user_identity_resolved" ] || return 26
+    _context_migrate_user=$_context_migrate_user_target
+    _context_migrate_changed=1
+  fi
+
+  _context_migrate_locale_link="$m_LANG_DIR/current"
+  if [ -z "$_context_migrate_locale" ] && [ -L "$_context_migrate_locale_link" ]
+  then
+    _context_migrate_locale_target=$(command -p readlink "$_context_migrate_locale_link" 2>/dev/null) || return 27
+    case "$_context_migrate_locale_target" in '' | */* | . | ..) return 27 ;; esac
+    _context_locale_resolve "$_context_migrate_locale_target" || return 27
+    _context_migrate_locale=$_context_migrate_locale_target
+    _context_migrate_changed=1
+  fi
+
+  if [ -z "$_context_migrate_osarch" ]
+  then
+    _context_profile_resolve "$_context_migrate_system" || return $?
+    _context_migrate_env_dir="$_context_profile_path/sys/environment/cache"
+    _context_migrate_env_link="$_context_migrate_env_dir/env-osarch"
+    if [ -L "$_context_migrate_env_link" ]
+    then
+      _context_migrate_env_target=$(command -p readlink "$_context_migrate_env_link" 2>/dev/null) || return 28
+      case "$_context_migrate_env_target" in
+        env-*) _context_migrate_osarch=${_context_migrate_env_target#env-} ;;
+        *) return 28 ;;
+      esac
+      pkg_osarch_valid "$_context_migrate_osarch" || return 28
+      [ -f "$_context_migrate_env_dir/$_context_migrate_env_target" ] &&
+      [ ! -L "$_context_migrate_env_dir/$_context_migrate_env_target" ] || return 28
+      _context_migrate_changed=1
+    fi
+  fi
+
+  [ "$_context_migrate_changed" -eq 1 ] || return 0
+  _context_record_from_concretes "$_context_migrate_system" "$_context_migrate_user" \
+    "$_context_migrate_locale" "$_context_migrate_osarch" \
+    "$_context_migrate_packages" "$_context_migrate_providers" || return 1
+  _context_store_write "$m_ROOT" defaults "$CONTEXT_STORE_RECORD" || {
+    _context_error context-default-store-write-failed "$m_ROOT/state"
+    return 21
   }
 )
 
@@ -913,6 +1359,11 @@ context()
       _context_store_delete_defaults
       return $?
       ;;
+    --migrate-legacy)
+      [ "$#" -eq 1 ] || { _context_error context-operand-invalid --migrate-legacy; return 2; }
+      _context_store_migrate_legacy
+      return $?
+      ;;
     --set-defaults)
       shift
       _context_store_set_defaults "$@"
@@ -933,18 +1384,48 @@ context()
   esac
 
   _context_store_load_defaults || return $?
+  _context_host_osarch_ensure || {
+    _context_error context-osarch-unavailable m_OSARCH
+    return 28
+  }
   _context_default_operands=$CONTEXT_STORE_PACKAGES
   _context_requested_system=$CONTEXT_STORE_SYSTEM
+  _context_requested_user=${CONTEXT_STORE_USER:-default}
+  _context_requested_locale=${CONTEXT_STORE_LOCALE-}
+  if [ -z "$_context_requested_locale" ]
+  then
+    _context_global_locale_resolve || {
+      _context_error context-locale-invalid "$m_LANG_CURRENT_DIR"
+      return 27
+    }
+    _context_requested_locale=$_context_locale_selected
+  fi
+  _context_requested_osarch=${CONTEXT_STORE_OSARCH:-$m_OSARCH}
+  _context_requested_providers=${CONTEXT_STORE_PROVIDERS-}
+  _context_requested_operands=
   if [ "$#" -gt 0 ]
   then
     _context_build_activation_operands "$@" || return $?
-  else
-    _context_requested_operands=
   fi
 
   # Resolve the persisted baseline and ordered overrides before touching shell state.
   _context_profile_resolve "$_context_requested_system" || return $?
   _context_selected_system=$_context_profile_selected
+  _context_user_identity_resolve "$_context_requested_user" || {
+    _context_error context-user-identity-invalid "$_context_requested_user"
+    return 26
+  }
+  _context_selected_user=$_context_requested_user
+  _context_locale_resolve "$_context_requested_locale" || {
+    _context_error context-locale-invalid "$_context_requested_locale"
+    return 27
+  }
+  _context_selected_locale=$_context_locale_selected
+  pkg_osarch_valid "$_context_requested_osarch" || {
+    _context_error context-osarch-invalid "$_context_requested_osarch"
+    return 28
+  }
+  _context_selected_osarch=$_context_requested_osarch
   _context_next="$(_context_prepare_packages "$_context_default_operands" "$_context_requested_operands")" || return $?
   _context_path_unapply "${PATH-}" "${m_CONTEXT_PATH_PREFIX-}" || return $?
   _context_host_path=$_context_path_base
@@ -1028,7 +1509,9 @@ context()
     fi
   done
 
-  _context_envelope_next=$(_context_envelope_build "$_context_selected_system" "$_context_next" "$_context_envelope_host_set") || {
+  _context_envelope_next=$(_context_envelope_build "$_context_selected_system" "$_context_selected_user" \
+    "$_context_selected_locale" "$_context_selected_osarch" "$_context_requested_providers" \
+    "$_context_next" "$_context_envelope_host_set") || {
     _context_error context-envelope-build-failed "$_context_selected_system"
     return 25
   }
@@ -1047,8 +1530,32 @@ context()
     _context_error context-state-readonly m_STATE_SYS_DIR
     return 16
   }
+  ( m_STATE_USER_DIR="${m_STATE_USER_DIR-}" ) 2>/dev/null || {
+    _context_error context-state-readonly m_STATE_USER_DIR
+    return 16
+  }
   ( m_CONTEXT_ENVELOPE="${m_CONTEXT_ENVELOPE-}" ) 2>/dev/null || {
     _context_error context-envelope-readonly m_CONTEXT_ENVELOPE
+    return 16
+  }
+  ( m_CONTEXT_SYSTEM_PROFILE="${m_CONTEXT_SYSTEM_PROFILE-}" ) 2>/dev/null || {
+    _context_error context-state-readonly m_CONTEXT_SYSTEM_PROFILE
+    return 16
+  }
+  ( m_CONTEXT_USER_IDENTITY="${m_CONTEXT_USER_IDENTITY-}" ) 2>/dev/null || {
+    _context_error context-state-readonly m_CONTEXT_USER_IDENTITY
+    return 16
+  }
+  ( m_CONTEXT_LOCALE="${m_CONTEXT_LOCALE-}" ) 2>/dev/null || {
+    _context_error context-state-readonly m_CONTEXT_LOCALE
+    return 16
+  }
+  ( m_CONTEXT_OSARCH="${m_CONTEXT_OSARCH-}" ) 2>/dev/null || {
+    _context_error context-state-readonly m_CONTEXT_OSARCH
+    return 16
+  }
+  ( m_CONTEXT_PROVIDER_PINS="${m_CONTEXT_PROVIDER_PINS-}" ) 2>/dev/null || {
+    _context_error context-state-readonly m_CONTEXT_PROVIDER_PINS
     return 16
   }
 
@@ -1080,10 +1587,18 @@ context()
 
   m_CONTEXT_PACKAGES=$_context_next
   m_CONTEXT_SYSTEM_PROFILE=$_context_selected_system
+  m_CONTEXT_USER_IDENTITY=$_context_selected_user
+  m_CONTEXT_LOCALE=$_context_selected_locale
+  m_CONTEXT_OSARCH=$_context_selected_osarch
+  m_CONTEXT_PROVIDER_PINS=$_context_requested_providers
   m_STATE_SYS_DIR="$_context_profile_path"
+  m_STATE_USER_DIR="$_context_user_identity_resolved"
   m_CONTEXT_ENVELOPE=$_context_envelope_next
+  m_CONTEXT_ENVELOPE_VALIDATED=1
   export m_CONTEXT_ENVELOPE
-  export m_CONTEXT_SYSTEM_PROFILE
+  export m_CONTEXT_ENVELOPE_VALIDATED
+  export m_CONTEXT_SYSTEM_PROFILE m_CONTEXT_USER_IDENTITY m_CONTEXT_LOCALE
+  export m_CONTEXT_OSARCH m_CONTEXT_PROVIDER_PINS
   m_CONTEXT_PATH_PREFIX=$_context_next_path_prefix
   m_CONTEXT_CLASSPATH_PREFIX=$_context_next_classpath_prefix
   m_CONTEXT_CLASSPATH_HOST_SET=$_context_classpath_host_set

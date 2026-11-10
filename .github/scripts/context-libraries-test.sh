@@ -11,7 +11,6 @@ profile_root="$m_ROOT/state/system/profile"
 profile_inventory="$profile_root/.inventory"
 created='context-ci-lib@1 context-ci-lib@2 context-ci-other@1'
 context_ci_packages_created=0
-context_ci_inventory_created=0
 cleanup()
 {
   if [ "$context_ci_packages_created" -eq 1 ]; then
@@ -20,7 +19,6 @@ cleanup()
       command -p -- rm -rf -- "$m_PKG_DIR/$concrete"
     done
   fi
-  [ "$context_ci_inventory_created" -eq 0 ] || command -p -- rm -f -- "$profile_inventory"
   command -p -- rm -rf -- "$work"
 }
 trap cleanup 0
@@ -29,11 +27,8 @@ for concrete in $created
 do
   [ ! -e "$m_PKG_DIR/$concrete" ] && [ ! -L "$m_PKG_DIR/$concrete" ] || exit 3
 done
-[ ! -e "$profile_inventory" ] && [ ! -L "$profile_inventory" ] || exit 3
 command -p -- chmod 755 "$m_ROOT/state" "$m_ROOT/state/system" "$profile_root" "$profile_root/main"
-printf '%s\n' m-system-profile-inventory-v1 baseline=main profile=main > "$profile_inventory"
-context_ci_inventory_created=1
-command -p -- chmod 644 "$profile_inventory"
+[ -f "$profile_inventory" ] && [ ! -L "$profile_inventory" ] || exit 3
 context_ci_packages_created=1
 
 for version in 1 2

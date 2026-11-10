@@ -180,7 +180,26 @@ lang()
 (
   [ "$#" -eq 2 ] && case "${1}${2}" in [!a-z0-9]* | *[!a-z0-9._-]* | *[._-]) false;; esac || return 1
 
-  lang_message="$(command -p -- cat "$m_LANG_CURRENT_DIR/$1/$2" 2>/dev/null)" || \
+  lang_selected_dir=$m_LANG_CURRENT_DIR
+  if [ -n "${m_CONTEXT_LOCALE-}" ]
+  then
+    case "$m_CONTEXT_LOCALE" in
+      '' | [!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]* | *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.@-]* | *[.@_-])
+        lang_selected_dir=$m_LANG_FALLBACK_DIR
+        ;;
+      *)
+        lang_context_dir="$m_LANG_DIR/$m_CONTEXT_LOCALE"
+        if [ -d "$lang_context_dir" ] && [ ! -L "$lang_context_dir" ]
+        then
+          lang_selected_dir=$lang_context_dir
+        else
+          lang_selected_dir=$m_LANG_FALLBACK_DIR
+        fi
+        ;;
+    esac
+  fi
+
+  lang_message="$(command -p -- cat "$lang_selected_dir/$1/$2" 2>/dev/null)" || \
   lang_message="$(command -p -- cat "$m_LANG_FALLBACK_DIR/$1/$2" 2>/dev/null)" || \
   lang_message="${1}.${2}"
 

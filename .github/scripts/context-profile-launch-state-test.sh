@@ -14,10 +14,12 @@ selector="$m_PKG_DIR/$name"
 work_parent="$m_ROOT/.tmp"
 command -p -- mkdir -p -- "$work_parent" || exit 4
 work=$(command -p -- mktemp -d "$work_parent/context-profile-launch.XXXXXX") || exit 4
+[ -f "$inventory" ] && [ ! -L "$inventory" ] || exit 7
+inventory_backup="$work/profile-inventory"
+command -p -- cp -- "$inventory" "$inventory_backup" || exit 4
 
 [ ! -e "$concrete" ] && [ ! -L "$concrete" ] || exit 5
 [ ! -e "$selector" ] && [ ! -L "$selector" ] || exit 6
-[ ! -e "$inventory" ] && [ ! -L "$inventory" ] || exit 7
 [ ! -e "$secondary" ] && [ ! -L "$secondary" ] || exit 8
 
 cleanup()
@@ -25,9 +27,10 @@ cleanup()
   context >/dev/null 2>&1 || :
   pkg_default_apply "$name" "" >/dev/null 2>&1 || :
   command -p -- rm -f -- "$selector"
-  command -p -- rm -rf -- "$concrete" "$work"
+  command -p -- rm -rf -- "$concrete"
   command -p -- rm -rf -- "$m_ROOT/state/system/current/pkg/$name"
-  command -p -- rm -f -- "$inventory"
+  command -p -- cp -- "$inventory_backup" "$inventory"
+  command -p -- rm -rf -- "$work"
   command -p -- rmdir -- "$secondary" 2>/dev/null || :
 }
 trap cleanup 0

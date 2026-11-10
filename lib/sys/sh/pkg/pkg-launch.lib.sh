@@ -59,8 +59,9 @@ _pkg_launch_context_state_compatible()
   [ "$#" -eq 0 ] || return 2
   [ "${m_CONTEXT_ENVELOPE+x}" = x ] || return 0
   _context_envelope_validate || return 1
+  _context_profile_resolve "${m_CONTEXT_SYSTEM_PROFILE-}" || return 1
   _m_system_state_selector_validate || return 1
-  if [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/$_m_system_state_identity" ]
+  if [ "$m_STATE_SYS_DIR" = "$_m_system_state_profile" ]
   then
     return 0
   fi
@@ -114,6 +115,7 @@ _pkg_launch_dependencies_apply()
   pkg_launch_dependency_file=$1
   pkg_launch_dependency_consumer=$2
   pkg_launch_dependency_osarch=$3
+  [ -n "$pkg_launch_dependency_osarch" ] || pkg_launch_dependency_osarch=$m_OSARCH
 
   pkg_launch_dependency_set="$(pkg_dependency_resolve "$pkg_launch_dependency_file" "$pkg_launch_dependency_consumer" "$pkg_launch_dependency_osarch")" || return 1
   [ -n "$pkg_launch_dependency_set" ] || return 0
@@ -393,7 +395,12 @@ launcher()
   readonly -- m_ROOT m_STATE_DIR m_STATE_SYS_DIR m_STATE_USER_DIR
   readonly -- \
     m_CONTEXT_ENVELOPE \
+    m_CONTEXT_ENVELOPE_VALIDATED \
     m_CONTEXT_SYSTEM_PROFILE \
+    m_CONTEXT_USER_IDENTITY \
+    m_CONTEXT_LOCALE \
+    m_CONTEXT_OSARCH \
+    m_CONTEXT_PROVIDER_PINS \
     m_CONTEXT_PACKAGES \
     m_CONTEXT_PATH_PREFIX \
     m_CONTEXT_CLASSPATH_PREFIX \

@@ -54,7 +54,9 @@ FUNCTIONS
         resolve the complete dependency closure and print only dependency concrete
         identities, one per line in dependency-first order. Explicit requested
         roots are omitted unless they are also selected dependency nodes. Every
-        emitted identity is directly valid as a package operand.
+        emitted identity is directly valid as a package operand. Unqualified
+        roots use process context m_CONTEXT_OSARCH, falling back to detected
+        host m_OSARCH. Explicit package qualifiers take precedence.
 
         When an original request cannot be resolved, status 1 is accompanied by
         diagnostic context identifying reason=request-unresolvable, the original

@@ -8,11 +8,12 @@ DESCRIPTION
     state-path is the public resolver for managed mutable state. It prints the
     semantic pathname for the requested state location and does not create the
     directory, mutate selectors, select package versions, or canonicalize a
-    selected binding target. For system scope, an existing system/current
-    selector must be a direct relative profile/<identity> symlink to a real
-    profile directory under state/system/profile. A missing selector remains
-    resolvable as a semantic pathname, but state materialization requires a
-    valid selected profile.
+    selected binding target. The process context supplies the selected system
+    profile and logical user identity. System scope resolves through
+    m_STATE_SYS_DIR, which must match a registered real profile directory.
+    User scope resolves through m_STATE_USER_DIR, a direct
+    state/user/<logical-identity> path. Neither scope reads or changes its
+    legacy global current selector.
 
     On success exactly one absolute pathname followed by a newline is written to
     standard output.
@@ -35,12 +36,16 @@ OPERANDS
         The resolved state identity becomes <identity>@!<state-instance>.
 
 USER SCOPE
-    If state/user/current is a symbolic link, user state is resolved through that
-    semantic current pathname. Otherwise user state resolves under
-    state/user/default.
+    The active process context selects one canonical logical identity directly
+    under state/user. Without an explicit identity, the baseline is default.
+    The parent must be a real directory when present; the selected identity leaf
+    may be absent so this pure resolver can return its not-yet-materialized path.
+    An existing parent or identity that is a symlink or non-directory is rejected.
 
-    The user scope is an m namespace. It is not derived from the POSIX UID,
-    username, HOME, hostname, or another host-account identifier.
+    A logical identity is an m state namespace, not a POSIX account. It is not
+    derived from UID, username, HOME, hostname, or another host-account value.
+    Separate POSIX-account authority for persisted context preferences does not
+    change this state identity model.
 
 PACKAGE STATE
     Package consumers use state-path rather than reconstructing the state tree.
@@ -56,8 +61,11 @@ ENVIRONMENT
 EXIT STATUS
     0   The pathname was resolved and written successfully.
     2   The invocation, scope, owner, identity, area, or State Instance is invalid.
-    3   An existing system state selector is malformed or does not select a
-        real managed profile directory.
+    3   The selected system profile identity or m_STATE_SYS_DIR does not resolve
+        to its registered real profile directory.
+    4   The selected logical user identity is invalid.
+    5   The state/user parent exists but is not a real directory.
+    6   The selected state/user/<identity> exists but is not a real directory.
 
     A lower-level output failure is returned as a non-zero status from the command.
 

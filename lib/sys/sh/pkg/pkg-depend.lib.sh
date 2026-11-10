@@ -762,7 +762,8 @@ _pkg_depend_plan()
   case "$pkg_depend_root_mode" in request|exact) : ;; *) return 2 ;; esac
 
   [ -d "$pkg_depend_catalog" ] && [ ! -L "$pkg_depend_catalog" ] || return 1
-  pkg_osarch_valid "$m_OSARCH" || return 1
+  pkg_depend_default_target=${m_CONTEXT_OSARCH:-$m_OSARCH}
+  pkg_osarch_valid "$pkg_depend_default_target" || return 1
 
   pkg_depend_roots=
   pkg_depend_contexts=
@@ -770,7 +771,7 @@ _pkg_depend_plan()
   for pkg_depend_request
   do
     pkg_depend_root_request=$pkg_depend_request
-    pkg_depend_root_target=$m_OSARCH
+    pkg_depend_root_target=$pkg_depend_default_target
     if [ "$pkg_depend_root_mode" = exact ]
     then
       case "$pkg_depend_request" in
@@ -792,7 +793,7 @@ _pkg_depend_plan()
       log error execution execution-failed operation pkg-depend \
         reason request-unresolvable \
         request "$pkg_depend_request" \
-        default-target "$m_OSARCH" \
+        default-target "$pkg_depend_default_target" \
         status "$pkg_depend_request_status" || :
       return "$pkg_depend_request_status"
     fi

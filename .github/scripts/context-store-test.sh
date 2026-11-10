@@ -47,6 +47,13 @@ pkg=context-b@1'
 record_system='m-context-record-v2
 system=main
 pkg=context-a@1'
+record_general='m-context-record-v3
+system=main
+user=alice
+locale=it_IT
+osarch=linux-arm64
+pkg=context-a@1
+provider.browser=electron-web-control@1'
 _context_store_write "$normal" defaults "$record_a" || exit 12
 account="$normal/state/$test_uid"
 context_dir="$account/context"
@@ -61,6 +68,17 @@ _context_store_read "$normal" defaults || exit 74
 [ "$CONTEXT_STORE_VERSION" = 2 ] || exit 75
 [ "$CONTEXT_STORE_SYSTEM" = main ] || exit 76
 [ "$CONTEXT_STORE_PACKAGES" = 'pkg=context-a@1' ] || exit 77
+_context_store_write "$normal" defaults "$record_general" || exit 81
+_context_store_read "$normal" defaults || exit 82
+[ "$CONTEXT_STORE_VERSION" = 3 ] || exit 83
+[ "$CONTEXT_STORE_SYSTEM" = main ] || exit 84
+[ "$CONTEXT_STORE_USER" = alice ] || exit 85
+[ "$CONTEXT_STORE_LOCALE" = it_IT ] || exit 86
+[ "$CONTEXT_STORE_OSARCH" = linux-arm64 ] || exit 87
+[ "$CONTEXT_STORE_PACKAGES" = 'pkg=context-a@1' ] || exit 88
+[ "$CONTEXT_STORE_PROVIDERS" = 'provider.browser=electron-web-control@1' ] || exit 89
+_context_store_record_build main alice it_IT linux-arm64 'pkg=context-a@1' 'provider.browser=electron-web-control@1' || exit 90
+[ "$CONTEXT_STORE_RECORD" = "$record_general" ] || exit 91
 command -p chmod 755 "$context_dir"
 if _context_store_read "$normal" defaults; then exit 41; fi
 command -p chmod 700 "$context_dir"
@@ -136,6 +154,20 @@ printf '%s\n' m-context-record-v2 system=main system=main pkg=context-a@1 > "$li
 if _context_store_read "$linked" defaults; then exit 79; fi
 printf '%s\n' m-context-record-v1 system=main pkg=context-a@1 > "$linked/state/$test_uid/context/defaults"
 if _context_store_read "$linked" defaults; then exit 80; fi
+printf '%s\n' m-context-record-v2 system=main user=alice pkg=context-a@1 > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 92; fi
+printf '%s\n' m-context-record-v3 system=main user=../outside pkg=context-a@1 > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 93; fi
+printf '%s\n' m-context-record-v3 locale=../outside > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 94; fi
+printf '%s\n' m-context-record-v3 osarch=not-a-platform > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 95; fi
+printf '%s\n' m-context-record-v3 provider.browser=electron@1 provider.browser=nodejs@1 > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 96; fi
+printf '%s\n' m-context-record-v3 provider.Bad=electron@1 > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 97; fi
+printf '%s\n' m-context-record-v3 provider.browser=../outside > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 98; fi
 LC_ALL=C command -p awk 'BEGIN { printf "m-context-record-v1\\n"; for (i = 0; i < 17000; i++) printf "x" }' > "$linked/state/$test_uid/context/defaults"
 if _context_store_read "$linked" defaults; then exit 35; fi
 

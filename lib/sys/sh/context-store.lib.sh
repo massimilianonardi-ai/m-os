@@ -1,4 +1,5 @@
 # Private account-scoped storage primitives for context defaults and presets.
+loadsyslib "pkg/facility/pkg-facility"
 
 _context_store_uid()
 {
@@ -115,6 +116,81 @@ _context_store_file_validate()
   [ "$_context_store_size" -le 16384 ]
 }
 
+_context_store_locale_valid()
+{
+  [ "$#" -eq 1 ] || return 2
+  case "$1" in
+    '' | [!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz]* | *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.@-]* | *[.@_-]) return 1 ;;
+  esac
+}
+
+# Build the v3 data-only record used by defaults and presets. Package and
+# provider fields are newline-delimited records already resolved by context.
+_context_store_record_build()
+{
+  [ "$#" -eq 6 ] || return 2
+  _context_build_system=$1
+  _context_build_user=$2
+  _context_build_locale=$3
+  _context_build_osarch=$4
+  _context_build_packages=$5
+  _context_build_providers=$6
+  _context_build_newline=$(printf '\nX')
+  _context_build_newline=${_context_build_newline%X}
+  CONTEXT_STORE_RECORD=m-context-record-v3
+
+  if [ -n "$_context_build_system" ]; then
+    _context_profile_registry_identity_valid "$_context_build_system" || return 1
+    CONTEXT_STORE_RECORD="${CONTEXT_STORE_RECORD}${_context_build_newline}system=$_context_build_system"
+  fi
+  if [ -n "$_context_build_user" ]; then
+    _context_profile_registry_identity_valid "$_context_build_user" || return 1
+    CONTEXT_STORE_RECORD="${CONTEXT_STORE_RECORD}${_context_build_newline}user=$_context_build_user"
+  fi
+  if [ -n "$_context_build_locale" ]; then
+    _context_store_locale_valid "$_context_build_locale" || return 1
+    CONTEXT_STORE_RECORD="${CONTEXT_STORE_RECORD}${_context_build_newline}locale=$_context_build_locale"
+  fi
+  if [ -n "$_context_build_osarch" ]; then
+    pkg_osarch_valid "$_context_build_osarch" || return 1
+    CONTEXT_STORE_RECORD="${CONTEXT_STORE_RECORD}${_context_build_newline}osarch=$_context_build_osarch"
+  fi
+  _context_build_remaining=$_context_build_packages
+  while [ -n "$_context_build_remaining" ]; do
+    case "$_context_build_remaining" in
+      *"$_context_build_newline"*)
+        _context_build_line=${_context_build_remaining%%"$_context_build_newline"*}
+        _context_build_remaining=${_context_build_remaining#*"$_context_build_newline"}
+        ;;
+      *) _context_build_line=$_context_build_remaining; _context_build_remaining= ;;
+    esac
+    case "$_context_build_line" in pkg=*) _context_build_value=${_context_build_line#pkg=} ;; *) return 1 ;; esac
+    pkg_concrete_read _context_build_package _context_build_version _context_build_pkg_osarch "$_context_build_value" || return 1
+    CONTEXT_STORE_RECORD="${CONTEXT_STORE_RECORD}${_context_build_newline}$_context_build_line"
+  done
+  _context_build_remaining=$_context_build_providers
+  while [ -n "$_context_build_remaining" ]; do
+    case "$_context_build_remaining" in
+      *"$_context_build_newline"*)
+        _context_build_line=${_context_build_remaining%%"$_context_build_newline"*}
+        _context_build_remaining=${_context_build_remaining#*"$_context_build_newline"}
+        ;;
+      *) _context_build_line=$_context_build_remaining; _context_build_remaining= ;;
+    esac
+    case "$_context_build_line" in
+      provider.*=*)
+        _context_build_facility=${_context_build_line#provider.}
+        _context_build_facility=${_context_build_facility%%=*}
+        _context_build_selector=${_context_build_line#*=}
+        _context_profile_registry_identity_valid "$_context_build_facility" || return 1
+        pkg_request_read _context_build_provider _context_build_provider_version _context_build_provider_osarch "$_context_build_selector" || return 1
+        ;;
+      *) return 1 ;;
+    esac
+    CONTEXT_STORE_RECORD="${CONTEXT_STORE_RECORD}${_context_build_newline}$_context_build_line"
+  done
+}
+
 _context_store_parse_file()
 {
   [ "$#" -eq 2 ] || return 2
@@ -125,9 +201,17 @@ _context_store_parse_file()
   _context_store_format_version=
   _context_store_record=
   _context_store_system=
+  _context_store_user=
+  _context_store_locale=
+  _context_store_osarch=
   _context_store_packages=
+  _context_store_providers=
   _context_store_seen=
   _context_store_system_seen=0
+  _context_store_user_seen=0
+  _context_store_locale_seen=0
+  _context_store_osarch_seen=0
+  _context_store_provider_seen=
   _context_store_newline='
 '
   _context_store_cr=$(printf '\r')
@@ -144,6 +228,7 @@ _context_store_parse_file()
       case "$_context_store_line" in
         m-context-record-v1) _context_store_format_version=1 ;;
         m-context-record-v2) _context_store_format_version=2 ;;
+        m-context-record-v3) _context_store_format_version=3 ;;
         *) return 1 ;;
       esac
       _context_store_first=0
@@ -152,14 +237,49 @@ _context_store_parse_file()
     fi
     case "$_context_store_line" in
       system=*)
-        [ "$_context_store_format_version" -eq 2 ] && [ "$_context_store_system_seen" -eq 0 ] || return 1
+        [ "$_context_store_format_version" -ge 2 ] && [ "$_context_store_system_seen" -eq 0 ] || return 1
         _context_store_system=${_context_store_line#system=}
         _context_profile_registry_identity_valid "$_context_store_system" || return 1
         _context_store_system_seen=1
         ;;
+      user=*)
+        [ "$_context_store_format_version" -eq 3 ] && [ "$_context_store_user_seen" -eq 0 ] || return 1
+        _context_store_user=${_context_store_line#user=}
+        _context_profile_registry_identity_valid "$_context_store_user" || return 1
+        _context_store_user_seen=1
+        ;;
+      locale=*)
+        [ "$_context_store_format_version" -eq 3 ] && [ "$_context_store_locale_seen" -eq 0 ] || return 1
+        _context_store_locale=${_context_store_line#locale=}
+        _context_store_locale_valid "$_context_store_locale" || return 1
+        _context_store_locale_seen=1
+        ;;
+      osarch=*)
+        [ "$_context_store_format_version" -eq 3 ] && [ "$_context_store_osarch_seen" -eq 0 ] || return 1
+        _context_store_osarch=${_context_store_line#osarch=}
+        pkg_osarch_valid "$_context_store_osarch" || return 1
+        _context_store_osarch_seen=1
+        ;;
+      provider.*=*)
+        [ "$_context_store_format_version" -eq 3 ] || return 1
+        _context_store_facility=${_context_store_line#provider.}
+        _context_store_facility=${_context_store_facility%%=*}
+        _context_store_selector=${_context_store_line#*=}
+        _pkg_facility_name_valid "$_context_store_facility" || return 1
+        pkg_request_read _context_store_provider _context_store_provider_version _context_store_provider_osarch "$_context_store_selector" || return 1
+        case "$_context_store_newline$_context_store_provider_seen$_context_store_newline" in
+          *"$_context_store_newline$_context_store_facility$_context_store_newline"*) return 1 ;;
+        esac
+        if [ -n "$_context_store_provider_seen" ]; then
+          _context_store_provider_seen="$_context_store_provider_seen$_context_store_newline$_context_store_facility"
+        else
+          _context_store_provider_seen=$_context_store_facility
+        fi
+        _context_store_providers="$_context_store_providers$_context_store_newline$_context_store_line"
+        ;;
       pkg=*)
         _context_store_value=${_context_store_line#pkg=}
-        pkg_concrete_read _context_store_package _context_store_version _context_store_osarch "$_context_store_value" || return 1
+        pkg_concrete_read _context_store_package _context_store_version _context_store_pkg_osarch "$_context_store_value" || return 1
         case "$_context_store_seen$_context_store_newline" in
           *"$_context_store_newline$_context_store_package$_context_store_newline"*) return 1 ;;
         esac
@@ -174,6 +294,10 @@ _context_store_parse_file()
   CONTEXT_STORE_RECORD=$_context_store_record
   CONTEXT_STORE_VERSION=$_context_store_format_version
   CONTEXT_STORE_SYSTEM=$_context_store_system
+  CONTEXT_STORE_USER=$_context_store_user
+  CONTEXT_STORE_LOCALE=$_context_store_locale
+  CONTEXT_STORE_OSARCH=$_context_store_osarch
+  CONTEXT_STORE_PROVIDERS=${_context_store_providers#"$_context_store_newline"}
   CONTEXT_STORE_PACKAGES=${_context_store_packages#"$_context_store_newline"}
 }
 
@@ -183,6 +307,11 @@ _context_store_read()
   [ "$#" -eq 2 ] || return 2
   CONTEXT_STORE_RECORD=
   CONTEXT_STORE_PACKAGES=
+  CONTEXT_STORE_PROVIDERS=
+  CONTEXT_STORE_SYSTEM=
+  CONTEXT_STORE_USER=
+  CONTEXT_STORE_LOCALE=
+  CONTEXT_STORE_OSARCH=
   _context_store_root=$1
   _context_store_name=$2
   _context_store_name_valid "$_context_store_name" || return 1

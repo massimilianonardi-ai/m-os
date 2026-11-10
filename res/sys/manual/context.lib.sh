@@ -1,39 +1,56 @@
 NAME
-    context.lib.sh - activate validated system-profile and package selections in the current shell
+    context.lib.sh - activate a validated m process context in the current shell
 
 DESCRIPTION
     context is a POSIX shell function loaded by the m core shell runtime.
-    It selects one installation-managed system profile and already installed package concrete
-    command and published library directories, composing executable and
+    It selects one installation-managed system profile, logical user-state
+    identity, locale, OS/architecture target, provider pins, and already
+    installed package concrete command and published library directories,
+    composing executable and
     non-executable shell source lookup through PATH and selected Java JAR
-    directories through CLASSPATH. It does not create filesystem projections and
-    does not resolve package dependencies or facility provider environments.
-    It stores explicit system-profile and package dimensions for per-account
-    defaults and named presets in the strict context-store library. The system
+    directories through CLASSPATH. It does not create filesystem projections or
+    materialize provider environments. Provider dependencies are resolved by
+    the package subsystem when a package is prepared or launched.
+    It stores explicit dimensions for per-POSIX-account defaults and named
+    presets in the strict context-store library. Logical user identity is
+    separate from POSIX account identity. The system
     profile registry at $m_ROOT/state/system/profile/.inventory is read-only
-    to m; installation administrators provision it. A versioned, data-only
-    child envelope carries the validated system identity and package selections
-    and is checked against the current root, effective UID and registry.
-    Logical user-state, provider, locale, migration and complete environment
-    dimensions remain unimplemented.
+    to m; installation administrators provision it. The account store is
+    under $m_ROOT/state/<effective-UID>/context. The
+    explicit context --migrate-legacy operation imports only validated direct
+    legacy selectors; it does not change those selectors. A versioned,
+    data-only child envelope carries all selected context dimensions and is
+    checked against the current root, effective UID and profile registry.
 
     The caller must invoke the function in the shell whose PATH should change.
     Calling it in a pipeline, subshell or command substitution changes only
     that child environment.
 
 FUNCTIONS
-    context [system=<profile> | pkg=<package>@<version>[!<osarch>] | full-context=<name> ...]
+    context [system=<profile> | user=<identity> | pkg=<package>@<version>[!<osarch>] | provider.<facility>=<selector> | locale=<locale> | osarch=<id> | full-context=<name> ...]
 
-        With no arguments, initialize the system profile from its persisted
-        per-account preference or the validated installation-managed baseline,
-        and initialize package selections from persisted defaults. If the
-        account record is absent, no packages are selected. An absent or
-        invalid profile inventory fails closed. The operation does not change
-        system/current; m_STATE_SYS_DIR is set only in this process.
+        With no arguments, initialize persisted per-account dimensions and
+        validated baselines: the installation registry's system profile,
+        logical user identity default, current validated locale and host
+        m_OSARCH. If the account record is absent, no packages or provider pins
+        are selected. An absent or invalid profile inventory fails closed.
+        The operation does not change global current selectors; state roots
+        and locale selection are process-local.
 
         system= selects one identity present in the validated installation
-        inventory. pkg= selects one installed concrete; full-context= expands
-        a saved named preset at its command-line position. Selections start
+        inventory. user= selects a canonical logical identity under
+        $m_ROOT/state/user; it does not authenticate or change the POSIX
+        account. locale= selects a real locale resource directory. osarch=
+        selects a validated package-resolution target identifier. It does not
+        change detected host m_OSARCH or permit launching an incompatible
+        concrete. pkg install, pkg depend and pkg requirement use this target
+        by default; explicit request qualifiers take precedence.
+        provider.<facility>= pins one
+        installed provider concrete that actually declares that facility for
+        the selected osarch; an unavailable or mismatched pin fails before the
+        shell context changes. A consumer package binding still takes
+        precedence. pkg= selects one installed concrete; full-context=
+        expands a saved named preset at its command-line position. Selections start
         from persisted defaults and fold left-to-right. A later system= replaces
         the prior profile; a later selection for the same package replaces its
         earlier version, and unrelated package selections remain. The most recent
@@ -43,9 +60,9 @@ FUNCTIONS
         concrete's shell libraries join PATH and its Java JAR view contributes
         one literal wildcard entry (<directory>/*) to CLASSPATH.
 
-    context --set-defaults [system=<profile> | pkg=<package>@<version>[!<osarch>] ...]
+    context --set-defaults [system=<profile> | user=<identity> | pkg=<package>@<version>[!<osarch>] | provider.<facility>=<selector> | locale=<locale> | osarch=<id> ...]
 
-        Validate the supplied system identity and complete merged package
+        Validate supplied dimensions and the complete merged package
         selection, then atomically replace only the supplied dimensions in the
         current POSIX account's defaults. Unspecified dimensions are retained.
         This operation does not change the current shell context and does not
@@ -53,14 +70,14 @@ FUNCTIONS
 
     context --clear-defaults
 
-        Remove the current POSIX account's persisted system/package defaults. This is
+        Remove the current POSIX account's persisted context defaults. This is
         idempotent, leaves the active shell context unchanged, and leaves saved
         presets intact. A later no-argument context selects the validated
         installation baseline and no packages unless package defaults are set.
 
-    context --define-preset <name> [system=<profile> | pkg=<package>@<version>[!<osarch>] ...]
+    context --define-preset <name> [system=<profile> | user=<identity> | pkg=<package>@<version>[!<osarch>] | provider.<facility>=<selector> | locale=<locale> | osarch=<id> ...]
 
-        Validate and atomically create or replace a named system/package
+        Validate and atomically create or replace a named context
         selection preset under the current POSIX account. Preset names contain only ASCII
         letters, digits, underscore, dot or hyphen and begin with a letter or
         digit. Preset definitions do not change the active shell context.
@@ -69,6 +86,17 @@ FUNCTIONS
 
         Delete one saved preset. Deleting an absent preset succeeds; the active
         shell context and other saved selections are unchanged.
+
+    context --migrate-legacy
+
+        Import validated direct values from existing system/current,
+        user/current, lang/current and the selected profile's env-osarch link
+        into account defaults only where that dimension has no saved value.
+        Repeated migration is idempotent. Invalid or indirect selectors fail
+        closed. Migration does not follow directory scans, overwrite saved
+        choices or mutate the legacy selectors.
+
+        Package-concrete rules:
 
         An osarch-qualified concrete must match the current m_OSARCH.
         A generic concrete has no osarch suffix. The installed concrete and
@@ -131,24 +159,22 @@ RETURN STATUS
     23   selected system profile is invalid or absent from the managed inventory
     24   installation-managed profile inventory or selected profile is unavailable
     25   a validated context envelope could not be built
+    26   logical user identity/path is invalid
+    27   locale is invalid or unavailable
+    28   OS/architecture target is invalid or unavailable
+    29   provider pin is invalid
 
 LIMITATIONS
-    This is an incremental system-profile and package command/library slice of
-    the broader context design. It does not yet accept logical user-state,
-    facility/provider, locale, migration or inheritance-policy operands.
-    The account record accepts v1 package-only data and writes v2 system/package
-    data. The inherited envelope validates root, UID, profile and exact package
-    selections. Packages with mutable var/ state remain tied to system/current;
-    their launch fails closed when a different profile is selected.
+    The account record accepts v1 and v2 records and writes v3 records. The
+    inherited envelope accepts v1 records and writes v2 records. Packages with
+    mutable var/ state remain tied to their supported selected system profile;
+    their launch fails closed when state cannot be safely resolved.
     Only sh and Java ordinary library search views are supported; other
     runtimes need their own defined import/loader semantics. CLASSPATH may be
     overridden by explicit Java -cp or launcher-specific class loading;
     wildcard expansion order within one directory is unspecified.
     Child m bootstrap validates and consumes the inherited envelope at process
-    startup. The current envelope carries only root, effective UID, system
-    profile, exact package selections and classpath-host presence; it does not
-    carry logical user state, provider selections, locale/osarch or arbitrary
-    environment values. Provider environment/service coherence remains with
+    startup. Provider environment/service coherence remains with
     its existing owners. In particular v2 contract-keyed provider environment
     values are materialized by pkg and applied by pkg-provider; activating
     context does not apply a second facility environment or grant service/CA

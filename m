@@ -84,7 +84,11 @@ export_readonly m_LANG_FALLBACK_DIR="$m_LANG_DIR/$m_LANGUAGE_FALLBACK"
 export_readonly m_STATE_DIR="$m_ROOT/state"
 m_STATE_SYS_DIR="$m_STATE_DIR/system/current"
 export m_STATE_SYS_DIR
-export_readonly m_STATE_USER_DIR="$m_STATE_DIR/user/current"
+m_STATE_USER_DIR="$m_STATE_DIR/user/default"
+export m_STATE_USER_DIR
+m_CONTEXT_USER_IDENTITY=default
+m_CONTEXT_LOCALE=
+export m_CONTEXT_USER_IDENTITY m_CONTEXT_LOCALE
 
 export -- m_LOG_LEVEL
 
@@ -97,17 +101,12 @@ export -- m_LOG_LEVEL
 if [ "${m_CONTEXT_ENVELOPE+x}" = x ]
 then
   _context_envelope_validate || fatal execution context-envelope-invalid operation context
-fi
-
-if _m_system_state_selector_validate
-then
-  :
+  m_CONTEXT_ENVELOPE_VALIDATED=1
+  export m_CONTEXT_ENVELOPE_VALIDATED
 else
-  m_system_state_selector_status=$?
-  case "$m_system_state_selector_status" in
-    3) : ;; # No current profile is permitted during bootstrap.
-    *) fatal execution system-state-selector-invalid selector "$m_STATE_SYS_DIR" ;;
-  esac
+  context || fatal execution context-defaults-initialization-failed operation context
+  m_CONTEXT_ENVELOPE_VALIDATED=1
+  export m_CONTEXT_ENVELOPE_VALIDATED
 fi
 
 #-------------------------------------------------------------------------------
