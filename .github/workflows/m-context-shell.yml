@@ -3,6 +3,8 @@ name: m context shell command selection
 on:
   push:
     branches: [master, codex/c3-approved-generalized-context]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
