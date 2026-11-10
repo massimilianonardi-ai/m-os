@@ -2,7 +2,7 @@ name: m real host-user supervisor service lifecycle
 
 on:
   push:
-    branches: [m-os-completion-s]
+    branches: [codex/srv-persistent-supervisor, m-os-completion-s]
   pull_request:
     branches: [master]
   workflow_dispatch:

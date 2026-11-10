@@ -2,7 +2,7 @@ name: m native host-user lifecycle with isolated local service provider
 
 on:
   push:
-    branches: [m-os-completion-s]
+    branches: [codex/srv-persistent-supervisor, m-os-completion-s]
   pull_request:
     branches: [master]
   workflow_dispatch:
