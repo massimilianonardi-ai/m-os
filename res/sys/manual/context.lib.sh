@@ -144,11 +144,15 @@ LIMITATIONS
     runtimes need their own defined import/loader semantics. CLASSPATH may be
     overridden by explicit Java -cp or launcher-specific class loading;
     wildcard expansion order within one directory is unspecified.
-    Provider environment/service coherence and child-context propagation
-    are still handled by their existing owners, not by this function.
-    In particular v2 contract-keyed provider environment values are
-    materialized by pkg and applied by the existing pkg-provider machinery;
-    activating context does not apply a second facility environment.
+    Child m bootstrap validates and consumes the inherited envelope at process
+    startup. The current envelope carries only root, effective UID, system
+    profile, exact package selections and classpath-host presence; it does not
+    carry logical user state, provider selections, locale/osarch or arbitrary
+    environment values. Provider environment/service coherence remains with
+    its existing owners. In particular v2 contract-keyed provider environment
+    values are materialized by pkg and applied by pkg-provider; activating
+    context does not apply a second facility environment or grant service/CA
+    authority.
     The function makes no claim to an atomic filesystem snapshot during
     concurrent package uninstallation or publication. Activation-time
     validation cannot prevent subsequent external mutation of a direct
