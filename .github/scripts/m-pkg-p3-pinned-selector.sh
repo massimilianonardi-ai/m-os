@@ -12,8 +12,25 @@ if ./m pkg provider default web-control >/dev/null 2>&1; then exit 2; fi
 
 cleanup()
 {
+  cleanup_status=$?
+  cleanup_failed=0
   ./m pkg provider default -u -- web-control >/dev/null 2>&1 || :
-  command -p rm -rf "$store"
+  if [ -d "$store" ] && [ ! -L "$store" ]
+  then
+    command -p rm -rf "$store" || cleanup_failed=1
+    ./m sh -c '
+      . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
+      loadsyslib "pkg/facility/pkg-facility-map" || exit 2
+      pkg_facility_map_reconcile
+    ' >/dev/null 2>&1 || cleanup_failed=1
+    command -p rmdir "$PWD/facility" 2>/dev/null || :
+  fi
+  if [ "$cleanup_failed" -ne 0 ]
+  then
+    echo 'ERROR: failed to remove the P3 fixture or reconcile its derived facility map' >&2
+    exit 1
+  fi
+  return "$cleanup_status"
 }
 trap cleanup 0
 trap 'exit 3' HUP INT TERM
