@@ -1,0 +1,72 @@
+name: GPGTools package repository integration
+
+on:
+  push:
+    branches: [master, codex/gpgtools-repository-adapter]
+  pull_request:
+    branches: [master]
+    paths:
+      - .github/workflows/m-gpgtools-repository.yml
+      - lib/sys/sh/pkg/repository/pkg-repository-gpgtools.lib.sh
+      - res/sys/manual/pkg-repository-gpgtools.lib.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gpgtools-macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check out pinned package catalog
+        uses: actions/checkout@v4
+        with:
+          repository: massimilianonardi-ai/pkg-catalog
+          ref: 0b69223a5ebe7bc042aad50012ee8bc7e4a00442
+          path: catalog
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Configure isolated runtime for pinned catalog
+        shell: sh
+        run: |
+          set -eu
+          test "$(uname -m)" = arm64
+          ./m osarch update
+          test "$(git -C "$GITHUB_WORKSPACE/catalog" rev-parse HEAD)" = 0b69223a5ebe7bc042aad50012ee8bc7e4a00442
+          test "$(git -C "$GITHUB_WORKSPACE/catalog" rev-parse origin/main)" = 0b69223a5ebe7bc042aad50012ee8bc7e4a00442
+          git -C "$GITHUB_WORKSPACE/catalog" switch --create main --track origin/main
+          conf=$(./m state-path system sys pkg conf)
+          mkdir -p -- "$conf"
+          printf '%s\n' "$GITHUB_WORKSPACE/catalog" > "$conf/catalog"
+      - name: Check repository adapter against deterministic fixtures
+        shell: sh
+        run: |
+          set -eu
+          GPGTOOLS_FIXTURE_CATALOG="$GITHUB_WORKSPACE/catalog" GPGTOOLS_FIXTURE_TMP_BASE="$GITHUB_WORKSPACE/.gpgtools-fixture" SHELL=/bin/bash ./m shell -c '. ./tests/pkg-repository-gpgtools-fixture.sh'
+      - name: Resolve and install the pinned GPGTools package
+        shell: sh
+        run: |
+          set -eu
+          ./m pkg depend 'macgpg!macos-arm64' >/dev/null
+          ./m pkg depend 'macgpg@2026.1+3633n!macos-arm64' >/dev/null
+          ./m pkg install 'macgpg@2026.1+3633n!macos-arm64'
+          versions=$(./m pkg versions macgpg)
+          printf '%s\n' "$versions"
+          case "$versions" in *'macgpg@2026.1+3633n!macos-arm64'*) :;; *) echo 'pinned GPGTools concrete missing' >&2; exit 1;; esac
+      - name: Run the packaged GPG command with isolated user state
+        shell: sh
+        run: |
+          set -eu
+          tmp=$(mktemp -d)
+          cleanup() { rm -rf -- "$tmp"; }
+          trap cleanup 0 HUP INT TERM
+          mkdir -p -- "$tmp/home" "$tmp/gnupg"
+          chmod 700 "$tmp/gnupg"
+          output=$(HOME="$tmp/home" GNUPGHOME="$tmp/gnupg" ./m gpg --version)
+          printf '%s\n' "$output"
+          case "$output" in *'gpg (GnuPG)'*) :;; *) echo 'packaged gpg did not report its version' >&2; exit 1;; esac
+          echo 'PASS: exact GPGTools package installed and its public command ran with isolated user state'
