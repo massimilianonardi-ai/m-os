@@ -195,7 +195,7 @@ jobs:
         shell: sh
         run: |
           ./m sh .github/scripts/context-libraries-test.sh
-      - name: Context profile refuses incompatible mutable package state
+      - name: Context profile and protected package launch checks
         shell: sh
         run: |
           set -eu

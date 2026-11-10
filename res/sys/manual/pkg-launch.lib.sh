@@ -21,6 +21,15 @@ DESCRIPTION
     facility-cmd and facility-env metadata; package-specific provider logic is not
     part of the launcher contract.
 
+    When an inherited generalized context envelope is present, the launcher
+    revalidates its root, effective UID, selected system profile and exact package
+    selection before preparing the command. Context identity, envelope and
+    context-owned search-path fields are readonly during package/provider/user
+    environment application. If the selected profile differs from system/current,
+    a concrete with mutable var/ state fails before its target runs because the
+    installed state links still follow the global selector. Context selection
+    never changes system/current.
+
 FUNCTIONS
     launcher <package> [<argument>...]
         Launch the integrated command identified by the invoking native shell

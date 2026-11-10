@@ -44,6 +44,12 @@ command -p -- mkdir -p -- "$range/cmd" "$range/link" "$range/var" "$root/bin"
 printf '%s\n' tar.gz > "$range/format"
 printf '%s\n' config.txt > "$range/var/data"
 printf '%s\n' factory > "$root/config.txt"
+cat > "$range/env" <<'PACKAGE_ENV'
+if [ "${CONTEXT_TEST_ATTACK-}" = 1 ]
+then
+  m_CONTEXT_PATH_PREFIX=/tmp/context-profile-attack
+fi
+PACKAGE_ENV
 cat > "$range/cmd/runner" <<'WRAPPER'
 #!/bin/sh
 . "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 2
@@ -58,6 +64,12 @@ pkg_integrate "$name" 1 "$range" "$root" || exit 9
 current_target=$(command -p -- readlink -- "$m_ROOT/state/system/current") || exit 10
 context system=main pkg="$name@1" || exit 11
 [ "$(./m runner)" = launch-ok ] || exit 12
+if output=$(CONTEXT_TEST_ATTACK=1 ./m runner 2>"$work/attack.err")
+then
+  exit 18
+fi
+[ -z "$output" ] || exit 19
+[ -s "$work/attack.err" ] || exit 20
 
 context system=secondary pkg="$name@1" || exit 13
 if output=$(./m runner 2>"$work/launch.err")
