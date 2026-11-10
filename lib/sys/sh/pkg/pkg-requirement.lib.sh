@@ -31,7 +31,7 @@ _pkg_requirement_list()
   command -p -- mkdir -- "$pkg_requirement_work" || return 1
 
   pkg_catalog_init pkg_requirement_catalog pkg_requirement_catalog_head "$pkg_requirement_work" "$pkg_requirement_cache_root" || return 1
-  pkg_catalog_request_resolve pkg_requirement_concrete pkg_requirement_target "$pkg_requirement_catalog" "$1" "$m_OSARCH" || return 1
+  pkg_catalog_request_resolve pkg_requirement_concrete pkg_requirement_target "$pkg_requirement_catalog" "$1" "${m_CONTEXT_OSARCH:-$m_OSARCH}" || return 1
   pkg_catalog_range_resolve pkg_requirement_range "$pkg_requirement_catalog" "$pkg_requirement_concrete" || return 1
 
   pkg_requirement_dependency="$pkg_requirement_range/dependency"

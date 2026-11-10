@@ -42,7 +42,10 @@ FUNCTIONS
         without upstream discovery. Otherwise consult the selected catalog
         stream and its repository adapter. Return nonzero on failure.
         Requires an initialized package-install context, including its
-        selected catalog snapshot and target m_OSARCH.
+        selected catalog snapshot and target m_CONTEXT_OSARCH, falling back
+        to detected host m_OSARCH. An explicit request qualifier takes
+        precedence. Selecting a foreign target does not change host execution
+        compatibility.
 
     pkg_install_resolve <package-spec>...
         Resolve a nonempty request list through pkg_install_resolve_one and

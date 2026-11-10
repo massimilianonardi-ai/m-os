@@ -54,6 +54,25 @@ _pkg_launch_state_context_set()
   esac
 }
 
+_pkg_launch_context_state_compatible()
+{
+  [ "$#" -eq 0 ] || return 2
+  [ "${m_CONTEXT_ENVELOPE+x}" = x ] || return 0
+  _context_envelope_validate || return 1
+  _context_profile_resolve "${m_CONTEXT_SYSTEM_PROFILE-}" || return 1
+  _m_system_state_selector_validate || return 1
+  if [ "$m_STATE_SYS_DIR" = "$_m_system_state_profile" ]
+  then
+    return 0
+  fi
+
+  # Installed mutable var/ links are fixed to system/current. Until a concrete
+  # has a verified process-local adapter, refuse its launch in another profile.
+  loadsyslib "pkg/pkg-state" || return 1
+  _pkg_state_validate "$pkg_launch_concrete" "$pkg_launch_root" "$pkg_launch_pkg" "$pkg_schema" || return 1
+  [ -z "$pkg_state_paths" ]
+}
+
 _pkg_launch_env_apply()
 {
   [ "$#" -eq 1 ] || return 2
@@ -96,6 +115,7 @@ _pkg_launch_dependencies_apply()
   pkg_launch_dependency_file=$1
   pkg_launch_dependency_consumer=$2
   pkg_launch_dependency_osarch=$3
+  [ -n "$pkg_launch_dependency_osarch" ] || pkg_launch_dependency_osarch=$m_OSARCH
 
   pkg_launch_dependency_set="$(pkg_dependency_resolve "$pkg_launch_dependency_file" "$pkg_launch_dependency_consumer" "$pkg_launch_dependency_osarch")" || return 1
   [ -n "$pkg_launch_dependency_set" ] || return 0
@@ -192,6 +212,11 @@ launcher()
 
   _pkg_schema_read "$pkg_launch_concrete" || {
     _pkg_launch_error package-schema-invalid
+    return 1
+  }
+
+  _pkg_launch_context_state_compatible || {
+    _pkg_launch_error context-state-incompatible
     return 1
   }
 
@@ -366,6 +391,20 @@ launcher()
 
   HOME=$pkg_launch_home
   export -- HOME
+
+  readonly -- m_ROOT m_STATE_DIR m_STATE_SYS_DIR m_STATE_USER_DIR
+  readonly -- \
+    m_CONTEXT_ENVELOPE \
+    m_CONTEXT_ENVELOPE_VALIDATED \
+    m_CONTEXT_SYSTEM_PROFILE \
+    m_CONTEXT_USER_IDENTITY \
+    m_CONTEXT_LOCALE \
+    m_CONTEXT_OSARCH \
+    m_CONTEXT_PROVIDER_PINS \
+    m_CONTEXT_PACKAGES \
+    m_CONTEXT_PATH_PREFIX \
+    m_CONTEXT_CLASSPATH_PREFIX \
+    m_CONTEXT_CLASSPATH_HOST_SET
 
   unset m_PKG_LAUNCH_CONTEXT m_PKG_LAUNCH_STATE_INSTANCE
 

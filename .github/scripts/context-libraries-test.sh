@@ -5,21 +5,31 @@ set -e
 . "$m_LIB_DIR/sys/sh/core.lib.sh"
 loadsyslib "pkg/pkg-integration"
 
-work=$(mktemp -d) || exit 2
+command -p -- mkdir -p "$m_ROOT/.tmp"
+work=$(TMPDIR="$m_ROOT/.tmp" mktemp -d) || exit 2
+profile_root="$m_ROOT/state/system/profile"
+profile_inventory="$profile_root/.inventory"
 created='context-ci-lib@1 context-ci-lib@2 context-ci-other@1'
+context_ci_packages_created=0
 cleanup()
 {
-  for concrete in $created
-  do
-    command -p -- rm -rf -- "$m_PKG_DIR/$concrete"
-  done
+  if [ "$context_ci_packages_created" -eq 1 ]; then
+    for concrete in $created
+    do
+      command -p -- rm -rf -- "$m_PKG_DIR/$concrete"
+    done
+  fi
   command -p -- rm -rf -- "$work"
 }
+trap cleanup 0
+trap 'exit 130' HUP INT TERM
 for concrete in $created
 do
   [ ! -e "$m_PKG_DIR/$concrete" ] && [ ! -L "$m_PKG_DIR/$concrete" ] || exit 3
 done
-trap cleanup 0
+command -p -- chmod 755 "$m_ROOT/state" "$m_ROOT/state/system" "$profile_root" "$profile_root/main"
+[ -f "$profile_inventory" ] && [ ! -L "$profile_inventory" ] || exit 3
+context_ci_packages_created=1
 
 for version in 1 2
 do
@@ -71,7 +81,7 @@ CLASSPATH="$CLASSPATH:$work/consumer" java Consumer > "$work/observed"
 
 before_path=$PATH
 before_classpath=$CLASSPATH
-if context pkg=context-ci-other@1
+if context pkg=context-ci-lib@2 pkg=context-ci-other@1
 then
   echo 'FAIL: duplicate exported shell library accepted' >&2
   exit 15

@@ -561,6 +561,34 @@ pkg_provider_effective_selector()
     return 0
   fi
 
+  # A validated shell context may pin one provider per facility. Bindings
+  # remain stronger, and pins are never written into package/system config.
+  if [ "${m_CONTEXT_ENVELOPE_VALIDATED-0}" = 1 ] &&
+     [ -n "${m_CONTEXT_PROVIDER_PINS-}" ]
+  then
+    pkg_provider_effective_pin_found=0
+    while IFS= read -r pkg_provider_effective_pin ||
+          [ -n "$pkg_provider_effective_pin" ]
+    do
+      case "$pkg_provider_effective_pin" in
+        provider.*=*)
+          pkg_provider_effective_pin_facility=${pkg_provider_effective_pin#provider.}
+          pkg_provider_effective_pin_facility=${pkg_provider_effective_pin_facility%%=*}
+          [ "$pkg_provider_effective_pin_facility" = "$pkg_provider_effective_facility" ] || continue
+          pkg_provider_effective_pin_selector=${pkg_provider_effective_pin#*=}
+          pkg_request_read pkg_provider_effective_pin_pkg pkg_provider_effective_pin_version pkg_provider_effective_pin_osarch "$pkg_provider_effective_pin_selector" || return 3
+          printf -- '%s\n' "$pkg_provider_effective_pin_selector"
+          pkg_provider_effective_pin_found=1
+          break
+          ;;
+        *) return 3 ;;
+      esac
+    done <<EOF_CONTEXT_PROVIDER_PINS
+${m_CONTEXT_PROVIDER_PINS}
+EOF_CONTEXT_PROVIDER_PINS
+    [ "$pkg_provider_effective_pin_found" -eq 1 ] && return 0
+  fi
+
   _pkg_provider_default_file "$pkg_provider_effective_facility" || return $?
   if [ ! -e "$pkg_provider_config_file" ] && [ ! -L "$pkg_provider_config_file" ]
   then
@@ -1061,6 +1089,7 @@ _pkg_provider_global_environment_restore()
 pkg_provider_global_environment_materialize()
 (
   [ "$#" -eq 0 ] || return 2
+  _m_system_state_selector_validate || return 1
 
   pkg_provider_materialize_cache="$m_STATE_SYS_DIR/sys/environment/cache"
   umask 022

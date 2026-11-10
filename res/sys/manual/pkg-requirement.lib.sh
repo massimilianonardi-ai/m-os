@@ -10,7 +10,8 @@ FUNCTIONS
     pkg_requirement list <package-spec>
         Resolve the package/version/platform definition from the current catalog and
         print its declared dependency lines. The query uses normal catalog stream
-        and repository version resolution but does not resolve/download/extract a
+        and repository version resolution with m_CONTEXT_OSARCH, falling back
+        to detected host m_OSARCH, but does not resolve/download/extract a
         package artifact and does not install the package.
 
         An empty successful result means that the selected package definition has
