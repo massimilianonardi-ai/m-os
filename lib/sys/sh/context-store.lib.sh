@@ -405,8 +405,19 @@ _context_store_lock()
       }
       return 0
     fi
-    [ -d "$_context_store_lock_dir" ] && [ ! -L "$_context_store_lock_dir" ] || return 1
-    _context_store_metadata "$_context_store_lock_dir" || return 1
+    if [ ! -d "$_context_store_lock_dir" ]; then
+      [ ! -e "$_context_store_lock_dir" ] && [ ! -L "$_context_store_lock_dir" ] || return 1
+      _context_store_attempt=$((_context_store_attempt + 1))
+      command -p sleep 1 || return 1
+      continue
+    fi
+    [ ! -L "$_context_store_lock_dir" ] || return 1
+    if ! _context_store_metadata "$_context_store_lock_dir"; then
+      [ ! -e "$_context_store_lock_dir" ] && [ ! -L "$_context_store_lock_dir" ] || return 1
+      _context_store_attempt=$((_context_store_attempt + 1))
+      command -p sleep 1 || return 1
+      continue
+    fi
     case "$_context_store_mode" in
       drwx------ | drwx------@) : ;;
       *) return 1 ;;
