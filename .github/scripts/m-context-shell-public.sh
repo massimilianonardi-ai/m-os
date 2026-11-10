@@ -1,0 +1,211 @@
+#!/bin/sh
+set -eu
+./m osarch update
+./m sh -ec '
+  . "$m_LIB_DIR/sys/sh/core.lib.sh"
+  command -v context >/dev/null
+  test_uid=$(command -p id -u)
+  test_account="$m_ROOT/state/$test_uid"
+  profile_root="$m_ROOT/state/system/profile"
+  profile_inventory="$profile_root/.inventory"
+  profile_inventory_backup="$profile_root/.inventory.ci-backup"
+  chmod 755 "$m_ROOT/state" "$m_ROOT/state/system" "$profile_root" "$profile_root/main"
+  [ ! -e "$test_account" ] && [ ! -L "$test_account" ] || {
+    echo "INFRASTRUCTURE: account context fixture already exists" >&2
+    exit 3
+  }
+  mkdir -p "$m_PKG_DIR"
+  [ -f "$profile_inventory" ] && [ ! -L "$profile_inventory" ] || {
+    echo "INFRASTRUCTURE: installation profile inventory is missing or invalid" >&2
+    exit 3
+  }
+  [ ! -e "$profile_inventory_backup" ] && [ ! -L "$profile_inventory_backup" ] || {
+    echo "INFRASTRUCTURE: profile inventory backup path is occupied" >&2
+    exit 3
+  }
+  cp "$profile_inventory" "$profile_inventory_backup"
+  mkdir -p "$m_ROOT/state/user/alice"
+  chmod 755 "$m_ROOT/state/user"
+  cleanup() {
+    context --clear-defaults >/dev/null 2>&1 || :
+    context --delete-preset context-ci >/dev/null 2>&1 || :
+    context --delete-preset context-ci-system >/dev/null 2>&1 || :
+    rm -rf -- "$m_PKG_DIR/context-a@1" "$m_PKG_DIR/context-a@2" "$m_PKG_DIR/context-b@1" "$m_PKG_DIR/context-c@1" "$m_PKG_DIR/context-d@1" "$m_PKG_DIR/context-core@1"
+    cp "$profile_inventory_backup" "$profile_inventory"
+    rm -f -- "$profile_inventory_backup"
+    rm -f -- "$m_ROOT/state/user/current"
+    rmdir "$profile_root/secondary" 2>/dev/null || :
+    rmdir "$m_ROOT/state/user/alice" "$m_ROOT/state/user" 2>/dev/null || :
+    rmdir "$test_account/context" "$test_account" 2>/dev/null || :
+  }
+  trap cleanup 0
+  mkdir -p "$profile_root/secondary"
+  chmod 755 "$profile_root/secondary"
+  printf "%s\n" "m-system-profile-inventory-v1" "baseline=main" "profile=main" "profile=secondary" > "$profile_inventory"
+  chmod 644 "$profile_inventory"
+  for item in context-a@1 context-a@2 context-b@1 context-c@1 context-d@1 context-core@1
+  do
+    mkdir -p "$m_PKG_DIR/$item/cmd"
+  done
+  context --clear-defaults
+  context --delete-preset context-ci
+  context --delete-preset context-ci-system
+  printf "%s\n" "#!/bin/sh" "exit 0" > "$m_PKG_DIR/context-a@1/cmd/alpha"
+  printf "%s\n" "#!/bin/sh" "exit 0" > "$m_PKG_DIR/context-a@2/cmd/alpha"
+  printf "%s\n" "#!/bin/sh" "exit 0" > "$m_PKG_DIR/context-b@1/cmd/beta"
+  printf "%s\n" "#!/bin/sh" "exit 0" > "$m_PKG_DIR/context-c@1/cmd/beta"
+  printf "%s\n" "#!/bin/sh" "exit 0" > "$m_PKG_DIR/context-d@1/cmd/delta"
+  printf "%s\n" "#!/bin/sh" "exit 0" > "$m_PKG_DIR/context-core@1/cmd/pkg"
+  printf "%s\n" "browser 1" > "$m_PKG_DIR/context-a@1/facility"
+  chmod 644 "$m_PKG_DIR/context-a@1/facility"
+  chmod +x "$m_PKG_DIR/"context-*/cmd/*
+  baseline=$PATH
+  context
+  [ "$PATH" = "$baseline" ]
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = main ]
+  [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/main" ]
+  context user=alice locale=it_IT osarch="$m_OSARCH" provider.browser=context-a@1
+  [ "$m_CONTEXT_USER_IDENTITY" = alice ]
+  [ "$m_STATE_USER_DIR" = "$m_ROOT/state/user/alice" ]
+  [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
+  before_bad_provider=$PATH
+  if context provider.browser=context-b@1; then exit 41; fi
+  [ "$PATH" = "$before_bad_provider" ]
+  [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
+  if context provider.browser=not-installed@1; then exit 42; fi
+  [ "$PATH" = "$before_bad_provider" ]
+  [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
+  [ "$(lang execution invalid-arguments)" = "$(cat "$m_LANG_DIR/it_IT/execution/invalid-arguments")" ]
+  [ "$(./m state-path user sys probe data)" = "$m_ROOT/state/user/alice/sys/probe/data" ]
+  ./m sh -ec "[ \"\$m_CONTEXT_USER_IDENTITY\" = alice ] && [ \"\$m_CONTEXT_LOCALE\" = it_IT ] && [ \"\$m_CONTEXT_OSARCH\" = \"\$m_OSARCH\" ] && [ \"\$m_CONTEXT_PROVIDER_PINS\" = provider.browser=context-a@1 ] && [ \"\$m_CONTEXT_ENVELOPE_VALIDATED\" = 1 ]"
+  if context user=../outside; then exit 44; fi
+  [ "$m_CONTEXT_USER_IDENTITY" = alice ]
+  context --clear-defaults
+  [ ! -e "$m_ROOT/state/user/current" ] && [ ! -L "$m_ROOT/state/user/current" ]
+  ln -s alice "$m_ROOT/state/user/current"
+  legacy_system=$(readlink "$m_ROOT/state/system/current")
+  legacy_locale=$(readlink "$m_LANG_CURRENT_DIR")
+  context --migrate-legacy
+  context
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = main ]
+  [ "$m_CONTEXT_USER_IDENTITY" = alice ]
+  [ "$m_CONTEXT_LOCALE" = "$legacy_locale" ]
+  [ "$m_CONTEXT_OSARCH" = "$m_OSARCH" ]
+  [ -z "$m_CONTEXT_PROVIDER_PINS" ]
+  [ "$(readlink "$m_ROOT/state/system/current")" = "$legacy_system" ]
+  [ "$(readlink "$m_LANG_CURRENT_DIR")" = "$legacy_locale" ]
+  [ "$(readlink "$m_ROOT/state/user/current")" = alice ]
+  context --clear-defaults
+  rm -f -- "$m_ROOT/state/user/current"
+  context
+  context
+  current_before=$(readlink "$m_ROOT/state/system/current")
+  context system=secondary
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = secondary ]
+  [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/secondary" ]
+  [ "$(readlink "$m_ROOT/state/system/current")" = "$current_before" ]
+  ./m sh -ec "[ \"\$m_STATE_SYS_DIR\" = \"\$m_ROOT/state/system/profile/secondary\" ] && [ \"\$m_CONTEXT_SYSTEM_PROFILE\" = secondary ]" || exit 40
+  context
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = main ]
+  [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/main" ]
+  context pkg=context-a@1
+  [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@1/cmd/alpha" ]
+  ./m sh -ec ". \"\$m_LIB_DIR/sys/sh/core.lib.sh\"; [ \"\$(command -v alpha)\" = \"\$m_PKG_DIR/context-a@1/cmd/alpha\" ]; context pkg=context-b@1; [ \"\$(command -v beta)\" = \"\$m_PKG_DIR/context-b@1/cmd/beta\" ]; ! command -v alpha >/dev/null 2>&1" || exit 41
+  before_profile=$m_STATE_SYS_DIR
+  before_context_path=$PATH
+  if context system=not-managed; then exit 42; fi
+  [ "$m_STATE_SYS_DIR" = "$before_profile" ]
+  [ "$PATH" = "$before_context_path" ]
+  saved_envelope=$m_CONTEXT_ENVELOPE
+  m_CONTEXT_ENVELOPE=$(printf "%s\n" "m-context-envelope-v1" "root=/invalid" "uid=0" "system=main" "classpath-host-set=0")
+  if ./m osarch show >/dev/null 2>&1; then exit 43; fi
+  m_CONTEXT_ENVELOPE=$saved_envelope
+  context pkg=context-b@1
+  [ "$(command -v beta)" = "$m_PKG_DIR/context-b@1/cmd/beta" ]
+  context pkg=context-a@2
+  [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@2/cmd/alpha" ]
+  before=$PATH
+  context pkg=context-a@2
+  [ "$PATH" = "$before" ]
+  if context pkg=context-b@1 pkg=context-c@1; then exit 21; fi
+  [ "$PATH" = "$before" ]
+  if context pkg=context-core@1; then exit 22; fi
+  [ "$PATH" = "$before" ]
+  if context pkg=not-installed@1; then exit 23; fi
+  [ "$PATH" = "$before" ]
+  PATH="/tmp/context-host:$PATH"
+  context pkg=context-a@1
+  case "$PATH" in *"/tmp/context-host"*) : ;; *) exit 24 ;; esac
+  [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@1/cmd/alpha" ]
+  context
+  case "$PATH" in *"$m_PKG_DIR/context-a@"*) exit 25 ;; esac
+  case "$PATH" in *"$m_PKG_DIR/context-b@"*) exit 26 ;; esac
+
+  # Persistent defaults are per effective UID and do not mutate
+  # this shell until context is explicitly initialized again.
+  before_store=$PATH
+  if context --set-defaults; then exit 28; else status=$?; fi
+  [ "$status" -eq 2 ]
+  if context --set-defaults provider.browser=context-b@1; then exit 43; else status=$?; fi
+  [ "$status" -eq 29 ]
+  [ ! -e "$test_account/context/defaults" ]
+  if context --define-preset invalid-provider provider.browser=not-installed@1; then exit 44; else status=$?; fi
+  [ "$status" -eq 29 ]
+  [ ! -e "$test_account/context/preset.invalid-provider" ]
+  context --set-defaults pkg=context-a@1 user=alice locale=it_IT osarch="$m_OSARCH" provider.browser=context-a@1
+  [ "$PATH" = "$before_store" ]
+  context --set-defaults system=secondary
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = main ]
+  context
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = secondary ]
+  [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/secondary" ]
+  [ "$m_CONTEXT_USER_IDENTITY" = alice ]
+  [ "$m_CONTEXT_LOCALE" = it_IT ]
+  [ "$m_CONTEXT_OSARCH" = "$m_OSARCH" ]
+  [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
+  context --set-defaults system=main
+
+  # Hold the account-default lock while two independent shell
+  # updates queue, then prove their per-package changes both survive.
+  _context_store_lock "$m_ROOT" || exit 29
+  context --set-defaults pkg=context-b@1 &
+  update_b=$!
+  command -p sleep 1
+  context --set-defaults pkg=context-d@1 &
+  update_d=$!
+  command -p sleep 1
+  _context_store_unlock "$_context_store_lock_dir" || exit 30
+  wait "$update_b" || exit 31
+  wait "$update_d" || exit 32
+  context
+  [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@1/cmd/alpha" ]
+  [ "$(command -v beta)" = "$m_PKG_DIR/context-b@1/cmd/beta" ]
+  [ "$(command -v delta)" = "$m_PKG_DIR/context-d@1/cmd/delta" ]
+  context pkg=context-b@1
+  [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@1/cmd/alpha" ]
+  [ "$(command -v beta)" = "$m_PKG_DIR/context-b@1/cmd/beta" ]
+  context --define-preset context-ci pkg=context-b@1 user=alice locale=it_IT osarch="$m_OSARCH" provider.browser=context-a@1
+  context --define-preset context-ci-system system=secondary
+  context full-context=context-ci-system
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = secondary ]
+  context full-context=context-ci pkg=context-a@2
+  [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@2/cmd/alpha" ]
+  [ "$(command -v beta)" = "$m_PKG_DIR/context-b@1/cmd/beta" ]
+  [ "$m_CONTEXT_USER_IDENTITY" = alice ]
+  [ "$m_CONTEXT_LOCALE" = it_IT ]
+  [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
+  before_clear=$PATH
+  context --clear-defaults
+  [ "$PATH" = "$before_clear" ]
+  context
+  case "$PATH" in *"$m_PKG_DIR/context-a@"*|*"$m_PKG_DIR/context-b@"*) exit 27 ;; esac
+  context full-context=context-ci
+  [ "$(command -v beta)" = "$m_PKG_DIR/context-b@1/cmd/beta" ]
+  before_invalid_preset=$PATH
+  if context full-context=missing; then exit 28; fi
+  [ "$PATH" = "$before_invalid_preset" ]
+  context --delete-preset context-ci
+  context --delete-preset context-ci-system
+  context --clear-defaults
+  echo "PASS: POSIX context command selection/replacement"
+'
