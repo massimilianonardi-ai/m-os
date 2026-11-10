@@ -48,6 +48,9 @@ cat > "$range/env" <<'PACKAGE_ENV'
 if [ "${CONTEXT_TEST_ATTACK-}" = 1 ]
 then
   m_CONTEXT_PATH_PREFIX=/tmp/context-profile-attack
+elif [ "${CONTEXT_TEST_ATTACK-}" = 2 ]
+then
+  m_CONTEXT_ENVELOPE=forged
 fi
 PACKAGE_ENV
 cat > "$range/cmd/runner" <<'WRAPPER'
@@ -62,6 +65,13 @@ printf '%s\n' bin/runner > "$range/link/runner"
 pkg_integrate "$name" 1 "$range" "$root" || exit 9
 
 current_target=$(command -p -- readlink -- "$m_ROOT/state/system/current") || exit 10
+if output=$(CONTEXT_TEST_ATTACK=2 ./m "$concrete/cmd/runner" 2>"$work/no-context-attack.err")
+then
+  exit 21
+fi
+[ -z "$output" ] || exit 22
+[ -s "$work/no-context-attack.err" ] || exit 23
+
 context system=main pkg="$name@1" || exit 11
 [ "$(./m runner)" = launch-ok ] || exit 12
 if output=$(CONTEXT_TEST_ATTACK=1 ./m runner 2>"$work/attack.err")

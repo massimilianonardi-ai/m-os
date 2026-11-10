@@ -25,10 +25,11 @@ DESCRIPTION
     revalidates its root, effective UID, selected system profile and exact package
     selection before preparing the command. Context identity, envelope and
     context-owned search-path fields are readonly during package/provider/user
-    environment application. If the selected profile differs from system/current,
-    a concrete with mutable var/ state fails before its target runs because the
-    installed state links still follow the global selector. Context selection
-    never changes system/current.
+    environment application, including when no envelope was originally present.
+    If the selected profile differs from system/current, a concrete with mutable
+    var/ state fails before its target runs because the installed state links
+    still follow the global selector. Context selection never changes
+    system/current.
 
 FUNCTIONS
     launcher <package> [<argument>...]
