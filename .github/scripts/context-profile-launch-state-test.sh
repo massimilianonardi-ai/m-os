@@ -64,6 +64,18 @@ command -p -- chmod +x -- "$root/bin/runner"
 printf '%s\n' bin/runner > "$range/link/runner"
 pkg_integrate "$name" 1 "$range" "$root" || exit 9
 
+_expect_invalid_envelope()
+{
+  [ "$#" -eq 1 ] || return 2
+  m_CONTEXT_ENVELOPE=$1
+  export m_CONTEXT_ENVELOPE
+  if ./m osarch show >"$work/envelope.out" 2>"$work/envelope.err"
+  then
+    return 1
+  fi
+  [ ! -s "$work/envelope.out" ] && [ -s "$work/envelope.err" ]
+}
+
 current_target=$(command -p -- readlink -- "$m_ROOT/state/system/current") || exit 10
 if output=$(CONTEXT_TEST_ATTACK=2 ./m "$concrete/cmd/runner" 2>"$work/no-context-attack.err")
 then
@@ -81,7 +93,49 @@ fi
 [ -z "$output" ] || exit 19
 [ -s "$work/attack.err" ] || exit 20
 
+saved_envelope=$m_CONTEXT_ENVELOPE
+test_uid=$(command -p id -u)
+valid_envelope=$(printf '%s\n' m-context-envelope-v1 "root=$m_ROOT" "uid=$test_uid" system=main classpath-host-set=0 "package=$name@1")
+if ! _expect_invalid_envelope "$(printf '%s\n' m-context-envelope-v99 "root=$m_ROOT" "uid=$test_uid" system=main classpath-host-set=0 "package=$name@1")"
+then
+  exit 25
+fi
+if ! _expect_invalid_envelope "$(printf '%s\n' "$valid_envelope" "root=$m_ROOT")"
+then
+  exit 26
+fi
+case "$test_uid" in 0) invalid_uid=1 ;; *) invalid_uid=0 ;; esac
+if ! _expect_invalid_envelope "$(printf '%s\n' m-context-envelope-v1 "root=$m_ROOT" "uid=$invalid_uid" system=main classpath-host-set=0 "package=$name@1")"
+then
+  exit 27
+fi
+if ! _expect_invalid_envelope "$(printf '%s\n' m-context-envelope-v1 "root=$m_ROOT" "uid=$test_uid" system=unmanaged classpath-host-set=0 "package=$name@1")"
+then
+  exit 28
+fi
+if ! _expect_invalid_envelope "$(printf '%s\n' m-context-envelope-v1 "root=$m_ROOT" "uid=$test_uid" system=main classpath-host-set=0 package=not-installed@1)"
+then
+  exit 29
+fi
+if ! _expect_invalid_envelope "$(printf '%s\n\n' "$valid_envelope" extra=value)"
+then
+  exit 30
+fi
+if ! _expect_invalid_envelope "$(printf '%s\r' "$valid_envelope")"
+then
+  exit 31
+fi
+oversized_envelope=$(command -p awk 'BEGIN { for (i = 0; i < 17000; i++) printf "x" }') || exit 32
+if ! _expect_invalid_envelope "$oversized_envelope"
+then
+  exit 33
+fi
+m_CONTEXT_ENVELOPE=$saved_envelope
+export m_CONTEXT_ENVELOPE
+
 context system=secondary pkg="$name@1" || exit 13
+expected_context_state="$m_ROOT/state/system/profile/secondary/sys/environment/cache"
+[ "$(./m state-path system sys environment cache)" = "$expected_context_state" ] || exit 24
 if output=$(./m runner 2>"$work/launch.err")
 then
   exit 14
