@@ -84,6 +84,16 @@ The source checkout preserves the existing `m` state and platform-selection
 contract. `osarch update` materializes the platform-specific technical paths
 for the current host. There is no implicit platform mutation in bootstrap.
 
+### Portable services in a source checkout
+
+`srv start` and `srv stop` use the native supervisor built for the current
+host. A source-checkout user must have a C compiler and run
+`./tools/build-srv-supervisor.sh` once before using portable services. The
+helper is written to `libexec/sys/srv-supervisor` in this checkout; `m`
+bootstrap remains POSIX-shell-only and never invokes a compiler. A complete
+RumiAI installation must package a helper built for each supported host and
+architecture at the same path.
+
 The current repository adapters cover GitHub, Node.js, Google Chrome's
 Linux Debian repository, Chromium snapshots, shared artifact resolution,
 Apache Maven and Temurin. Hosted V2 validation includes real Java/Maven
