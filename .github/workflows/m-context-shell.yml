@@ -135,6 +135,11 @@ jobs:
         run: |
           set -eu
           ./m sh .github/scripts/context-store-test.sh
+      - name: Installation-managed system-profile registry validation
+        shell: sh
+        run: |
+          set -eu
+          ./m sh .github/scripts/context-profile-registry-test.sh
       - name: System state selector escape refusal
         shell: sh
         run: |

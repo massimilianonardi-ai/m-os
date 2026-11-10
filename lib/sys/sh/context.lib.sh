@@ -1,5 +1,6 @@
 loadsyslib "pkg/pkg-common"
 loadsyslib "context-store"
+loadsyslib "context-profile-registry"
 
 _context_error()
 {
