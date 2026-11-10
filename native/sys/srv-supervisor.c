@@ -459,7 +459,8 @@ static uint32_t handle_request(const char *root, const char *socket_path, int fd
                 free(next->run_root); free(next->runtime_dir); free(next->log_path); free(next->name); free(next->command); free(next->provider); free(next);
                 result = RESULT_START_FAILED; goto done;
             }
-            services = next->next = services;
+            next->next = services;
+            services = next;
             if (runtime_publish(runtime_dir, child, owner, fields[8], fields[9], socket_path) != 0) {
                 kill(child, SIGTERM); while (waitpid(child, NULL, 0) < 0 && errno == EINTR) {}
                 service_free(next, 0); result = RESULT_START_FAILED; goto done;
