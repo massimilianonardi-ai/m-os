@@ -86,6 +86,25 @@ fi
 
 context system=main pkg="$name@1" || exit 11
 [ "$(./m runner)" = launch-ok ] || exit 12
+
+before_path=$PATH
+before_state_root=$m_STATE_SYS_DIR
+before_context_envelope=$m_CONTEXT_ENVELOPE
+command -p cp -- "$inventory" "$work/inventory.saved"
+printf '%s\n' invalid-inventory > "$inventory"
+if context >"$work/inventory.out" 2>"$work/inventory.err"
+then
+  exit 34
+else
+  inventory_status=$?
+fi
+[ "$inventory_status" -eq 24 ] || exit 35
+[ "$PATH" = "$before_path" ] || exit 36
+[ "$m_STATE_SYS_DIR" = "$before_state_root" ] || exit 37
+[ "$m_CONTEXT_ENVELOPE" = "$before_context_envelope" ] || exit 38
+[ -s "$work/inventory.err" ] || exit 39
+command -p cp -- "$work/inventory.saved" "$inventory"
+
 if output=$(CONTEXT_TEST_ATTACK=1 ./m runner 2>"$work/attack.err")
 then
   exit 18
