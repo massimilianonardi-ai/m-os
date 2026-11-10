@@ -351,6 +351,8 @@ _context_store_load_defaults()
     0) return 0 ;;
     5)
       CONTEXT_STORE_RECORD=
+      CONTEXT_STORE_VERSION=
+      CONTEXT_STORE_SYSTEM=
       CONTEXT_STORE_PACKAGES=
       return 0
       ;;
@@ -361,13 +363,221 @@ _context_store_load_defaults()
   esac
 }
 
-_context_record_from_concretes()
+_context_profile_resolve()
 {
   [ "$#" -eq 1 ] || return 2
-  _context_record_items=$1
+  _context_profile_requested=$1
+  _context_profile_registry_read "$m_ROOT" || {
+    _context_error context-profile-inventory-invalid "$m_ROOT/state/system/profile/.inventory"
+    return 24
+  }
+  _context_profile_selected=${_context_profile_requested:-$CONTEXT_PROFILE_REGISTRY_BASELINE}
+  _context_profile_registry_identity_valid "$_context_profile_selected" || {
+    _context_error context-profile-invalid "$_context_profile_selected"
+    return 23
+  }
+  _context_profile_newline='
+'
+  case "$_context_profile_newline$_context_profile_registry_identities$_context_profile_newline" in
+    *"$_context_profile_newline$_context_profile_selected$_context_profile_newline"*) : ;;
+    *)
+      _context_error context-profile-unmanaged "$_context_profile_selected"
+      return 23
+      ;;
+  esac
+  _context_profile_path="$m_ROOT/state/system/profile/$_context_profile_selected"
+  [ -d "$_context_profile_path" ] && [ ! -L "$_context_profile_path" ] || {
+    _context_error context-profile-unavailable "$_context_profile_selected"
+    return 24
+  }
+}
+
+_context_envelope_build()
+{
+  [ "$#" -eq 3 ] || return 2
+  _context_envelope_system=$1
+  _context_envelope_packages=$2
+  _context_envelope_classpath_host_set=$3
+  _context_envelope_uid=$(command -p id -u 2>/dev/null) || return 1
+  case "$_context_envelope_uid" in '' | *[!0-9]*) return 1 ;; esac
+  case "$m_ROOT" in *'
+'*) return 1 ;; esac
+  case "$_context_envelope_classpath_host_set" in 0 | 1) : ;; *) return 1 ;; esac
+  _context_envelope_newline='
+'
+  _context_envelope_value="m-context-envelope-v1$_context_envelope_newline"root=$m_ROOT$_context_envelope_newline"uid=$_context_envelope_uid$_context_envelope_newline"system=$_context_envelope_system$_context_envelope_newline"classpath-host-set=$_context_envelope_classpath_host_set"
+  _context_envelope_remaining=$_context_envelope_packages
+  while [ -n "$_context_envelope_remaining" ]
+  do
+    case "$_context_envelope_remaining" in
+      *"$_context_envelope_newline"*)
+        _context_envelope_item=${_context_envelope_remaining%%"$_context_envelope_newline"*}
+        _context_envelope_remaining=${_context_envelope_remaining#*"$_context_envelope_newline"}
+        ;;
+      *)
+        _context_envelope_item=$_context_envelope_remaining
+        _context_envelope_remaining=
+        ;;
+    esac
+    _context_envelope_value="$_context_envelope_value$_context_envelope_newline"package=$_context_envelope_item
+  done
+  [ "${#_context_envelope_value}" -le 16383 ] || return 1
+  printf '%s\n' "$_context_envelope_value"
+}
+
+# Validate the inherited shell context as data before bootstrap uses it. A
+# present invalid envelope is an error; it never falls back to global defaults.
+_context_envelope_validate()
+{
+  [ "$#" -eq 0 ] || return 2
+  [ "${m_CONTEXT_ENVELOPE+x}" = x ] || return 5
+  _context_envelope_size=${#m_CONTEXT_ENVELOPE}
+  [ "$_context_envelope_size" -le 16383 ] || return 1
+  _context_envelope_root=
+  _context_envelope_uid=
+  _context_envelope_system=
+  _context_envelope_classpath_host_set=
+  _context_envelope_packages=
+  _context_envelope_package_ids=
+  _context_operand_newline='
+'
+  _context_envelope_line_count=0
+  _context_envelope_header=1
+  _context_envelope_root_seen=0
+  _context_envelope_uid_seen=0
+  _context_envelope_system_seen=0
+  _context_envelope_classpath_seen=0
+  _context_envelope_newline='
+'
+  _context_envelope_cr=$(printf '\r')
+  while IFS= read -r _context_envelope_line || [ -n "$_context_envelope_line" ]
+  do
+    _context_envelope_line_count=$((_context_envelope_line_count + 1))
+    [ "$_context_envelope_line_count" -le 133 ] || return 1
+    case "$_context_envelope_line" in *"$_context_envelope_cr"*) return 1 ;; esac
+    if [ "$_context_envelope_header" -eq 1 ]
+    then
+      [ "$_context_envelope_line" = m-context-envelope-v1 ] || return 1
+      _context_envelope_header=0
+      continue
+    fi
+    case "$_context_envelope_line" in
+      root=*)
+        [ "$_context_envelope_root_seen" -eq 0 ] || return 1
+        _context_envelope_root=${_context_envelope_line#root=}
+        _context_envelope_root_seen=1
+        ;;
+      uid=*)
+        [ "$_context_envelope_uid_seen" -eq 0 ] || return 1
+        _context_envelope_uid=${_context_envelope_line#uid=}
+        case "$_context_envelope_uid" in '' | *[!0-9]*) return 1 ;; esac
+        _context_envelope_uid_seen=1
+        ;;
+      system=*)
+        [ "$_context_envelope_system_seen" -eq 0 ] || return 1
+        _context_envelope_system=${_context_envelope_line#system=}
+        _context_profile_registry_identity_valid "$_context_envelope_system" || return 1
+        _context_envelope_system_seen=1
+        ;;
+      classpath-host-set=*)
+        [ "$_context_envelope_classpath_seen" -eq 0 ] || return 1
+        _context_envelope_classpath_host_set=${_context_envelope_line#classpath-host-set=}
+        case "$_context_envelope_classpath_host_set" in 0 | 1) : ;; *) return 1 ;; esac
+        _context_envelope_classpath_seen=1
+        ;;
+      package=*)
+        [ "$_context_envelope_classpath_seen" -eq 1 ] || return 1
+        _context_envelope_package=${_context_envelope_line#package=}
+        pkg_concrete_read _context_envelope_pkg _context_envelope_version _context_envelope_osarch "$_context_envelope_package" || return 1
+        [ -d "$m_PKG_DIR/$_context_envelope_package" ] && [ ! -L "$m_PKG_DIR/$_context_envelope_package" ] || return 1
+        _context_operand_append "$_context_envelope_packages" "pkg=$_context_envelope_package"
+        _context_envelope_packages=$_context_operand_buffer
+        _context_operand_append "$_context_envelope_package_ids" "$_context_envelope_package"
+        _context_envelope_package_ids=$_context_operand_buffer
+        ;;
+      *) return 1 ;;
+    esac
+  done <<EOF_CONTEXT_ENVELOPE
+${m_CONTEXT_ENVELOPE}
+EOF_CONTEXT_ENVELOPE
+  [ "$_context_envelope_header" -eq 0 ] &&
+  [ "$_context_envelope_root_seen" -eq 1 ] &&
+  [ "$_context_envelope_uid_seen" -eq 1 ] &&
+  [ "$_context_envelope_system_seen" -eq 1 ] &&
+  [ "$_context_envelope_classpath_seen" -eq 1 ] || return 1
+  [ "$_context_envelope_root" = "$m_ROOT" ] || return 1
+  _context_envelope_current_uid=$(command -p id -u 2>/dev/null) || return 1
+  [ "$_context_envelope_uid" = "$_context_envelope_current_uid" ] || return 1
+  _context_profile_resolve "$_context_envelope_system" || return 1
+  _context_envelope_resolved=$(_context_resolve_list '' "$_context_envelope_packages") || return 1
+  [ "$_context_envelope_resolved" = "$_context_envelope_package_ids" ] || return 1
+  _context_envelope_packages=$_context_envelope_resolved
+  _context_commands_validate "$_context_envelope_packages" || return 1
+  _context_libraries_validate "$_context_envelope_packages" || return 1
+
+  _context_envelope_path_prefix=
+  _context_envelope_classpath_prefix=
+  _context_envelope_remaining=$_context_envelope_packages
+  while [ -n "$_context_envelope_remaining" ]
+  do
+    case "$_context_envelope_remaining" in
+      *"$_context_envelope_newline"*)
+        _context_envelope_item=${_context_envelope_remaining%%"$_context_envelope_newline"*}
+        _context_envelope_remaining=${_context_envelope_remaining#*"$_context_envelope_newline"}
+        ;;
+      *)
+        _context_envelope_item=$_context_envelope_remaining
+        _context_envelope_remaining=
+        ;;
+    esac
+    _context_views_set "$_context_envelope_item" || return 1
+    for _context_envelope_rel in "$_context_bin_rel" "$_context_lib_rel/sh"
+    do
+      _context_envelope_dir="$m_PKG_DIR/$_context_envelope_item/$_context_envelope_rel"
+      if [ -e "$_context_envelope_dir" ] || [ -L "$_context_envelope_dir" ]
+      then
+        [ -d "$_context_envelope_dir" ] && [ ! -L "$_context_envelope_dir" ] || return 1
+        if [ -n "$_context_envelope_path_prefix" ]; then
+          _context_envelope_path_prefix="$_context_envelope_path_prefix:$_context_envelope_dir"
+        else
+          _context_envelope_path_prefix=$_context_envelope_dir
+        fi
+      fi
+    done
+    _context_envelope_dir="$m_PKG_DIR/$_context_envelope_item/$_context_lib_rel/java"
+    if [ -e "$_context_envelope_dir" ] || [ -L "$_context_envelope_dir" ]
+    then
+      [ -d "$_context_envelope_dir" ] && [ ! -L "$_context_envelope_dir" ] || return 1
+      if [ -n "$_context_envelope_classpath_prefix" ]; then
+        _context_envelope_classpath_prefix="$_context_envelope_classpath_prefix:$_context_envelope_dir/*"
+      else
+        _context_envelope_classpath_prefix="$_context_envelope_dir/*"
+      fi
+    fi
+  done
+  m_STATE_SYS_DIR=$_context_profile_path
+  m_CONTEXT_SYSTEM_PROFILE=$_context_envelope_system
+  m_CONTEXT_PACKAGES=$_context_envelope_packages
+  m_CONTEXT_PATH_PREFIX=$_context_envelope_path_prefix
+  m_CONTEXT_CLASSPATH_PREFIX=$_context_envelope_classpath_prefix
+  m_CONTEXT_CLASSPATH_HOST_SET=$_context_envelope_classpath_host_set
+  export m_CONTEXT_SYSTEM_PROFILE m_CONTEXT_PACKAGES
+  export m_CONTEXT_PATH_PREFIX m_CONTEXT_CLASSPATH_PREFIX m_CONTEXT_CLASSPATH_HOST_SET
+}
+
+_context_record_from_concretes()
+{
+  [ "$#" -eq 2 ] || return 2
+  _context_record_system=$1
+  _context_record_items=$2
   _context_record_newline=$(printf '\nX')
   _context_record_newline=${_context_record_newline%X}
-  _context_store_record=m-context-record-v1
+  _context_store_record=m-context-record-v2
+  if [ -n "$_context_record_system" ]
+  then
+    _context_profile_registry_identity_valid "$_context_record_system" || return 2
+    _context_store_record="$_context_store_record$_context_record_newline"system=$_context_record_system
+  fi
   while [ -n "$_context_record_items" ]
   do
     case "$_context_record_items" in
@@ -418,6 +628,9 @@ _context_operand_append()
 
 _context_build_pkg_operands()
 {
+  [ "$#" -ge 1 ] || return 2
+  _context_requested_system=$1
+  shift
   _context_requested_operands=
   _context_operand_newline=$(printf '\nX')
   _context_operand_newline=${_context_operand_newline%X}
@@ -430,11 +643,18 @@ _context_build_pkg_operands()
         return 2
         ;;
       pkg=*) _context_operand_append "$_context_requested_operands" "$_context_operand"; _context_requested_operands=$_context_operand_buffer ;;
+      system=*)
+        _context_requested_system=${_context_operand#system=}
+        _context_profile_registry_identity_valid "$_context_requested_system" || {
+          _context_error context-profile-invalid "$_context_requested_system"
+          return 23
+        }
+        ;;
       *) _context_error context-operand-invalid "$_context_operand"; return 2 ;;
     esac
   done
-  [ -n "$_context_requested_operands" ] || {
-    _context_error context-operand-invalid "missing package selector"
+  [ -n "$_context_requested_operands" ] || [ -n "$_context_requested_system" ] || {
+    _context_error context-operand-invalid "missing context selector"
     return 2
   }
 }
@@ -442,6 +662,7 @@ _context_build_pkg_operands()
 _context_build_activation_operands()
 {
   _context_requested_operands=
+  _context_requested_system=${CONTEXT_STORE_SYSTEM-}
   _context_operand_newline=$(printf '\nX')
   _context_operand_newline=${_context_operand_newline%X}
   _context_operand_cr=$(printf '\r')
@@ -455,6 +676,13 @@ _context_build_activation_operands()
       pkg=*)
         _context_operand_append "$_context_requested_operands" "$_context_operand"
         _context_requested_operands=$_context_operand_buffer
+        ;;
+      system=*)
+        _context_requested_system=${_context_operand#system=}
+        _context_profile_registry_identity_valid "$_context_requested_system" || {
+          _context_error context-profile-invalid "$_context_requested_system"
+          return 23
+        }
         ;;
       full-context=*)
         _context_preset_name=${_context_operand#full-context=}
@@ -477,6 +705,10 @@ _context_build_activation_operands()
             ;;
         esac
         _context_preset_operands=$CONTEXT_STORE_PACKAGES
+        if [ -n "${CONTEXT_STORE_SYSTEM-}" ]
+        then
+          _context_requested_system=$CONTEXT_STORE_SYSTEM
+        fi
         while [ -n "$_context_preset_operands" ]
         do
           case "$_context_preset_operands" in
@@ -537,9 +769,13 @@ _context_store_set_defaults()
   esac
   _context_store_load_defaults || return $?
   _context_default_operands=$CONTEXT_STORE_PACKAGES
-  _context_build_pkg_operands "$@" || return $?
+  _context_build_pkg_operands "$CONTEXT_STORE_SYSTEM" "$@" || return $?
+  if [ -n "$_context_requested_system" ]
+  then
+    _context_profile_resolve "$_context_requested_system" || return $?
+  fi
   _context_next=$(_context_prepare_packages "$_context_default_operands" "$_context_requested_operands") || return $?
-  _context_record_from_concretes "$_context_next"
+  _context_record_from_concretes "$_context_requested_system" "$_context_next"
   _context_store_write "$m_ROOT" defaults "$_context_store_record" || {
     _context_error context-default-store-write-failed "$m_ROOT/state"
     return 21
@@ -578,9 +814,13 @@ _context_store_define_preset()
     return 20
   }
   shift
-  _context_build_pkg_operands "$@" || return $?
+  _context_build_pkg_operands '' "$@" || return $?
+  if [ -n "$_context_requested_system" ]
+  then
+    _context_profile_resolve "$_context_requested_system" || return $?
+  fi
   _context_next=$(_context_prepare_packages '' "$_context_requested_operands") || return $?
-  _context_record_from_concretes "$_context_next"
+  _context_record_from_concretes "$_context_requested_system" "$_context_next"
   _context_store_write "$m_ROOT" "$_context_store_name" "$_context_store_record" || {
     _context_error context-preset-store-write-failed "$_context_preset_name"
     return 21
@@ -694,6 +934,7 @@ context()
 
   _context_store_load_defaults || return $?
   _context_default_operands=$CONTEXT_STORE_PACKAGES
+  _context_requested_system=$CONTEXT_STORE_SYSTEM
   if [ "$#" -gt 0 ]
   then
     _context_build_activation_operands "$@" || return $?
@@ -702,6 +943,8 @@ context()
   fi
 
   # Resolve the persisted baseline and ordered overrides before touching shell state.
+  _context_profile_resolve "$_context_requested_system" || return $?
+  _context_selected_system=$_context_profile_selected
   _context_next="$(_context_prepare_packages "$_context_default_operands" "$_context_requested_operands")" || return $?
   _context_path_unapply "${PATH-}" "${m_CONTEXT_PATH_PREFIX-}" || return $?
   _context_host_path=$_context_path_base
@@ -719,6 +962,8 @@ context()
   _context_host_classpath=$_context_path_base
   # Retain non-context classpath edits made after an initially unset value.
   [ -z "$_context_host_classpath" ] || _context_classpath_host_set=x
+  _context_envelope_host_set=0
+  [ -n "$_context_classpath_host_set" ] && _context_envelope_host_set=1
 
   _context_commands_validate "$_context_next" || return $?
   _context_libraries_validate "$_context_next" || return $?
@@ -783,6 +1028,11 @@ context()
     fi
   done
 
+  _context_envelope_next=$(_context_envelope_build "$_context_selected_system" "$_context_next" "$_context_envelope_host_set") || {
+    _context_error context-envelope-build-failed "$_context_selected_system"
+    return 25
+  }
+
   # Readonly shell variables can abort a POSIX shell on assignment. Probe
   # writability in subshells so an abort cannot partially update the caller.
   ( PATH="${PATH-}" ) 2>/dev/null || {
@@ -792,6 +1042,14 @@ context()
   ( CLASSPATH="${CLASSPATH-}" ) 2>/dev/null || {
     _context_error context-classpath-readonly CLASSPATH
     return 17
+  }
+  ( m_STATE_SYS_DIR="${m_STATE_SYS_DIR-}" ) 2>/dev/null || {
+    _context_error context-state-readonly m_STATE_SYS_DIR
+    return 16
+  }
+  ( m_CONTEXT_ENVELOPE="${m_CONTEXT_ENVELOPE-}" ) 2>/dev/null || {
+    _context_error context-envelope-readonly m_CONTEXT_ENVELOPE
+    return 16
   }
 
   # Shell state changes are confined to this final application stage.
@@ -821,9 +1079,15 @@ context()
   fi
 
   m_CONTEXT_PACKAGES=$_context_next
+  m_CONTEXT_SYSTEM_PROFILE=$_context_selected_system
+  m_STATE_SYS_DIR="$_context_profile_path"
+  m_CONTEXT_ENVELOPE=$_context_envelope_next
+  export m_CONTEXT_ENVELOPE
+  export m_CONTEXT_SYSTEM_PROFILE
   m_CONTEXT_PATH_PREFIX=$_context_next_path_prefix
   m_CONTEXT_CLASSPATH_PREFIX=$_context_next_classpath_prefix
   m_CONTEXT_CLASSPATH_HOST_SET=$_context_classpath_host_set
+  export m_CONTEXT_PACKAGES m_CONTEXT_PATH_PREFIX m_CONTEXT_CLASSPATH_PREFIX m_CONTEXT_CLASSPATH_HOST_SET
 
   unset _context_next _context_remaining _context_newline _context_item
   unset _context_kind _context_dir _context_next_path_prefix

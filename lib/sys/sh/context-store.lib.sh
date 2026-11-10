@@ -122,28 +122,41 @@ _context_store_parse_file()
   _context_store_uid=$2
   _context_store_lines=0
   _context_store_first=1
+  _context_store_format_version=
   _context_store_record=
+  _context_store_system=
   _context_store_packages=
   _context_store_seen=
+  _context_store_system_seen=0
   _context_store_newline='
 '
   _context_store_cr=$(printf '\r')
   while IFS= read -r _context_store_line || [ -n "$_context_store_line" ]
   do
     _context_store_lines=$((_context_store_lines + 1))
-    [ "$_context_store_lines" -le 129 ] || return 1
+    [ "$_context_store_lines" -le 130 ] || return 1
     [ "${#_context_store_line}" -le 512 ] || return 1
     case "$_context_store_line" in
       *"$_context_store_cr"*) return 1 ;;
     esac
     if [ "$_context_store_first" -eq 1 ]
     then
-      [ "$_context_store_line" = m-context-record-v1 ] || return 1
+      case "$_context_store_line" in
+        m-context-record-v1) _context_store_format_version=1 ;;
+        m-context-record-v2) _context_store_format_version=2 ;;
+        *) return 1 ;;
+      esac
       _context_store_first=0
       _context_store_record=$_context_store_line
       continue
     fi
     case "$_context_store_line" in
+      system=*)
+        [ "$_context_store_format_version" -eq 2 ] && [ "$_context_store_system_seen" -eq 0 ] || return 1
+        _context_store_system=${_context_store_line#system=}
+        _context_profile_registry_identity_valid "$_context_store_system" || return 1
+        _context_store_system_seen=1
+        ;;
       pkg=*)
         _context_store_value=${_context_store_line#pkg=}
         pkg_concrete_read _context_store_package _context_store_version _context_store_osarch "$_context_store_value" || return 1
@@ -151,14 +164,16 @@ _context_store_parse_file()
           *"$_context_store_newline$_context_store_package$_context_store_newline"*) return 1 ;;
         esac
         _context_store_seen="$_context_store_seen$_context_store_newline$_context_store_package"
+        _context_store_packages="$_context_store_packages$_context_store_newline$_context_store_line"
         ;;
       *) return 1 ;;
     esac
     _context_store_record="$_context_store_record$_context_store_newline$_context_store_line"
-    _context_store_packages="$_context_store_packages$_context_store_newline$_context_store_line"
   done < "$_context_store_file"
   [ "$_context_store_first" -eq 0 ] || return 1
   CONTEXT_STORE_RECORD=$_context_store_record
+  CONTEXT_STORE_VERSION=$_context_store_format_version
+  CONTEXT_STORE_SYSTEM=$_context_store_system
   CONTEXT_STORE_PACKAGES=${_context_store_packages#"$_context_store_newline"}
 }
 

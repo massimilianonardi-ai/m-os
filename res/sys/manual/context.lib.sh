@@ -1,61 +1,67 @@
 NAME
-    context.lib.sh - activate package command selections in the current shell
+    context.lib.sh - activate validated system-profile and package selections in the current shell
 
 DESCRIPTION
     context is a POSIX shell function loaded by the m core shell runtime.
-    This initial implementation selects already installed package concrete
+    It selects one installation-managed system profile and already installed package concrete
     command and published library directories, composing executable and
     non-executable shell source lookup through PATH and selected Java JAR
     directories through CLASSPATH. It does not create filesystem projections and
     does not resolve package dependencies or facility provider environments.
-    It stores package-only per-account defaults and named package presets in
-    the strict context-store library. The generalized profile/provider/state
-    dimensions and child envelope are not implemented in this increment.
+    It stores explicit system-profile and package dimensions for per-account
+    defaults and named presets in the strict context-store library. The system
+    profile registry at $m_ROOT/state/system/profile/.inventory is read-only
+    to m; installation administrators provision it. A versioned, data-only
+    child envelope carries the validated system identity and package selections
+    and is checked against the current root, effective UID and registry.
+    Logical user-state, provider, locale, migration and complete environment
+    dimensions remain unimplemented.
 
     The caller must invoke the function in the shell whose PATH should change.
     Calling it in a pipeline, subshell or command substitution changes only
     that child environment.
 
 FUNCTIONS
-    context [pkg=<package>@<version>[!<osarch>] | full-context=<name> ...]
+    context [system=<profile> | pkg=<package>@<version>[!<osarch>] | full-context=<name> ...]
 
-        With no arguments, initialize the package selection from the persisted
-        per-account defaults. If the defaults record is absent in an available
-        account store, this package-only increment applies an empty package
-        selection and removes the previous context-owned command and library
-        blocks from PATH and CLASSPATH. Installation-managed baseline
-        resolution is not implemented yet.
+        With no arguments, initialize the system profile from its persisted
+        per-account preference or the validated installation-managed baseline,
+        and initialize package selections from persisted defaults. If the
+        account record is absent, no packages are selected. An absent or
+        invalid profile inventory fails closed. The operation does not change
+        system/current; m_STATE_SYS_DIR is set only in this process.
 
-        Each pkg= operand selects one installed concrete; a full-context= operand
-        expands a saved named preset at its command-line position. Selections
-        start from persisted defaults and fold left-to-right. A later
-        selection for the same package replaces its earlier version, and
-        selections for other packages in the defaults remain. The most recent
+        system= selects one identity present in the validated installation
+        inventory. pkg= selects one installed concrete; full-context= expands
+        a saved named preset at its command-line position. Selections start
+        from persisted defaults and fold left-to-right. A later system= replaces
+        the prior profile; a later selection for the same package replaces its
+        earlier version, and unrelated package selections remain. The most recent
         package directory appears first in the context-owned PATH block. A v1
         concrete contributes cmd and lib/sh/lib/java views; a v2 concrete
         contributes link/bin and link/lib/sh/link/lib/java views. Each selected
         concrete's shell libraries join PATH and its Java JAR view contributes
         one literal wildcard entry (<directory>/*) to CLASSPATH.
 
-    context --set-defaults pkg=<package>@<version>[!<osarch>] ...
+    context --set-defaults [system=<profile> | pkg=<package>@<version>[!<osarch>] ...]
 
-        Validate the complete merged package-default selection, then atomically
-        replace the supplied package dimensions in the current POSIX account's
-        defaults. Unspecified package defaults are retained. This operation
-        does not change the current shell context and does not install packages.
+        Validate the supplied system identity and complete merged package
+        selection, then atomically replace only the supplied dimensions in the
+        current POSIX account's defaults. Unspecified dimensions are retained.
+        This operation does not change the current shell context and does not
+        install packages.
 
     context --clear-defaults
 
-        Remove the current POSIX account's persisted package defaults. This is
+        Remove the current POSIX account's persisted system/package defaults. This is
         idempotent, leaves the active shell context unchanged, and leaves saved
-        presets intact. A later no-argument context applies an empty package
-        selection in this increment. The generalized installation-managed
-        baseline resolver is not implemented yet.
+        presets intact. A later no-argument context selects the validated
+        installation baseline and no packages unless package defaults are set.
 
-    context --define-preset <name> pkg=<package>@<version>[!<osarch>] ...
+    context --define-preset <name> [system=<profile> | pkg=<package>@<version>[!<osarch>] ...]
 
-        Validate and atomically create or replace a named package-selection
-        preset under the current POSIX account. Preset names contain only ASCII
+        Validate and atomically create or replace a named system/package
+        selection preset under the current POSIX account. Preset names contain only ASCII
         letters, digits, underscore, dot or hyphen and begin with a letter or
         digit. Preset definitions do not change the active shell context.
 
@@ -122,12 +128,18 @@ RETURN STATUS
     20   invalid or unavailable named preset
     21   account default or preset could not be atomically written
     22   account default update lock remained busy beyond the bounded wait
+    23   selected system profile is invalid or absent from the managed inventory
+    24   installation-managed profile inventory or selected profile is unavailable
+    25   a validated context envelope could not be built
 
 LIMITATIONS
-    This is the first package-command and library selection increment of the broader
-    context design. It does not yet accept facility, provider, profile,
-    locale, user/system, or inheritance-policy operands. Presets currently
-    contain only package concrete selections.
+    This is an incremental system-profile and package command/library slice of
+    the broader context design. It does not yet accept logical user-state,
+    facility/provider, locale, migration or inheritance-policy operands.
+    The account record accepts v1 package-only data and writes v2 system/package
+    data. The inherited envelope validates root, UID, profile and exact package
+    selections. Packages with mutable var/ state remain tied to system/current;
+    their launch fails closed when a different profile is selected.
     Only sh and Java ordinary library search views are supported; other
     runtimes need their own defined import/loader semantics. CLASSPATH may be
     overridden by explicit Java -cp or launcher-specific class loading;

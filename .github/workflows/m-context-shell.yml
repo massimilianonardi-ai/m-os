@@ -34,21 +34,36 @@ jobs:
             command -v context >/dev/null
             test_uid=$(command -p id -u)
             test_account="$m_ROOT/state/$test_uid"
+            profile_root="$m_ROOT/state/system/profile"
+            profile_inventory="$profile_root/.inventory"
+            chmod 755 "$m_ROOT/state" "$m_ROOT/state/system" "$profile_root" "$profile_root/main"
             [ ! -e "$test_account" ] && [ ! -L "$test_account" ] || {
               echo "INFRASTRUCTURE: account context fixture already exists" >&2
               exit 3
             }
             mkdir -p "$m_PKG_DIR"
+            [ ! -e "$profile_inventory" ] && [ ! -L "$profile_inventory" ] || {
+              echo "INFRASTRUCTURE: profile inventory fixture already exists" >&2
+              exit 3
+            }
+            mkdir -p "$profile_root/secondary"
+            chmod 755 "$profile_root/secondary"
+            printf "%s\n" "m-system-profile-inventory-v1" "baseline=main" "profile=main" "profile=secondary" > "$profile_inventory"
+            chmod 644 "$profile_inventory"
             for item in context-a@1 context-a@2 context-b@1 context-c@1 context-d@1 context-core@1
             do
               mkdir -p "$m_PKG_DIR/$item/cmd"
             done
             context --clear-defaults
             context --delete-preset context-ci
+            context --delete-preset context-ci-system
             cleanup() {
               context --clear-defaults >/dev/null 2>&1 || :
               context --delete-preset context-ci >/dev/null 2>&1 || :
+              context --delete-preset context-ci-system >/dev/null 2>&1 || :
               rm -rf -- "$m_PKG_DIR/context-a@1" "$m_PKG_DIR/context-a@2" "$m_PKG_DIR/context-b@1" "$m_PKG_DIR/context-c@1" "$m_PKG_DIR/context-d@1" "$m_PKG_DIR/context-core@1"
+              rm -f -- "$profile_inventory"
+              rmdir "$profile_root/secondary" 2>/dev/null || :
               rmdir "$test_account/context" "$test_account" 2>/dev/null || :
             }
             trap cleanup 0
@@ -62,8 +77,29 @@ jobs:
             baseline=$PATH
             context
             [ "$PATH" = "$baseline" ]
+            [ "$m_CONTEXT_SYSTEM_PROFILE" = main ]
+            [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/main" ]
+            current_before=$(readlink "$m_ROOT/state/system/current")
+            context system=secondary
+            [ "$m_CONTEXT_SYSTEM_PROFILE" = secondary ]
+            [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/secondary" ]
+            [ "$(readlink "$m_ROOT/state/system/current")" = "$current_before" ]
+            ./m sh -ec "[ \"\$m_STATE_SYS_DIR\" = \"\$m_ROOT/state/system/profile/secondary\" ] && [ \"\$m_CONTEXT_SYSTEM_PROFILE\" = secondary ]" || exit 40
+            context
+            [ "$m_CONTEXT_SYSTEM_PROFILE" = main ]
+            [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/main" ]
             context pkg=context-a@1
             [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@1/cmd/alpha" ]
+            ./m sh -ec ". \"\$m_LIB_DIR/sys/sh/core.lib.sh\"; [ \"\$(command -v alpha)\" = \"\$m_PKG_DIR/context-a@1/cmd/alpha\" ]; context pkg=context-b@1; [ \"\$(command -v beta)\" = \"\$m_PKG_DIR/context-b@1/cmd/beta\" ]; ! command -v alpha >/dev/null 2>&1" || exit 41
+            before_profile=$m_STATE_SYS_DIR
+            before_context_path=$PATH
+            if context system=not-managed; then exit 42; fi
+            [ "$m_STATE_SYS_DIR" = "$before_profile" ]
+            [ "$PATH" = "$before_context_path" ]
+            saved_envelope=$m_CONTEXT_ENVELOPE
+            m_CONTEXT_ENVELOPE=$(printf "%s\n" "m-context-envelope-v1" "root=/invalid" "uid=0" "system=main" "classpath-host-set=0")
+            if ./m osarch show >/dev/null 2>&1; then exit 43; fi
+            m_CONTEXT_ENVELOPE=$saved_envelope
             context pkg=context-b@1
             [ "$(command -v beta)" = "$m_PKG_DIR/context-b@1/cmd/beta" ]
             context pkg=context-a@2
@@ -92,6 +128,12 @@ jobs:
             [ "$status" -eq 2 ]
             context --set-defaults pkg=context-a@1
             [ "$PATH" = "$before_store" ]
+            context --set-defaults system=secondary
+            [ "$m_CONTEXT_SYSTEM_PROFILE" = main ]
+            context
+            [ "$m_CONTEXT_SYSTEM_PROFILE" = secondary ]
+            [ "$m_STATE_SYS_DIR" = "$m_ROOT/state/system/profile/secondary" ]
+            context --set-defaults system=main
 
             # Hold the account-default lock while two independent shell
             # updates queue, then prove their per-package changes both survive.
@@ -113,6 +155,9 @@ jobs:
             [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@1/cmd/alpha" ]
             [ "$(command -v beta)" = "$m_PKG_DIR/context-b@1/cmd/beta" ]
             context --define-preset context-ci pkg=context-b@1
+            context --define-preset context-ci-system system=secondary
+            context full-context=context-ci-system
+            [ "$m_CONTEXT_SYSTEM_PROFILE" = secondary ]
             context full-context=context-ci pkg=context-a@2
             [ "$(command -v alpha)" = "$m_PKG_DIR/context-a@2/cmd/alpha" ]
             [ "$(command -v beta)" = "$m_PKG_DIR/context-b@1/cmd/beta" ]
@@ -127,6 +172,7 @@ jobs:
             if context full-context=missing; then exit 28; fi
             [ "$PATH" = "$before_invalid_preset" ]
             context --delete-preset context-ci
+            context --delete-preset context-ci-system
             context --clear-defaults
             echo "PASS: POSIX context command selection/replacement"
           '
@@ -149,3 +195,8 @@ jobs:
         shell: sh
         run: |
           ./m sh .github/scripts/context-libraries-test.sh
+      - name: Context profile refuses incompatible mutable package state
+        shell: sh
+        run: |
+          set -eu
+          ./m sh .github/scripts/context-profile-launch-state-test.sh

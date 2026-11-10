@@ -44,6 +44,9 @@ record_a='m-context-record-v1
 pkg=context-a@1'
 record_b='m-context-record-v1
 pkg=context-b@1'
+record_system='m-context-record-v2
+system=main
+pkg=context-a@1'
 _context_store_write "$normal" defaults "$record_a" || exit 12
 account="$normal/state/$test_uid"
 context_dir="$account/context"
@@ -53,6 +56,11 @@ case "$_context_store_mode" in drwx------ | drwx------@) : ;; *) exit 14 ;; esac
 _context_store_file_validate "$context_dir/defaults" "$test_uid" || exit 16
 _context_store_read "$normal" defaults || exit 17
 [ "$CONTEXT_STORE_PACKAGES" = 'pkg=context-a@1' ] || exit 18
+_context_store_write "$normal" defaults "$record_system" || exit 73
+_context_store_read "$normal" defaults || exit 74
+[ "$CONTEXT_STORE_VERSION" = 2 ] || exit 75
+[ "$CONTEXT_STORE_SYSTEM" = main ] || exit 76
+[ "$CONTEXT_STORE_PACKAGES" = 'pkg=context-a@1' ] || exit 77
 command -p chmod 755 "$context_dir"
 if _context_store_read "$normal" defaults; then exit 41; fi
 command -p chmod 700 "$context_dir"
@@ -122,6 +130,12 @@ command -p chmod 600 "$linked/state/$test_uid/context/defaults"
 if _context_store_read "$linked" defaults; then exit 33; fi
 printf '%s\n' m-context-record-v1 pkg=context-a@1 pkg=context-a@2 > "$linked/state/$test_uid/context/defaults"
 if _context_store_read "$linked" defaults; then exit 34; fi
+printf '%s\n' m-context-record-v2 system=../outside pkg=context-a@1 > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 78; fi
+printf '%s\n' m-context-record-v2 system=main system=main pkg=context-a@1 > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 79; fi
+printf '%s\n' m-context-record-v1 system=main pkg=context-a@1 > "$linked/state/$test_uid/context/defaults"
+if _context_store_read "$linked" defaults; then exit 80; fi
 LC_ALL=C command -p awk 'BEGIN { printf "m-context-record-v1\\n"; for (i = 0; i < 17000; i++) printf "x" }' > "$linked/state/$test_uid/context/defaults"
 if _context_store_read "$linked" defaults; then exit 35; fi
 

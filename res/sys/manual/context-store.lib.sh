@@ -8,8 +8,9 @@ DESCRIPTION
     functions; every function name begins with an underscore and is private to
     the implementation.
 
-    Records are bounded, versioned data containing only validated package
-    selection operands. They are never sourced or evaluated. The effective UID
+    Records are bounded, versioned data containing validated system-profile
+    identities and package-concrete selections. Version 1 package-only records
+    remain readable; writes use version 2. Records are never sourced or evaluated. The effective UID
     is obtained with the system command path, independently from the logical
     user dimension in the active context. Storage is beneath
     $m_ROOT/state/<effective-UID>/context. The shared state parent must be a
@@ -25,7 +26,9 @@ DESCRIPTION
     loosen parent permissions. Writes stage a private file in the target
     directory and atomically rename it into place. Default read/merge/write
     operations use a private atomic directory lock so concurrent updates retain
-    changes to unspecified package selections. A lock left by an uncatchable
+    changes to unspecified dimensions. Profile identities are syntax-checked
+    here and are authorized only after context.lib.sh validates the
+    installation-managed profile inventory. A lock left by an uncatchable
     process termination fails closed; the account owner may remove it and any
     matching `._defaults-owner.*` marker only after confirming no update is
     active. Empty reads and deletes do not create storage directories.
@@ -38,11 +41,11 @@ RETURN STATUS
     not a supported external interface.
 
 LIMITATIONS
-    The record format currently supports exact package concrete selectors for
-    the initial command/library context phase. It does not yet resolve system
-    profiles, logical user state, providers, locale, platform preferences or
-    child-context envelopes. Account-store primitives do not authenticate the
-    process or grant service, CA or host-administrative authority.
+    The record format currently supports system-profile and exact package
+    concrete dimensions. It does not yet resolve logical user state, providers,
+    locale, platform preferences or complete child-context policy. Account-store
+    primitives do not authenticate the process or grant service, CA or
+    host-administrative authority.
 
 DEPENDENCIES
     POSIX sh; system id, ls, awk, wc, mkdir, chmod, mv, rm and sleep utilities
