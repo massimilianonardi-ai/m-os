@@ -22,6 +22,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Build portable srv supervisor
+        shell: sh
+        run: ./tools/build-srv-supervisor.sh
       - name: Exercise real public srv failure and stale-runtime paths
         shell: sh
         run: |
@@ -130,8 +133,8 @@ jobs:
 
           status=0
           ./m srv start "$service" >/tmp/m-srv-legacy-live-start.log 2>&1 || status=$?
-          [ "$status" -eq 1 ] &&
-            grep -F 'live-runtime-state-invalid' /tmp/m-srv-legacy-live-start.log >/dev/null &&
+          [ "$status" -eq 7 ] &&
+            grep -F 'start-runtime-orphaned' /tmp/m-srv-legacy-live-start.log >/dev/null &&
             kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
             echo "FAIL: legacy live PID was accepted by start (status $status)" >&2
             cat /tmp/m-srv-legacy-live-start.log >&2
@@ -141,8 +144,8 @@ jobs:
           status=0
           ./m srv stop -f "$service" >/tmp/m-srv-legacy-live-force-stop.log 2>&1 || status=$?
           sleep 1
-          [ "$status" -eq 1 ] &&
-            grep -F 'live-runtime-state-invalid' /tmp/m-srv-legacy-live-force-stop.log >/dev/null &&
+          [ "$status" -eq 9 ] &&
+            grep -F 'stop-runtime-orphaned' /tmp/m-srv-legacy-live-force-stop.log >/dev/null &&
             kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
             echo "FAIL: forced stop accepted an unverifiable legacy PID (status $status)" >&2
             cat /tmp/m-srv-legacy-live-force-stop.log >&2
@@ -171,8 +174,8 @@ jobs:
 
           status=0
           ./m srv start "$service" >/tmp/m-srv-stale-identity.log 2>&1 || status=$?
-          [ "$status" -eq 1 ] &&
-            grep -F 'live-runtime-state-invalid' /tmp/m-srv-stale-identity.log >/dev/null &&
+          [ "$status" -eq 7 ] &&
+            grep -F 'start-runtime-orphaned' /tmp/m-srv-stale-identity.log >/dev/null &&
             kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
             echo "FAIL: stale process identity was not rejected by the live-state gate (status $status)" >&2
             cat /tmp/m-srv-stale-identity.log >&2
@@ -184,8 +187,8 @@ jobs:
           status=0
           ./m srv stop -f "$service" >/tmp/m-srv-stale-force-stop.log 2>&1 || status=$?
           sleep 1
-          [ "$status" -eq 1 ] &&
-            grep -F 'live-runtime-state-invalid' /tmp/m-srv-stale-force-stop.log >/dev/null &&
+          [ "$status" -eq 9 ] &&
+            grep -F 'stop-runtime-orphaned' /tmp/m-srv-stale-force-stop.log >/dev/null &&
             kill -0 "$live_pid" && [ -d "$runtime_dir" ] || {
             echo "FAIL: stale PID forced stop disturbed the unrelated process/state (status $status)" >&2
             cat /tmp/m-srv-stale-force-stop.log >&2

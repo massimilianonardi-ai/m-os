@@ -18,7 +18,9 @@ SYNOPSIS
 DESCRIPTION
     srv provides the portable local service lifecycle owned by the technical m
     layer. The service process remains a foreground program from its own point of
-    view; srv performs the surrounding background lifecycle management.
+    view; an internal native supervisor owns the child process for the managed
+    lifecycle. The public srv command asks that supervisor to start or stop the
+    service through a private local control socket.
 
     For a provider-backed service, <service> is a facility identity. srv resolves
     the configured system facility default to one installed concrete provider,
@@ -104,32 +106,45 @@ STATE
         state-path user sys srv run
         state-path user sys srv log
 
-    Runtime metadata below those roots is private to srv. Provider-backed running
-    instances persist the selected concrete provider identity together with PID,
-    caller-owner and exact command identity. Later facility-default changes do not
-    retarget the running instance; stop operates on recorded runtime state and does
-    not resolve another provider.
+    Runtime metadata below those roots is inspection/recovery data only. The
+    running supervisor's direct-child relationship is the authority for a stop;
+    persisted PID data never authorizes a signal. The supervisor is keyed by the
+    installation root and effective POSIX UID, and uses an owner-only runtime
+    directory under m_ROOT/state. Its local control socket accepts peers only
+    from the same UID. The logical m user-state identity is not used as an
+    account-security boundary.
 
-    Current starts persist the selected concrete provider identity and a
-    snapshot of the process start time. For a live PID, start and stop compare
-    the recorded start time with the currently observed process before treating
-    it as a managed service. The current process-start inspection supports
-    Linux and macOS native ps backends; its lstart field is a host capability,
-    not a POSIX ps field. If the host does not provide supported start-time
-    inspection, new starts fail with status 3 rather than publishing an
-    unverifiable live process.
+    The C helper source is native/sys/srv-supervisor.c. A source checkout must build
+    it before portable start/stop:
 
-    Legacy records without a process start-time snapshot cannot authenticate a
-    live PID. Such records are rejected by start and stop, including stop -f,
-    with status 1 and live-runtime-state-invalid, leaving the live process and
-    record untouched. After that PID is no longer running, a subsequent stop
-    removes the stale record. An operator handling a genuinely old running
-    service must first identify and stop its process independently before
-    cleaning the stale record and starting it with current srv.
+        ./tools/build-srv-supervisor.sh
 
-    Process start-time snapshots are not an infallible process handle: the
-    Linux/macOS ps lstart field has one-second granularity, so same-second PID
-    recycling remains outside the protection this check can prove.
+    The build writes libexec/sys/srv-supervisor. The m bootstrap itself does not
+    require a C compiler; an installed distribution must include the native
+    helper built for its host. The helper supports Linux and macOS.
+
+    The supervisor keeps its direct service child unreaped until it has completed
+    a stop request. It checks waitpid(WNOHANG) immediately before SIGTERM; an
+    exiting child remains unreaped, so its PID cannot be reused for an unrelated
+    process during the signal operation. Normal stop waits up to ten seconds and
+    does not escalate to SIGKILL. The supervisor exits after one minute with no
+    managed children.
+
+    Each start request sends the calling process's environment as bounded,
+    length-prefixed data over the private socket. The supervisor does not retain
+    the first caller's environment and does not interpret environment values as
+    shell source; each service starts with the environment of its own request.
+
+    If the supervisor is killed or crashes, its service children may become
+    orphaned. A later srv start/stop refuses to treat their persisted PID as
+    authority and leaves both process and record untouched. The operator must
+    identify and stop an orphan independently, then remove its stale runtime
+    record before starting the service again. A graceful supervisor termination
+    sends SIGTERM to children it still owns and reaps them before exit.
+
+    Start resolves and records the selected concrete provider. Stop uses only
+    the active supervisor's child relationship and does not resolve a provider
+    again; later facility-default changes do not retarget the running instance.
 
 HOST USER SUPERVISION
     On Linux, srv resolves the calling account's UID and home from host account
@@ -195,11 +210,15 @@ ENVIRONMENT
 EXIT STATUS
     0     The requested lifecycle operation completed successfully. This includes
           idempotent stop cases where the service is not running.
-    1     A lifecycle operation failed, including unavailable or invalid provider
-          selection/service realization.
+    1     A general lifecycle or host operation failed.
     2     The invocation, host scope/action, or service name is invalid.
-    3     A newly launched service process identity could not be observed, so
-          the service is not published as a managed running instance.
+    4     The native supervisor helper is unavailable.
+    5     The supervisor request failed.
+    6     The supervisor returned an invalid response.
+    7     Start refused orphaned runtime state.
+    8     The service failed during startup.
+    9     Stop refused orphaned runtime state.
+    10    Stop timed out; the supervisor still owns the service process.
 
 EXAMPLES
     Start a service named web:

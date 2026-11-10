@@ -1,0 +1,34 @@
+name: m portable srv native supervisor safety
+
+on:
+  push:
+    branches: [codex/srv-persistent-supervisor, m-os-completion-s]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  portable-supervisor:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build native supervisor for this host
+        shell: sh
+        run: ./tools/build-srv-supervisor.sh
+      - name: Check POSIX shell entrypoints and execute ownership regressions
+        shell: sh
+        run: |
+          set -eu
+          sh -n bin/sys/srv
+          sh -n tools/build-srv-supervisor.sh
+          sh -n .github/scripts/m-srv-supervisor-public.sh
+          .github/scripts/m-srv-supervisor-public.sh

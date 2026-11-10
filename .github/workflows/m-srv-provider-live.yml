@@ -18,6 +18,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Build portable srv supervisor
+        shell: sh
+        run: ./tools/build-srv-supervisor.sh
       - name: Exercise srv against actual published Electron web-control service
         shell: sh
         run: |
