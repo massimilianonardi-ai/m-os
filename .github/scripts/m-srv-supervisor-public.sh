@@ -3,7 +3,7 @@ set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 helper="$repo/libexec/sys/srv-supervisor"
-work="$repo/.s v;$$"
+work="$repo/.s v;$$/long-checkout-root-component-012345678901234567890123456789/another-long-checkout-component-012345678901234567890123456789/third-long-checkout-component-012345678901234567890123456789"
 root="$work/installation"
 run_root="$root/state/user/default/sys/srv/run"
 log_root="$root/state/user/default/sys/srv/log"

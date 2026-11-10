@@ -138,9 +138,17 @@ static int make_paths(const char *root, char *dir, size_t dircap, char *sock,
                       char *pidfile, size_t pidcap)
 {
     int n;
+    uint64_t root_hash = UINT64_C(14695981039346656037);
+    const unsigned char *root_byte = (const unsigned char *)root;
     n = snprintf(dir, dircap, "%s/state/.s%lu", root, (unsigned long)getuid());
     if (n < 0 || (size_t)n >= dircap) return -1;
-    n = snprintf(sock, sockcap, "%s/s", dir);
+    while (*root_byte != 0) {
+        root_hash ^= *root_byte++;
+        root_hash *= UINT64_C(1099511628211);
+    }
+    /* A short, UID-private socket path also supports deeply nested checkouts. */
+    n = snprintf(sock, sockcap, "/tmp/.m-srv-%lu-%016llx/s",
+                 (unsigned long)getuid(), (unsigned long long)root_hash);
     if (n < 0 || (size_t)n >= sockcap) return -1;
     n = snprintf(lock, lockcap, "%s/.lock", dir);
     if (n < 0 || (size_t)n >= lockcap) return -1;
@@ -200,6 +208,17 @@ static int connect_socket(const char *path)
     strcpy(addr.sun_path, path);
     if (connect(fd, (struct sockaddr *)&addr, sizeof addr) != 0) { close(fd); return -1; }
     return fd;
+}
+
+static int socket_parent(const char *path, char *out, size_t cap)
+{
+    char *last_slash;
+    int n = snprintf(out, cap, "%s", path);
+    if (n < 0 || (size_t)n >= cap) return -1;
+    last_slash = strrchr(out, '/');
+    if (last_slash == NULL || last_slash == out) return -1;
+    *last_slash = '\0';
+    return 0;
 }
 
 static void set_socket_timeout(int fd, long seconds)
@@ -522,11 +541,13 @@ static int server_main(const char *root, const char *socket_path, const char *lo
                        const char *pidfile)
 {
     int server, flags, lockfd;
+    char socket_dir[PATH_MAX];
     struct flock lock;
     struct stat lockst;
     struct sockaddr_un addr;
     struct sigaction sa;
     time_t idle_since = 0;
+    if (socket_parent(socket_path, socket_dir, sizeof socket_dir) != 0) return 1;
     umask(077);
     lockfd = open(lock_path, O_RDWR | O_CREAT | O_NOFOLLOW, 0600);
     if (lockfd < 0 || fstat(lockfd, &lockst) != 0 || !S_ISREG(lockst.st_mode) ||
@@ -586,6 +607,7 @@ static int server_main(const char *root, const char *socket_path, const char *lo
     close(server);
     unlink(socket_path);
     unlink(pidfile);
+    rmdir(socket_dir);
     close(lockfd);
     return 0;
 }
@@ -625,14 +647,16 @@ static int send_request(const char *root, const char *run_root, const char *log_
                         const char *command, const char *provider)
 {
     char dir[PATH_MAX], socket_path[sizeof(((struct sockaddr_un *)0)->sun_path)];
+    char socket_dir[sizeof(((struct sockaddr_un *)0)->sun_path)];
     char lock_path[PATH_MAX], pidfile[PATH_MAX];
     int fd, tries, rc = -1;
     unsigned char response[8];
     unsigned char countbuf[4];
     const char *fields[] = { root, run_root, log_path, name, owner, force, action, bootstrap, command, provider };
     if (root_state_validate(root) != 0 || make_paths(root, dir, sizeof dir, socket_path, sizeof socket_path,
-                   lock_path, sizeof lock_path, pidfile, sizeof pidfile) != 0 ||
-        private_dir_prepare(dir) != 0) return 1;
+                   lock_path, sizeof lock_path, pidfile, sizeof pidfile) != 0) return 1;
+    if (socket_parent(socket_path, socket_dir, sizeof socket_dir) != 0) return 1;
+    if (private_dir_prepare(dir) != 0 || private_dir_prepare(socket_dir) != 0) return 1;
     for (tries = 0; tries < 100; tries++) {
         fd = connect_socket(socket_path);
         if (fd < 0) {
