@@ -28,6 +28,7 @@ jobs:
           repository: massimilianonardi-ai/pkg-catalog
           ref: 0b69223a5ebe7bc042aad50012ee8bc7e4a00442
           path: catalog
+          fetch-depth: 0
           persist-credentials: false
       - name: Configure isolated runtime for pinned catalog
         shell: sh
@@ -35,6 +36,9 @@ jobs:
           set -eu
           test "$(uname -m)" = arm64
           ./m osarch update
+          test "$(git -C "$GITHUB_WORKSPACE/catalog" rev-parse HEAD)" = 0b69223a5ebe7bc042aad50012ee8bc7e4a00442
+          test "$(git -C "$GITHUB_WORKSPACE/catalog" rev-parse origin/main)" = 0b69223a5ebe7bc042aad50012ee8bc7e4a00442
+          git -C "$GITHUB_WORKSPACE/catalog" switch --create main --track origin/main
           conf=$(./m state-path system sys pkg conf)
           mkdir -p -- "$conf"
           printf '%s\n' "$GITHUB_WORKSPACE/catalog" > "$conf/catalog"
@@ -47,6 +51,7 @@ jobs:
         shell: sh
         run: |
           set -eu
+          ./m pkg depend 'macgpg!macos-arm64' >/dev/null
           ./m pkg depend 'macgpg@2026.1+3633n!macos-arm64' >/dev/null
           ./m pkg install 'macgpg@2026.1+3633n!macos-arm64'
           versions=$(./m pkg versions macgpg)
