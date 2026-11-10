@@ -57,10 +57,10 @@ pkg_integrate "$name" 1 "$range" "$root" || exit 9
 
 current_target=$(command -p -- readlink -- "$m_ROOT/state/system/current") || exit 10
 context system=main pkg="$name@1" || exit 11
-[ "$("$concrete/cmd/runner")" = launch-ok ] || exit 12
+[ "$(./m runner)" = launch-ok ] || exit 12
 
 context system=secondary pkg="$name@1" || exit 13
-if output=$("$concrete/cmd/runner" 2>"$work/launch.err")
+if output=$(./m runner 2>"$work/launch.err")
 then
   exit 14
 fi
