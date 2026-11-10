@@ -37,9 +37,9 @@ trap cleanup 0
 trap 'exit 130' HUP INT TERM
 
 command -p -- mkdir -- "$secondary"
-command -p -- chmod 755 -- "$secondary"
+command -p -- chmod 755 "$secondary"
 printf '%s\n' m-system-profile-inventory-v1 baseline=main profile=main profile=secondary > "$inventory"
-command -p -- chmod 644 -- "$inventory"
+command -p -- chmod 644 "$inventory"
 
 range="$work/range"
 root="$work/root"
@@ -63,7 +63,7 @@ loadsyslib "pkg/pkg-launch" || exit 3
 launcher context-profile-state-probe "$@"
 WRAPPER
 printf '%s\n' '#!/bin/sh' 'printf "launch-ok\n"' > "$root/bin/runner"
-command -p -- chmod +x -- "$root/bin/runner"
+command -p -- chmod +x "$root/bin/runner"
 printf '%s\n' bin/runner > "$range/link/runner"
 pkg_integrate "$name" 1 "$range" "$root" || exit 9
 
