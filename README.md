@@ -103,9 +103,10 @@ Linux or macOS host, use:
 
 The command packages the exact clean Git revision as
 `dist/m-os-<osarch>.tar.gz`, builds the native supervisor inside that package,
-and exercises the extracted archive's public supervisor checks. It requires a C
-compiler and `tar` with gzip support. The archive is a technical `m` source
-distribution, not a full branded RumiAI-OS installer.
+records the source commit and target in `M-DISTRIBUTION`, and exercises the
+extracted archive's public supervisor checks. It requires a C compiler and `tar`
+with gzip support. The archive is a technical `m` source distribution, not a full
+branded RumiAI-OS installer.
 
 The current repository adapters cover GitHub, Node.js, Google Chrome's
 Linux Debian repository, Chromium snapshots, shared artifact resolution,

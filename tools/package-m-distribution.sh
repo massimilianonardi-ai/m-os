@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+umask 022
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 git -C "$root" rev-parse --show-toplevel >/dev/null 2>&1 || {
@@ -80,6 +81,14 @@ helper="$stage/libexec/sys/srv-supervisor"
   printf '%s\n' 'm distribution did not produce an executable supervisor' >&2
   exit 1
 }
+
+{
+  printf '%s\n' 'm-os-distribution-v1'
+  printf 'commit=%s\n' "$commit"
+  printf 'osarch=%s\n' "$host_osarch"
+} > "$stage/M-DISTRIBUTION"
+chmod 644 "$stage/M-DISTRIBUTION"
+
 if "$helper" --invalid >/dev/null 2>&1
 then
   printf '%s\n' 'm distribution supervisor accepted an invalid internal invocation' >&2
@@ -106,6 +115,7 @@ tar -tzf "$archive_tmp" > "$list"
 grep -Fx './m' "$list" >/dev/null
 grep -Fx './bin/sys/srv' "$list" >/dev/null
 grep -Fx './libexec/sys/srv-supervisor' "$list" >/dev/null
+grep -Fx './M-DISTRIBUTION' "$list" >/dev/null
 
 mkdir "$verify"
 tar -xzf "$archive_tmp" -C "$verify"
@@ -119,6 +129,8 @@ verified_osarch=$(cd "$verify" && ./m osarch)
     "$host_osarch" "$verified_osarch" >&2
   exit 1
 }
+grep -Fx "commit=$commit" "$verify/M-DISTRIBUTION" >/dev/null
+grep -Fx "osarch=$host_osarch" "$verify/M-DISTRIBUTION" >/dev/null
 if "$verify/libexec/sys/srv-supervisor" --invalid >/dev/null 2>&1
 then
   printf '%s\n' 'm distribution archive supervisor accepted an invalid invocation' >&2
