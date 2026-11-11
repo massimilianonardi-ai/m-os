@@ -94,6 +94,19 @@ bootstrap remains POSIX-shell-only and never invokes a compiler. A complete
 RumiAI installation must package a helper built for each supported host and
 architecture at the same path.
 
+To build and validate a relocatable technical `m` distribution for the current
+Linux or macOS host, use:
+
+```sh
+./tools/package-m-distribution.sh
+```
+
+The command packages the exact clean Git revision as
+`dist/m-os-<osarch>.tar.gz`, builds the native supervisor inside that package,
+and exercises the extracted archive's public supervisor checks. It requires a C
+compiler and `tar` with gzip support. The archive is a technical `m` source
+distribution, not a full branded RumiAI-OS installer.
+
 The current repository adapters cover GitHub, Node.js, Google Chrome's
 Linux Debian repository, Chromium snapshots, shared artifact resolution,
 Apache Maven and Temurin. Hosted V2 validation includes real Java/Maven

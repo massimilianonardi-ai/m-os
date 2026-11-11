@@ -121,7 +121,10 @@ STATE
 
     The build writes libexec/sys/srv-supervisor. The m bootstrap itself does not
     require a C compiler; an installed distribution must include the native
-    helper built for its host. The helper supports Linux and macOS.
+    helper built for its host. A clean checkout can build and verify a relocatable
+    host distribution with ./tools/package-m-distribution.sh; the resulting
+    dist/m-os-<osarch>.tar.gz contains the helper at that same path. The helper
+    supports Linux and macOS.
 
     The supervisor keeps its direct service child unreaped until it has completed
     a stop request. It checks waitpid(WNOHANG) immediately before SIGTERM; an
