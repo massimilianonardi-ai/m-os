@@ -182,7 +182,7 @@ srv_host_profile_manifest_read()
     fatal 2 srv host-profile-registration-invalid service "$srv_name"
 }
 
-srv_host_user_profile_capture()
+srv_host_profile_capture()
 {
   [ -n "${m_CONTEXT_ENVELOPE_VALIDATED-}" ] &&
   [ -n "${m_CONTEXT_SYSTEM_PROFILE-}" ] ||
@@ -305,7 +305,7 @@ srv_host_systemd_prepare()
 
 srv_host_systemd_install()
 {
-  srv_host_user_profile_capture || return $?
+  srv_host_profile_capture || return $?
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
 
@@ -319,7 +319,6 @@ srv_host_systemd_install()
     [ -f "$srv_host_manifest" ] && [ ! -L "$srv_host_manifest" ] ||
       fatal 1 execution execution-failed operation srv reason host-registration-invalid service "$srv_name"
   fi
-
   srv_host_tmp="$srv_host_manifest.tmp.$$"
   command -p -- rm -f -- "$srv_host_tmp" 2>/dev/null
   umask 077
@@ -444,7 +443,7 @@ srv_host_launchd_prepare()
 
 srv_host_launchd_install()
 {
-  srv_host_user_profile_capture || return $?
+  srv_host_profile_capture || return $?
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
 
@@ -720,67 +719,124 @@ srv_host_system_state_prepare()
 
 srv_host_system_registration_prepare()
 {
-  srv_host_system_conf="$(command -- state-path system sys srv conf)" ||
-    fatal 1 execution execution-failed operation srv reason state-unavailable service "$srv_name"
-  srv_host_system_registration_dir="$srv_host_system_conf/system"
+  srv_host_system_registration_dir="$m_STATE_DIR/system/srv/conf/system"
   srv_host_system_registration_file="$srv_host_system_registration_dir/$srv_name"
+}
+
+srv_host_system_registration_ancestor_validate()
+{
+  [ "$#" -eq 2 ] || return 2
+  srv_host_system_ancestor_path=$1
+  srv_host_system_ancestor_owner=$2
+  [ -d "$srv_host_system_ancestor_path" ] && [ ! -L "$srv_host_system_ancestor_path" ] || return 1
+  command -p -- ls -ldn "$srv_host_system_ancestor_path" 2>/dev/null |
+    LC_ALL=C command -p -- awk -v owner="$srv_host_system_ancestor_owner" \
+      'NR == 1 && substr($1, 1, 1) == "d" && substr($1, 6, 1) != "w" && substr($1, 9, 1) != "w" && substr($1, 11) !~ /[^@]/ && ($3 == "0" || $3 == owner) { ok = 1 } END { if (!ok) exit 1 }'
+}
+
+srv_host_system_registration_child_validate()
+{
+  [ "$#" -eq 1 ] || return 2
+  srv_host_system_child_path=$1
+  [ -d "$srv_host_system_child_path" ] && [ ! -L "$srv_host_system_child_path" ] || return 1
+  command -p -- ls -ldn "$srv_host_system_child_path" 2>/dev/null |
+    LC_ALL=C command -p -- awk 'NR == 1 && substr($1, 1, 1) == "d" && substr($1, 6, 1) != "w" && substr($1, 9, 1) != "w" && substr($1, 11) !~ /[^@]/ && $3 == "0" { ok = 1 } END { if (!ok) exit 1 }'
 }
 
 srv_host_system_registration_write()
 {
   srv_host_system_registration_prepare
+  srv_host_system_registered_profile=${srv_host_registered_profile:-${m_CONTEXT_SYSTEM_PROFILE-}}
+  [ -n "$srv_host_system_registered_profile" ] || return 1
   umask 077
-  command -p -- mkdir -p -- "$srv_host_system_registration_dir" ||
-    fatal 1 execution execution-failed operation srv reason state-create-failed service "$srv_name"
-  [ -d "$srv_host_system_registration_dir" ] && [ ! -L "$srv_host_system_registration_dir" ] ||
-    fatal 1 execution execution-failed operation srv reason state-invalid service "$srv_name"
+  srv_host_system_root_owner="$(command -p -- ls -ldn "$m_ROOT" 2>/dev/null | command -p -- awk 'NR == 1 { print $3 }')" || return 1
+  srv_host_system_registration_ancestor_validate "$m_STATE_DIR" "$srv_host_system_root_owner" || return 1
+  srv_host_system_registration_ancestor_validate "$m_STATE_DIR/system" "$srv_host_system_root_owner" || return 1
+  for srv_host_system_registration_parent in \
+    "$m_STATE_DIR/system/srv" \
+    "$m_STATE_DIR/system/srv/conf" \
+    "$srv_host_system_registration_dir"
+  do
+    if [ ! -e "$srv_host_system_registration_parent" ] && [ ! -L "$srv_host_system_registration_parent" ]
+    then
+      command -p -- mkdir -- "$srv_host_system_registration_parent" || return 1
+      command -p -- chown 0:0 "$srv_host_system_registration_parent" &&
+      command -p -- chmod 755 "$srv_host_system_registration_parent" || return 1
+    fi
+    srv_host_system_registration_child_validate "$srv_host_system_registration_parent" || return 1
+  done
+  if [ -e "$srv_host_system_registration_file" ] || [ -L "$srv_host_system_registration_file" ]
+  then
+    [ -f "$srv_host_system_registration_file" ] && [ ! -L "$srv_host_system_registration_file" ] || return 1
+  fi
 
   srv_host_system_registration_tmp="$srv_host_system_registration_dir/.$srv_name.$$"
-  [ ! -e "$srv_host_system_registration_tmp" ] && [ ! -L "$srv_host_system_registration_tmp" ] ||
-    fatal 1 execution execution-failed operation srv reason state-invalid service "$srv_name"
+  [ ! -e "$srv_host_system_registration_tmp" ] && [ ! -L "$srv_host_system_registration_tmp" ] || return 1
 
-  srv_host_system_tab="$(printf '\t')"
-  if ! printf -- '%s\t%s\n' "$srv_host_account" "$srv_provider" > "$srv_host_system_registration_tmp"
+  if ! printf '%s\n' \
+    m-srv-host-system-registration-v1 \
+    "account=$srv_host_account" \
+    "system=$srv_host_system_registered_profile" \
+    "provider=$srv_provider" > "$srv_host_system_registration_tmp"
   then
     command -p -- rm -f -- "$srv_host_system_registration_tmp" 2>/dev/null
-    fatal 1 execution execution-failed operation srv reason state-publish-failed service "$srv_name"
+    return 1
   fi
-  command -p -- chmod 600 "$srv_host_system_registration_tmp" ||
-    fatal 1 execution execution-failed operation srv reason state-publish-failed service "$srv_name"
-  command -p -- mv -f -- "$srv_host_system_registration_tmp" "$srv_host_system_registration_file" ||
-    fatal 1 execution execution-failed operation srv reason state-publish-failed service "$srv_name"
+  if ! command -p -- chmod 644 "$srv_host_system_registration_tmp" ||
+     ! command -p -- chown 0:0 "$srv_host_system_registration_tmp" ||
+     ! command -p -- mv -f -- "$srv_host_system_registration_tmp" "$srv_host_system_registration_file"
+  then
+    command -p -- rm -f -- "$srv_host_system_registration_tmp" 2>/dev/null || :
+    return 1
+  fi
 }
 
 srv_host_system_registration_read()
 {
   srv_host_system_registration_prepare
+  srv_host_system_root_owner="$(command -p -- ls -ldn "$m_ROOT" 2>/dev/null | command -p -- awk 'NR == 1 { print $3 }')" || return 1
+  srv_host_system_registration_ancestor_validate "$m_STATE_DIR" "$srv_host_system_root_owner" || return 1
+  srv_host_system_registration_ancestor_validate "$m_STATE_DIR/system" "$srv_host_system_root_owner" || return 1
+  for srv_host_system_registration_parent in \
+    "$m_STATE_DIR/system/srv" \
+    "$m_STATE_DIR/system/srv/conf" \
+    "$srv_host_system_registration_dir"
+  do
+    srv_host_system_registration_child_validate "$srv_host_system_registration_parent" || return 1
+  done
   [ -f "$srv_host_system_registration_file" ] && [ ! -L "$srv_host_system_registration_file" ] &&
   [ -r "$srv_host_system_registration_file" ] ||
     return 1
+  command -p -- ls -ldn "$srv_host_system_registration_file" 2>/dev/null |
+    LC_ALL=C command -p -- awk 'NR == 1 && substr($1, 1, 1) == "-" && substr($1, 6, 1) != "w" && substr($1, 9, 1) != "w" && substr($1, 11) !~ /[^@]/ && $3 == "0" { ok = 1 } END { if (!ok) exit 1 }' ||
+      return 1
 
-  srv_host_registered_line=
+  srv_host_registered_header=
+  srv_host_registered_account_line=
+  srv_host_registered_system_line=
+  srv_host_registered_provider_line=
   srv_host_registered_extra=
   {
-    IFS= read -r srv_host_registered_line || return 1
+    IFS= read -r srv_host_registered_header || return 1
+    IFS= read -r srv_host_registered_account_line || return 1
+    IFS= read -r srv_host_registered_system_line || return 1
+    IFS= read -r srv_host_registered_provider_line || return 1
     IFS= read -r srv_host_registered_extra
     srv_host_registered_second_status=$?
   } < "$srv_host_system_registration_file"
   [ "$srv_host_registered_second_status" -ne 0 ] || return 1
   [ -z "$srv_host_registered_extra" ] || return 1
-
-  srv_host_system_tab="$(printf '\t')"
-  case "$srv_host_registered_line" in
-    *"$srv_host_system_tab"*) : ;;
-    *) return 1 ;;
-  esac
-  srv_host_registered_account=${srv_host_registered_line%%"$srv_host_system_tab"*}
-  srv_host_registered_provider=${srv_host_registered_line#*"$srv_host_system_tab"}
-  case "$srv_host_registered_provider" in *"$srv_host_system_tab"*) return 1 ;; esac
+  [ "$srv_host_registered_header" = m-srv-host-system-registration-v1 ] || return 1
+  case "$srv_host_registered_account_line" in account=*) srv_host_registered_account=${srv_host_registered_account_line#account=} ;; *) return 1 ;; esac
+  case "$srv_host_registered_system_line" in system=*) srv_host_registered_profile=${srv_host_registered_system_line#system=} ;; *) return 1 ;; esac
+  case "$srv_host_registered_provider_line" in provider=*) srv_host_registered_provider=${srv_host_registered_provider_line#provider=} ;; *) return 1 ;; esac
 
   case "$srv_host_registered_account" in
     "" | [!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_]* | *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*) return 1 ;;
   esac
+  [ -n "$srv_host_registered_profile" ] || return 1
   _pkg_provider_concrete_parse "$srv_host_registered_provider" || return 1
+  context "system=$srv_host_registered_profile" || return 1
 }
 
 srv_host_system_registration_remove()
@@ -793,6 +849,34 @@ srv_host_system_registration_remove()
   [ -f "$srv_host_system_registration_file" ] && [ ! -L "$srv_host_system_registration_file" ] ||
     return 1
   command -p -- rm -f -- "$srv_host_system_registration_file"
+}
+
+srv_host_system_manifest_backup()
+{
+  srv_host_system_manifest_existed=0
+  srv_host_system_manifest_backup_file="$srv_host_manifest.rollback.$$"
+  [ ! -e "$srv_host_system_manifest_backup_file" ] && [ ! -L "$srv_host_system_manifest_backup_file" ] ||
+    fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
+  if [ -e "$srv_host_manifest" ] || [ -L "$srv_host_manifest" ]
+  then
+    [ -f "$srv_host_manifest" ] && [ ! -L "$srv_host_manifest" ] ||
+      fatal 1 execution execution-failed operation srv reason host-registration-invalid service "$srv_name"
+    command -p -- cp "$srv_host_manifest" "$srv_host_system_manifest_backup_file" ||
+      fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
+    srv_host_system_manifest_existed=1
+  fi
+}
+
+srv_host_system_manifest_restore()
+{
+  if [ "$srv_host_system_manifest_existed" -eq 1 ]
+  then
+    command -p -- mv -f -- "$srv_host_system_manifest_backup_file" "$srv_host_manifest" || return 1
+    command -p -- chmod 644 "$srv_host_manifest" || return 1
+    command -p -- chown 0:0 "$srv_host_manifest" || return 1
+  else
+    command -p -- rm -f -- "$srv_host_manifest" || return 1
+  fi
 }
 
 srv_host_system_registration_current_require()
@@ -818,6 +902,16 @@ srv_host_system_run()
   _pkg_provider_concrete_parse "$srv_host_expected_provider" ||
     fatal 2 execution invalid-arguments operation srv service "$srv_name"
   srv_host_provider_package=$pkg_provider_concrete_pkg
+
+  srv_host_system_registration_read ||
+    fatal 1 execution execution-failed operation srv reason host-registration-missing service "$srv_name"
+  [ "$srv_host_registered_provider" = "$srv_host_expected_provider" ] ||
+    fatal 1 execution execution-failed operation srv reason host-registration-stale service "$srv_name" provider "$srv_host_expected_provider" current "$srv_host_registered_provider"
+  srv_host_system_account_prepare "$srv_host_registered_account"
+  srv_host_actual_uid="$(command -p -- id -u 2>/dev/null)" ||
+    fatal 1 execution execution-failed operation srv reason host-account-unavailable service "$srv_name"
+  [ "$srv_host_actual_uid" = "$srv_host_account_uid" ] ||
+    fatal 1 execution execution-failed operation srv reason host-account-mismatch service "$srv_name" account "$srv_host_registered_account"
 
   srv_host_current_provider="$(pkg_provider_default_resolve "$srv_name" 2>/dev/null)" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
@@ -897,15 +991,34 @@ srv_host_systemd_system_install()
 
   command -p -- chmod 644 "$srv_host_tmp" ||
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
-  command -p -- mv -f -- "$srv_host_tmp" "$srv_host_manifest" ||
+  srv_host_system_manifest_backup
+  if ! command -p -- mv -f -- "$srv_host_tmp" "$srv_host_manifest"
+  then
+    command -p -- rm -f -- "$srv_host_tmp" "$srv_host_system_manifest_backup_file" 2>/dev/null || :
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
+  fi
 
-  srv_host_systemd_system_call daemon-reload ||
+  if ! srv_host_systemd_system_call daemon-reload
+  then
+    srv_host_system_manifest_restore || :
+    srv_host_systemd_system_call daemon-reload >/dev/null 2>&1 || :
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action install service "$srv_name"
-  srv_host_systemd_system_call enable "$srv_host_unit" ||
+  fi
+  if ! srv_host_systemd_system_call enable "$srv_host_unit"
+  then
+    if [ "$srv_host_system_manifest_existed" -eq 0 ]; then srv_host_systemd_system_call disable "$srv_host_unit" >/dev/null 2>&1 || :; fi
+    srv_host_system_manifest_restore || :
+    srv_host_systemd_system_call daemon-reload >/dev/null 2>&1 || :
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action install service "$srv_name"
-
-  srv_host_system_registration_write
+  fi
+  if ! srv_host_system_registration_write
+  then
+    if [ "$srv_host_system_manifest_existed" -eq 0 ]; then srv_host_systemd_system_call disable "$srv_host_unit" >/dev/null 2>&1 || :; fi
+    srv_host_system_manifest_restore || :
+    srv_host_systemd_system_call daemon-reload >/dev/null 2>&1 || :
+    fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
+  fi
+  command -p -- rm -f -- "$srv_host_system_manifest_backup_file"
 }
 
 srv_host_systemd_system_start()
@@ -978,7 +1091,6 @@ srv_host_launchd_system_install()
     [ -f "$srv_host_manifest" ] && [ ! -L "$srv_host_manifest" ] ||
       fatal 1 execution execution-failed operation srv reason host-registration-invalid service "$srv_name"
   fi
-
   srv_host_tmp="$srv_host_manifest.tmp.$$"
   command -p -- rm -f -- "$srv_host_tmp" 2>/dev/null
   "$srv_plutil" -create xml1 "$srv_host_tmp" ||
@@ -1001,13 +1113,26 @@ srv_host_launchd_system_install()
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
   command -p -- chown 0:0 "$srv_host_tmp" ||
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
-  command -p -- mv -f -- "$srv_host_tmp" "$srv_host_manifest" ||
+  srv_host_system_manifest_backup
+  if ! command -p -- mv -f -- "$srv_host_tmp" "$srv_host_manifest"
+  then
+    command -p -- rm -f -- "$srv_host_tmp" "$srv_host_system_manifest_backup_file" 2>/dev/null || :
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
+  fi
 
-  "$srv_launchctl" enable "$srv_host_target" ||
+  if ! "$srv_launchctl" enable "$srv_host_target"
+  then
+    if [ "$srv_host_system_manifest_existed" -eq 0 ]; then "$srv_launchctl" disable "$srv_host_target" >/dev/null 2>&1 || :; fi
+    srv_host_system_manifest_restore || :
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action install service "$srv_name"
-
-  srv_host_system_registration_write
+  fi
+  if ! srv_host_system_registration_write
+  then
+    if [ "$srv_host_system_manifest_existed" -eq 0 ]; then "$srv_launchctl" disable "$srv_host_target" >/dev/null 2>&1 || :; fi
+    srv_host_system_manifest_restore || :
+    fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
+  fi
+  command -p -- rm -f -- "$srv_host_system_manifest_backup_file"
 }
 
 srv_host_launchd_system_start()
@@ -1097,6 +1222,7 @@ srv_host_system()
 
   if [ "$srv_host_action" = install ]
   then
+    srv_host_profile_capture || return $?
     srv_host_system_account_prepare "$3"
     srv_host_system_provider_prepare
     srv_host_system_state_prepare

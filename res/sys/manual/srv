@@ -81,25 +81,28 @@ COMMANDS
         the service using an explicit pre-existing non-root POSIX account. The caller
         must already execute with effective UID 0; srv never invokes sudo/doas or
         creates/modifies the account. Install resolves and records the exact current
-        concrete provider, prepares its service-specific system package HOME and
-        enables boot persistence without starting the service.
+        system profile, host account and concrete provider in the installation's
+        protected system-service registry, prepares profile-specific service package
+        state and enables boot persistence without starting the service. Subsequent
+        starts and service launches validate and apply that registered profile,
+        independent of an interactive shell's context.
 
     host system uninstall <service>
         Administratively stop/unload and remove native system registration. The
         execution account and authoritative package/service state are preserved.
 
     host system start <service>
-        Start the installed system registration only when the current system
-        facility default still resolves to the concrete provider reconciled by the
-        last install.
+        Start the installed system registration only when the registered profile's
+        system facility default still resolves to the concrete provider reconciled
+        by the last install.
 
     host system stop <service>
         Stop/unload the current system-hosted process while leaving persistent
         registration installed.
 
     host system restart <service>
-        Restart/reload the installed system service only when provider selection
-        still matches the reconciled concrete registration.
+        Restart/reload the installed system service only when its registered profile
+        still resolves the provider recorded at installation.
 
 OPTIONS
     -f
@@ -188,11 +191,17 @@ HOST SYSTEM SUPERVISION
     non-root. srv does not create/remove accounts and does not invoke privilege
     escalation itself.
 
-    System registration records the exact concrete provider prepared by install.
-    The system facility default remains authoritative selection intent: each hosted
-    launch re-resolves it and fails as stale registration if it no longer matches.
-    Re-run "srv host system install <service> <account>" to reconcile a changed
-    provider before a later start/restart.
+    System registration records the validated system profile, host account and exact
+    concrete provider prepared by install in the installation's root-owned registry.
+    Each hosted start validates and applies that profile before resolving the system
+    facility default, so an unrelated interactive context cannot retarget the
+    service. Reinstall updates subsequent launches and does not retarget a process
+    already running. The system facility default remains authoritative selection intent:
+    each hosted launch re-resolves it within the registered profile and fails as
+    stale registration if it no longer matches. Re-run
+    "srv host system install <service> <account>" to reconcile a changed provider
+    or profile before a later start/restart. Existing registrations created before
+    profile-bound system records require reinstall before they can launch.
 
     The provider process runs through the ordinary package launcher with system
     package State Instance equal to the service identity. Its package HOME is
