@@ -157,7 +157,7 @@ jobs:
           integrated=1
           ./m pkg default "$package@1"
           ./m pkg provider default "$facility" "$package"
-          ./m context system=secondary pkg provider default "$facility" "$package"
+          ./m sh -c '. "$m_LIB_DIR/sys/sh/core.lib.sh"; context system=secondary; ./m pkg provider default "$1" "$2"' sh "$facility" "$package"
           package_home=$(./m state-path user pkg "$package" home)
           marker=$package_home/m-srv-ci-user-events
           [ ! -e "$marker" ] || { echo 'INFRASTRUCTURE: pre-existing test marker' >&2; exit 3; }
@@ -169,7 +169,7 @@ jobs:
           HOME="$spoof_home" \
           XDG_CONFIG_HOME="$tmp/spoof-config" \
           XDG_RUNTIME_DIR="$tmp/spoof-runtime" \
-            ./m context system=secondary srv host user install "$facility"
+            ./m sh -c '. "$m_LIB_DIR/sys/sh/core.lib.sh"; context system=secondary; ./m srv host user install "$1"' sh "$facility"
           registration_owned=1
           case "$(uname -s)" in
             Linux) spoof_manifest="$spoof_home/.config/systemd/user/m-srv-$facility.service" ;;
