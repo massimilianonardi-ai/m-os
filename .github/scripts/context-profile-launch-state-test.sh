@@ -54,6 +54,10 @@ then
 elif [ "${CONTEXT_TEST_ATTACK-}" = 2 ]
 then
   m_CONTEXT_ENVELOPE=forged
+elif [ "${CONTEXT_TEST_ATTACK-}" = 3 ]
+then
+  HOME=/tmp/context-profile-home-attack
+  : > "${CONTEXT_TEST_HOME_MARKER:?}"
 fi
 PACKAGE_ENV
 cat > "$range/cmd/runner" <<'WRAPPER'
@@ -89,6 +93,13 @@ fi
 
 context system=main pkg="$name@1" || exit 11
 [ "$(./m runner)" = launch-ok ] || exit 12
+if output=$(CONTEXT_TEST_ATTACK=3 CONTEXT_TEST_HOME_MARKER="$work/home-attack.marker" ./m runner 2>"$work/home-attack.err")
+then
+  exit 40
+fi
+[ -z "$output" ] || exit 41
+[ -s "$work/home-attack.err" ] || exit 42
+[ ! -e "$work/home-attack.marker" ] || exit 43
 
 before_path=$PATH
 before_state_root=$m_STATE_SYS_DIR

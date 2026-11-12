@@ -392,7 +392,10 @@ launcher()
   HOME=$pkg_launch_home
   export -- HOME
 
-  readonly -- m_ROOT m_STATE_DIR m_STATE_SYS_DIR m_STATE_USER_DIR
+  # HOME is derived from the selected context's logical user state. Package
+  # and user environment files may use it, but must not redirect that state
+  # after the launcher's validated HOME has been selected.
+  readonly -- HOME m_ROOT m_STATE_DIR m_STATE_SYS_DIR m_STATE_USER_DIR
   readonly -- \
     m_CONTEXT_ENVELOPE \
     m_CONTEXT_ENVELOPE_VALIDATED \

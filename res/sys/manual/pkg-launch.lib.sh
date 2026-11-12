@@ -23,13 +23,15 @@ DESCRIPTION
 
     When an inherited generalized context envelope is present, the launcher
     revalidates its root, effective UID, selected system profile and exact package
-    selection before preparing the command. Context identity, envelope and
-    context-owned search-path fields are readonly during package/provider/user
-    environment application, including when no envelope was originally present.
-    If the selected profile differs from system/current, a concrete with mutable
-    var/ state fails before its target runs because the installed state links
-    still follow the global selector. Context selection never changes
-    system/current.
+    selection before preparing the command. Context identity, envelope,
+    context-owned search-path fields and the validated package HOME are readonly
+    during package/provider/user environment application, including when no
+    envelope was originally present. Environment preservation remains an
+    explicit final-target override and does not change the HOME used to resolve
+    or create package state. If the selected profile differs from
+    system/current, a concrete with mutable var/ state fails before its target
+    runs because the installed state links still follow the global selector.
+    Context selection never changes system/current.
 
 FUNCTIONS
     launcher <package> [<argument>...]
