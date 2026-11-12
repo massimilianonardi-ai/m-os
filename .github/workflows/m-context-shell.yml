@@ -2,7 +2,7 @@ name: m context shell command selection
 
 on:
   push:
-    branches: [master, codex/c3-approved-generalized-context]
+    branches: [master, codex/c3-approved-generalized-context, codex/c3-contract-alignment]
   pull_request:
     branches: [master]
   workflow_dispatch:
