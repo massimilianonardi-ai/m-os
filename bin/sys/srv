@@ -127,11 +127,98 @@ srv_host_provider_resolve()
   srv_command="$(pkg_facility_service_start_resolve "$srv_name" "$srv_provider")" || return 1
 }
 
+srv_host_profile_manifest_write()
+{
+  [ "$#" -eq 1 ] || return 2
+  srv_host_profile_manifest_file="$srv_host_manifest.profile"
+  if [ -e "$srv_host_profile_manifest_file" ] || [ -L "$srv_host_profile_manifest_file" ]
+  then
+    [ -f "$srv_host_profile_manifest_file" ] && [ ! -L "$srv_host_profile_manifest_file" ] ||
+      fatal 1 srv host-registration-invalid service "$srv_name" path "$srv_host_profile_manifest_file"
+  fi
+
+  srv_host_profile_manifest_tmp="$srv_host_profile_manifest_file.tmp.$$"
+  [ ! -e "$srv_host_profile_manifest_tmp" ] && [ ! -L "$srv_host_profile_manifest_tmp" ] ||
+    fatal 1 srv host-registration-write-failed service "$srv_name" path "$srv_host_profile_manifest_tmp"
+  umask 077
+  if ! printf 'm-srv-host-user-profile-v1\nsystem=%s\n' "$1" > "$srv_host_profile_manifest_tmp"
+  then
+    command -p -- rm -f -- "$srv_host_profile_manifest_tmp" 2>/dev/null
+    fatal 1 srv host-registration-write-failed service "$srv_name" path "$srv_host_profile_manifest_file"
+  fi
+  command -p -- chmod 600 "$srv_host_profile_manifest_tmp" ||
+    fatal 1 srv host-registration-write-failed service "$srv_name" path "$srv_host_profile_manifest_file"
+  command -p -- mv -f -- "$srv_host_profile_manifest_tmp" "$srv_host_profile_manifest_file" ||
+    fatal 1 srv host-registration-write-failed service "$srv_name" path "$srv_host_profile_manifest_file"
+}
+
+srv_host_profile_manifest_read()
+{
+  srv_host_profile_manifest_file="$srv_host_manifest.profile"
+  [ -f "$srv_host_profile_manifest_file" ] && [ ! -L "$srv_host_profile_manifest_file" ] ||
+    fatal 1 srv host-profile-registration-missing service "$srv_name"
+
+  srv_host_profile_header=
+  srv_host_profile_line=
+  srv_host_profile_extra=
+  {
+    IFS= read -r srv_host_profile_header || fatal 2 srv host-profile-registration-invalid service "$srv_name"
+    IFS= read -r srv_host_profile_line || fatal 2 srv host-profile-registration-invalid service "$srv_name"
+    IFS= read -r srv_host_profile_extra
+    srv_host_profile_read_status=$?
+  } < "$srv_host_profile_manifest_file"
+  [ "$srv_host_profile_read_status" -ne 0 ] && [ -z "$srv_host_profile_extra" ] ||
+    fatal 2 srv host-profile-registration-invalid service "$srv_name"
+  [ "$srv_host_profile_header" = m-srv-host-user-profile-v1 ] ||
+    fatal 2 srv host-profile-registration-invalid service "$srv_name"
+  case "$srv_host_profile_line" in
+    system=*) srv_host_registered_profile=${srv_host_profile_line#system=} ;;
+    *) fatal 2 srv host-profile-registration-invalid service "$srv_name" ;;
+  esac
+  [ -n "$srv_host_registered_profile" ] ||
+    fatal 2 srv host-profile-registration-invalid service "$srv_name"
+  context "system=$srv_host_registered_profile" || return $?
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = "$srv_host_registered_profile" ] ||
+    fatal 2 srv host-profile-registration-invalid service "$srv_name"
+}
+
+srv_host_user_profile_capture()
+{
+  [ -n "${m_CONTEXT_ENVELOPE_VALIDATED-}" ] &&
+  [ -n "${m_CONTEXT_SYSTEM_PROFILE-}" ] ||
+    fatal 1 srv host-profile-registration-invalid service "$srv_name"
+  srv_host_registered_profile=$m_CONTEXT_SYSTEM_PROFILE
+  context "system=$srv_host_registered_profile" || return $?
+  [ "$m_CONTEXT_SYSTEM_PROFILE" = "$srv_host_registered_profile" ] ||
+    fatal 1 srv host-profile-registration-invalid service "$srv_name"
+}
+
+srv_host_profile_manifest_remove()
+{
+  srv_host_profile_manifest_file="$srv_host_manifest.profile"
+  if [ ! -e "$srv_host_profile_manifest_file" ] && [ ! -L "$srv_host_profile_manifest_file" ]
+  then
+    return 0
+  fi
+  [ -f "$srv_host_profile_manifest_file" ] && [ ! -L "$srv_host_profile_manifest_file" ] ||
+    return 1
+  command -p -- rm -f -- "$srv_host_profile_manifest_file"
+}
+
 srv_host_user_run()
 {
   [ "$#" -eq 1 ] || fatal 2 execution invalid-arguments operation srv
   srv_name=$1
   srv_name_valid "$srv_name" || fatal 2 execution invalid-arguments operation srv service "$srv_name"
+
+  srv_host_os="$(command -p -- uname -s 2>/dev/null)" ||
+    fatal 1 execution execution-failed operation srv reason host-platform-unavailable service "$srv_name"
+  case "$srv_host_os" in
+    Linux) srv_host_systemd_prepare ;;
+    Darwin) srv_host_launchd_prepare ;;
+    *) fatal 1 execution execution-failed operation srv reason unsupported-host host "$srv_host_os" service "$srv_name" ;;
+  esac
+  srv_host_profile_manifest_read || return $?
 
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
@@ -218,6 +305,7 @@ srv_host_systemd_prepare()
 
 srv_host_systemd_install()
 {
+  srv_host_user_profile_capture || return $?
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
 
@@ -261,12 +349,14 @@ srv_host_systemd_install()
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
   command -p -- mv -- "$srv_host_tmp" "$srv_host_manifest" ||
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
+  srv_host_profile_manifest_write "$srv_host_registered_profile"
 
   srv_host_systemd_call daemon-reload ||
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action install service "$srv_name"
   if ! srv_host_systemd_call enable "$srv_host_unit"
   then
     command -p -- rm -f -- "$srv_host_manifest" 2>/dev/null
+    srv_host_profile_manifest_remove >/dev/null 2>&1 || :
     srv_host_systemd_call daemon-reload >/dev/null 2>&1 || :
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action install service "$srv_name"
   fi
@@ -281,6 +371,7 @@ srv_host_systemd_manifest_require()
 srv_host_systemd_start()
 {
   srv_host_systemd_manifest_require
+  srv_host_profile_manifest_read || return $?
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
   srv_host_systemd_call start "$srv_host_unit" ||
@@ -297,6 +388,7 @@ srv_host_systemd_stop()
 srv_host_systemd_restart()
 {
   srv_host_systemd_manifest_require
+  srv_host_profile_manifest_read || return $?
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
   srv_host_systemd_call restart "$srv_host_unit" ||
@@ -307,6 +399,8 @@ srv_host_systemd_uninstall()
 {
   if [ ! -e "$srv_host_manifest" ] && [ ! -L "$srv_host_manifest" ]
   then
+    srv_host_profile_manifest_remove ||
+      fatal 1 srv host-registration-remove-failed service "$srv_name"
     return 0
   fi
   srv_host_systemd_manifest_require
@@ -315,6 +409,8 @@ srv_host_systemd_uninstall()
   srv_host_systemd_call disable "$srv_host_unit" >/dev/null 2>&1 || :
   command -p -- rm -f -- "$srv_host_manifest" ||
     fatal 1 execution execution-failed operation srv reason host-registration-remove-failed service "$srv_name"
+  srv_host_profile_manifest_remove ||
+    fatal 1 srv host-registration-remove-failed service "$srv_name"
   srv_host_systemd_call daemon-reload ||
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action uninstall service "$srv_name"
 }
@@ -348,6 +444,7 @@ srv_host_launchd_prepare()
 
 srv_host_launchd_install()
 {
+  srv_host_user_profile_capture || return $?
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
 
@@ -382,10 +479,12 @@ srv_host_launchd_install()
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
   command -p -- mv -- "$srv_host_tmp" "$srv_host_manifest" ||
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
+  srv_host_profile_manifest_write "$srv_host_registered_profile"
 
   if ! "$srv_launchctl" enable "$srv_host_target"
   then
     command -p -- rm -f -- "$srv_host_manifest" 2>/dev/null
+    srv_host_profile_manifest_remove >/dev/null 2>&1 || :
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action install service "$srv_name"
   fi
 }
@@ -415,6 +514,7 @@ srv_host_launchd_wait_unloaded()
 srv_host_launchd_start()
 {
   srv_host_launchd_manifest_require
+  srv_host_profile_manifest_read || return $?
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
 
@@ -442,6 +542,7 @@ srv_host_launchd_stop()
 srv_host_launchd_restart()
 {
   srv_host_launchd_manifest_require
+  srv_host_profile_manifest_read || return $?
   srv_host_provider_resolve "$srv_name" ||
     fatal 1 execution execution-failed operation srv reason provider-resolution-failed service "$srv_name"
 
@@ -459,6 +560,8 @@ srv_host_launchd_uninstall()
 {
   if [ ! -e "$srv_host_manifest" ] && [ ! -L "$srv_host_manifest" ]
   then
+    srv_host_profile_manifest_remove ||
+      fatal 1 srv host-registration-remove-failed service "$srv_name"
     "$srv_launchctl" disable "$srv_host_target" >/dev/null 2>&1 || :
     return 0
   fi
@@ -473,6 +576,8 @@ srv_host_launchd_uninstall()
 
   command -p -- rm -f -- "$srv_host_manifest" ||
     fatal 1 execution execution-failed operation srv reason host-registration-remove-failed service "$srv_name"
+  srv_host_profile_manifest_remove ||
+    fatal 1 srv host-registration-remove-failed service "$srv_name"
   "$srv_launchctl" disable "$srv_host_target" >/dev/null 2>&1 || :
 }
 

@@ -48,26 +48,33 @@ COMMANDS
 
     host user install <service>
         Persist the service in the calling POSIX account's native user supervisor
-        without starting it in the current session. The service must currently
-        resolve through a valid system facility default/provider realization.
-        Host-account discovery follows the actual POSIX account rather than
-        caller-overridden HOME/XDG state roots.
+        without starting it in the current session. Registration records the
+        validated system profile active in the installing m context. Future starts
+        and restarts use that profile even if the account defaults or another shell's
+        context changes. The service must resolve through a valid system facility
+        default/provider realization within the registered profile. Reinstall while
+        the service is running updates later launches and does not retarget the
+        running process. Host-account discovery follows the actual POSIX account
+        rather than caller-overridden HOME/XDG state roots.
 
     host user uninstall <service>
         Stop/unload the hosted service when necessary and remove its persistent
         native registration.
 
     host user start <service>
-        Start the installed native user-supervisor registration. Current facility
-        default intent is resolved for this launch.
+        Validate the registered system profile against the installation inventory,
+        then start the installed native user-supervisor registration. Current system
+        facility-default intent is resolved within the registered profile for this
+        launch. A missing, malformed or unmanaged profile fails closed.
 
     host user stop <service>
         Stop/unload the current hosted process while leaving the native registration
         installed.
 
     host user restart <service>
-        Restart the installed hosted service through the native supervisor, resolving
-        current facility default intent for the replacement process.
+        Validate the registered system profile and restart the hosted service through
+        the native supervisor, resolving current system facility-default intent within
+        that profile for the replacement process.
 
     host system install <service> <account>
         Administratively reconcile a persistent system-supervisor registration for

@@ -2,7 +2,7 @@ name: m native host-user lifecycle with isolated local service provider
 
 on:
   push:
-    branches: [codex/srv-persistent-supervisor, m-os-completion-s]
+    branches: [codex/srv-persistent-supervisor, codex/c3-srv-host-profile-binding, m-os-completion-s]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -56,6 +56,8 @@ jobs:
           registration_owned=0
           portable_started=0
           pkg_store_created=0
+          profile_fixture_owned=0
+          profile_inventory_backup=
           marker=
           case "$(uname -s)" in
             Linux) native_manifest="$HOME/.config/systemd/user/m-srv-$facility.service" ;;
@@ -81,6 +83,11 @@ jobs:
             if [ "$integrated2" -eq 1 ]; then ./m "$driver" deintegrate "$package" 2 >/dev/null 2>&1 || :; fi
             if [ "$integrated" -eq 1 ]; then ./m "$driver" deintegrate "$package" 1 >/dev/null 2>&1 || :; fi
             if [ -n "$marker" ] && [ -f "$marker" ]; then rm -f -- "$marker" || :; fi
+            if [ "$profile_fixture_owned" -eq 1 ]; then
+              cp "$profile_inventory_backup" "$root/state/system/profile/.inventory" || :
+              chmod 644 "$root/state/system/profile/.inventory" || :
+              rm -rf -- "$root/state/system/profile/secondary" || :
+            fi
             rm -rf -- "$tmp"
             if [ "$pkg_store_created" -eq 1 ]; then rmdir -- "$root/pkg" >/dev/null 2>&1 || :; fi
           }
@@ -88,6 +95,20 @@ jobs:
           trap 'exit 130' HUP INT TERM
 
           mkdir -p "$range/cmd" "$range/link" "$range/facility-service/$facility" "$payload/bin"
+          profile_dir="$root/state/system/profile/secondary"
+          profile_inventory="$root/state/system/profile/.inventory"
+          [ -d "$root/state/system/profile/main" ] && [ -f "$profile_inventory" ] || {
+            echo 'INFRASTRUCTURE: installation profile registry missing' >&2; exit 3;
+          }
+          [ ! -e "$profile_dir" ] && [ ! -L "$profile_dir" ] || {
+            echo 'INFRASTRUCTURE: secondary profile fixture already exists' >&2; exit 3;
+          }
+          profile_inventory_backup="$tmp/profile-inventory"
+          cp "$profile_inventory" "$profile_inventory_backup"
+          mkdir -m 755 "$profile_dir"
+          printf '%s\n' 'profile=secondary' >> "$profile_inventory"
+          chmod 644 "$profile_inventory"
+          profile_fixture_owned=1
           printf '%s\n' tar.gz > "$range/format"
           printf '%s\n' "$facility 1" > "$range/facility"
           printf '%s\n' bin/service-target > "$range/link/$service_cmd"
@@ -105,7 +126,7 @@ jobs:
           on_term() { printf 'term %s\n' "$$" >> "$marker"; exit 0; }
           trap on_term TERM
           trap 'exit 0' HUP INT
-          printf 'start %s\n' "$$" >> "$marker"
+          printf 'start %s %s %s\n' "$$" "${m_CONTEXT_SYSTEM_PROFILE-}" "${m_STATE_SYS_DIR-}" >> "$marker"
           while :; do sleep 1; done
           EOF_TARGET
           chmod 700 "$payload/bin/service-target"
@@ -136,6 +157,7 @@ jobs:
           integrated=1
           ./m pkg default "$package@1"
           ./m pkg provider default "$facility" "$package"
+          ./m context system=secondary pkg provider default "$facility" "$package"
           package_home=$(./m state-path user pkg "$package" home)
           marker=$package_home/m-srv-ci-user-events
           [ ! -e "$marker" ] || { echo 'INFRASTRUCTURE: pre-existing test marker' >&2; exit 3; }
@@ -147,7 +169,7 @@ jobs:
           HOME="$spoof_home" \
           XDG_CONFIG_HOME="$tmp/spoof-config" \
           XDG_RUNTIME_DIR="$tmp/spoof-runtime" \
-            ./m srv host user install "$facility"
+            ./m context system=secondary srv host user install "$facility"
           registration_owned=1
           case "$(uname -s)" in
             Linux) spoof_manifest="$spoof_home/.config/systemd/user/m-srv-$facility.service" ;;
@@ -159,6 +181,10 @@ jobs:
           }
           [ -f "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
             echo 'FAIL: native host registration not persisted' >&2; exit 1;
+          }
+          profile_manifest="$native_manifest.profile"
+          [ -f "$profile_manifest" ] && grep -Fx 'system=secondary' "$profile_manifest" >/dev/null || {
+            echo 'FAIL: host registration did not persist the selected profile' >&2; exit 1;
           }
           [ ! -e "$marker" ] || { echo 'FAIL: install launched service unexpectedly' >&2; exit 1; }
           wait_started() {
@@ -201,6 +227,9 @@ jobs:
 
           ./m srv host user start "$facility"
           wait_started 1 || { echo 'FAIL: user manager did not start local provider' >&2; exit 1; }
+          awk '$1 == "start" && $3 == "secondary" { ok=1 } END { exit ok ? 0 : 1 }' "$marker" || {
+            echo 'FAIL: hosted process did not use its registered profile' >&2; exit 1;
+          }
           pid1=$(last_pid)
           ps -p "$pid1" -o pid= >/dev/null || { echo 'FAIL: first hosted process not alive' >&2; exit 1; }
           ./m srv host user restart "$facility"
@@ -213,6 +242,28 @@ jobs:
           wait_pid_gone "$pid2" || { echo 'FAIL: stop left hosted provider running' >&2; exit 1; }
           grep -Fx "term $pid2" "$marker" >/dev/null || { echo 'FAIL: stop did not deliver SIGTERM to hosted provider' >&2; exit 1; }
           [ -f "$native_manifest" ] || { echo 'FAIL: stop removed registration' >&2; exit 1; }
+
+          # Profile metadata is authoritative and must fail closed if changed or absent.
+          cp "$profile_manifest" "$tmp/profile-manifest-backup"
+          printf '%s\n' 'm-srv-host-user-profile-v1' 'system=unmanaged' > "$profile_manifest"
+          : > "$tmp/profile-error"
+          if ./m srv host user start "$facility" > /dev/null 2> "$tmp/profile-error"; then
+            echo 'FAIL: unmanaged registered profile was accepted' >&2; exit 1
+          fi
+          grep -F 'context-profile-unmanaged' "$tmp/profile-error" >/dev/null || {
+            echo 'FAIL: unmanaged profile did not report the validation failure' >&2; exit 1;
+          }
+          [ "$(awk '$1 == "start" { n++ } END { print n+0 }' "$marker")" -eq 2 ] || {
+            echo 'FAIL: tampered profile launched a service' >&2; exit 1;
+          }
+          rm -f -- "$profile_manifest"
+          if ./m srv host user start "$facility" > /dev/null 2> "$tmp/profile-error"; then
+            echo 'FAIL: missing registered profile was accepted' >&2; exit 1
+          fi
+          grep -F 'host-profile-registration-missing' "$tmp/profile-error" >/dev/null || {
+            echo 'FAIL: missing profile did not fail closed' >&2; exit 1;
+          }
+          cp "$tmp/profile-manifest-backup" "$profile_manifest"
 
           # Integrate a second concrete from the same real package descriptor.
           # Only its foreground event labels differ, so we can observe which
