@@ -9,6 +9,8 @@ set -eu
   profile_root="$m_ROOT/state/system/profile"
   profile_inventory="$profile_root/.inventory"
   profile_inventory_backup="$profile_root/.inventory.ci-backup"
+  provider_test_default_file=
+  provider_test_binding_file=
   chmod 755 "$m_ROOT/state" "$m_ROOT/state/system" "$profile_root" "$profile_root/main"
   [ ! -e "$test_account" ] && [ ! -L "$test_account" ] || {
     echo "INFRASTRUCTURE: account context fixture already exists" >&2
@@ -30,6 +32,18 @@ set -eu
     context --clear-defaults >/dev/null 2>&1 || :
     context --delete-preset context-ci >/dev/null 2>&1 || :
     context --delete-preset context-ci-system >/dev/null 2>&1 || :
+    if [ -n "$provider_test_default_file" ]
+    then
+      rm -f -- "$provider_test_default_file"
+      rmdir "${provider_test_default_file%/*}" 2>/dev/null || :
+      rmdir "${provider_test_default_file%/*/*}" 2>/dev/null || :
+    fi
+    if [ -n "$provider_test_binding_file" ]
+    then
+      rm -f -- "$provider_test_binding_file"
+      rmdir "${provider_test_binding_file%/*}" 2>/dev/null || :
+      rmdir "${provider_test_binding_file%/*/*}" 2>/dev/null || :
+    fi
     rm -rf -- "$m_PKG_DIR/context-a@1" "$m_PKG_DIR/context-a@2" "$m_PKG_DIR/context-b@1" "$m_PKG_DIR/context-c@1" "$m_PKG_DIR/context-d@1" "$m_PKG_DIR/context-core@1"
     cp "$profile_inventory_backup" "$profile_inventory"
     rm -f -- "$profile_inventory_backup"
@@ -76,6 +90,36 @@ set -eu
   [ "$PATH" = "$before_bad_provider" ]
   [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
   [ "$(lang execution invalid-arguments)" = "$(cat "$m_LANG_DIR/it_IT/execution/invalid-arguments")" ]
+  loadsyslib "pkg/pkg-provider"
+  _pkg_provider_default_file browser
+  provider_test_default_candidate=$pkg_provider_config_file
+  _pkg_provider_binding_file context-a browser
+  provider_test_binding_candidate=$pkg_provider_config_file
+  [ ! -e "$provider_test_default_candidate" ] && [ ! -L "$provider_test_default_candidate" ] || exit 45
+  [ ! -e "$provider_test_binding_candidate" ] && [ ! -L "$provider_test_binding_candidate" ] || exit 46
+  provider_test_default_file=$provider_test_default_candidate
+  provider_test_binding_file=$provider_test_binding_candidate
+  mkdir -p "${provider_test_default_file%/*}"
+  printf "%s\n" context-b@1 > "$provider_test_default_file"
+  chmod 644 "$provider_test_default_file"
+  [ "$(pkg_provider_effective_selector context-a browser)" = context-a@1 ] || exit 47
+  mkdir -p "${provider_test_binding_file%/*}"
+  printf "%s\n" context-b@1 > "$provider_test_binding_file"
+  chmod 644 "$provider_test_binding_file"
+  provider_test_selected=$(pkg_provider_effective_selector context-a browser) || exit 48
+  [ "$provider_test_selected" = context-b@1 ] || {
+    printf "provider binding did not outrank the context pin: %s\n" "$provider_test_selected" >&2
+    exit 48
+  }
+  rm -f -- "$provider_test_binding_file"
+  rmdir "${provider_test_binding_file%/*}"
+  [ "$(pkg_provider_effective_selector context-a browser)" = context-a@1 ] || exit 49
+  m_CONTEXT_PROVIDER_PINS=
+  [ "$(pkg_provider_effective_selector context-a browser)" = context-b@1 ] || exit 50
+  rm -f -- "$provider_test_default_file"
+  if pkg_provider_effective_selector context-a browser; then exit 51; else status=$?; fi
+  [ "$status" -eq 1 ] || exit 52
+  m_CONTEXT_PROVIDER_PINS=provider.browser=context-a@1
   [ "$(./m state-path user sys probe data)" = "$m_ROOT/state/user/alice/sys/probe/data" ]
   ./m sh -ec "[ \"\$m_CONTEXT_USER_IDENTITY\" = alice ] && [ \"\$m_CONTEXT_LOCALE\" = it_IT ] && [ \"\$m_CONTEXT_OSARCH\" = \"\$m_OSARCH\" ] && [ \"\$m_CONTEXT_PROVIDER_PINS\" = provider.browser=context-a@1 ] && [ \"\$m_CONTEXT_ENVELOPE_VALIDATED\" = 1 ]"
   if context user=../outside; then exit 44; fi
