@@ -1,0 +1,140 @@
+#!/bin/sh
+repo_root=$(CDPATH= cd "$(dirname "$0")/../.." && pwd -P) || exit 1
+CDPATH= cd "$repo_root" || exit 1
+set -eu
+./m osarch update
+
+[ "$(id -u)" -ne 0 ] || {
+  echo 'INFRASTRUCTURE: host-user validation requires a non-root runner' >&2
+  exit 3
+}
+case "$(uname -s)" in
+  Linux)
+    command -v systemctl >/dev/null 2>&1 || {
+      echo 'SKIP: systemd user manager command unavailable'
+      exit 0
+    }
+    if ! systemctl --user show-environment >/dev/null 2>&1
+    then
+      echo 'SKIP: systemd user manager unavailable in this hosted session'
+      exit 0
+    fi
+    command -v Xvfb >/dev/null 2>&1 || {
+      echo 'SKIP: Xvfb unavailable for the real Electron provider'
+      exit 0
+    }
+    native_manifest="$HOME/.config/systemd/user/m-srv-web-control.service"
+    ;;
+  Darwin)
+    command -v launchctl >/dev/null 2>&1 || {
+      echo 'SKIP: launchd unavailable'
+      exit 0
+    }
+    if ! launchctl print "gui/$(id -u)" >/dev/null 2>&1
+    then
+      echo 'SKIP: user launchd GUI manager unavailable in this hosted session'
+      exit 0
+    fi
+    native_manifest="$HOME/Library/LaunchAgents/m.srv.web-control.plist"
+    ;;
+  *)
+    echo 'SKIP: unsupported host supervisor'
+    exit 0
+    ;;
+esac
+
+[ ! -e "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
+  echo 'INFRASTRUCTURE: candidate native registration already exists' >&2
+  exit 3
+}
+
+xvfb_pid=
+cleanup() {
+  ./m srv host user uninstall web-control >/dev/null 2>&1 || :
+  ./m pkg provider default -u -- web-control >/dev/null 2>&1 || :
+  case "$(uname -s)" in
+    Linux) systemctl --user unset-environment DISPLAY WEB_CONTROL_HEADLESS ELECTRON_WEB_CONTROL_SOFTWARE_RENDERING >/dev/null 2>&1 || : ;;
+    Darwin)
+      launchctl unsetenv WEB_CONTROL_HEADLESS >/dev/null 2>&1 || :
+      launchctl unsetenv ELECTRON_WEB_CONTROL_SOFTWARE_RENDERING >/dev/null 2>&1 || :
+      ;;
+  esac
+  [ -z "$xvfb_pid" ] || {
+    kill "$xvfb_pid" 2>/dev/null || :
+    wait "$xvfb_pid" 2>/dev/null || :
+  }
+}
+trap cleanup 0
+trap 'exit 130' HUP INT TERM
+
+export WEB_CONTROL_HEADLESS=1
+export ELECTRON_WEB_CONTROL_SOFTWARE_RENDERING=1
+case "$(uname -s)" in
+  Linux)
+    Xvfb :97 -screen 0 1280x900x24 >/tmp/m-srv-host-user-xvfb.log 2>&1 &
+    xvfb_pid=$!
+    export DISPLAY=:97
+    sleep 1
+    kill -0 "$xvfb_pid" || {
+      cat /tmp/m-srv-host-user-xvfb.log >&2
+      exit 3
+    }
+    systemctl --user import-environment DISPLAY WEB_CONTROL_HEADLESS ELECTRON_WEB_CONTROL_SOFTWARE_RENDERING
+    ;;
+  Darwin)
+    launchctl setenv WEB_CONTROL_HEADLESS 1
+    launchctl setenv ELECTRON_WEB_CONTROL_SOFTWARE_RENDERING 1
+    ;;
+esac
+
+# Genuine catalog and published artifacts; no synthetic provider.
+./m pkg install electron-web-control@v0.1.0
+./m pkg provider default web-control electron-web-control
+./m srv host user install web-control
+[ -f "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
+  echo 'FAIL: native host-user service registration missing' >&2
+  exit 1
+}
+
+wait_web_control() {
+  ready=0
+  i=0
+  while [ "$i" -lt 30 ]
+  do
+    if ./m web-control status >/tmp/m-srv-host-user-status.json 2>/tmp/m-srv-host-user-status.err
+    then
+      ready=1
+      break
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  if [ "$ready" -ne 1 ]
+  then
+    cat /tmp/m-srv-host-user-status.err >&2 || :
+    echo 'FAIL: host-user service did not become responsive' >&2
+    exit 1
+  fi
+  [ -s /tmp/m-srv-host-user-status.json ]
+}
+
+./m srv host user start web-control
+wait_web_control
+./m srv host user restart web-control
+wait_web_control
+./m srv host user stop web-control
+[ -f "$native_manifest" ] || {
+  echo 'FAIL: host-user stop unexpectedly removed registration' >&2
+  exit 1
+}
+./m srv host user uninstall web-control
+[ ! -e "$native_manifest" ] && [ ! -L "$native_manifest" ] || {
+  echo 'FAIL: host-user uninstall retained the native registration' >&2
+  exit 1
+}
+if ./m srv host user start web-control >/tmp/m-srv-host-user-reinstall.log 2>&1
+then
+  echo 'FAIL: host-user start succeeded without registration' >&2
+  exit 1
+fi
+echo 'PASS: real host-user install, start, readiness, restart, stop, uninstall'
