@@ -2,7 +2,11 @@
 # Genuine public provider-version selection and compatibility regression.
 set -eu
 
-repo_root=$(CDPATH= cd "$(dirname "$0")/../.." && pwd) || exit 1
+if [ -n "${M_P3_REPO_ROOT:-}" ]; then
+  repo_root=$(CDPATH= cd "$M_P3_REPO_ROOT" && pwd -P) || exit 1
+else
+  repo_root=$(CDPATH= cd "$(dirname "$0")/../.." && pwd) || exit 1
+fi
 CDPATH= cd "$repo_root" || exit 1
 
 umask 077
@@ -97,8 +101,12 @@ trap 'exit 130' HUP INT TERM
 [ ! -e "pkg/electron-web-control" ] && [ ! -L "pkg/electron-web-control" ] || exit 9
 [ ! -e "bin/ext/web-control" ] && [ ! -L "bin/ext/web-control" ] || exit 9
 catalog="$work/catalog"
+catalog_ref=${M_P3_CATALOG_REF:-4083aa19c4362f00ec62428a631edfa493faf7f0}
+catalog_branch=${M_P3_CATALOG_BRANCH:-p3-ci-pinned}
 git clone --quiet -- https://github.com/massimilianonardi-ai/pkg-catalog.git "$catalog" || exit 4
-git -C "$catalog" checkout --quiet 4083aa19c4362f00ec62428a631edfa493faf7f0 || exit 5
+git -C "$catalog" checkout --quiet -B "$catalog_branch" "$catalog_ref" || exit 5
+git -C "$catalog" config "branch.$catalog_branch.remote" . || exit 5
+git -C "$catalog" config "branch.$catalog_branch.merge" "refs/heads/$catalog_branch" || exit 5
 conf=$(./m state-path system sys pkg conf) || exit 6
 catalog_config="$conf/catalog"
 provider_config="$conf/provider/default/web-control"
