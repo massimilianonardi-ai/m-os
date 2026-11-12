@@ -83,10 +83,12 @@ set -eu
   [ "$m_STATE_USER_DIR" = "$m_ROOT/state/user/alice" ]
   [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
   before_bad_provider=$PATH
-  if context provider.browser=context-b@1; then exit 41; fi
+  if context provider.browser=context-b@1; then exit 41; else status=$?; fi
+  [ "$status" -eq 29 ]
   [ "$PATH" = "$before_bad_provider" ]
   [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
-  if context provider.browser=not-installed@1; then exit 42; fi
+  if context provider.browser=not-installed@1; then exit 42; else status=$?; fi
+  [ "$status" -eq 29 ]
   [ "$PATH" = "$before_bad_provider" ]
   [ "$m_CONTEXT_PROVIDER_PINS" = "provider.browser=context-a@1" ]
   [ "$(lang execution invalid-arguments)" = "$(cat "$m_LANG_DIR/it_IT/execution/invalid-arguments")" ]

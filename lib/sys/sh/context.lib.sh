@@ -1426,6 +1426,11 @@ context()
     return 28
   }
   _context_selected_osarch=$_context_requested_osarch
+  _context_provider_pins_validate "$_context_requested_providers" \
+    "$_context_selected_osarch" || {
+      _context_error context-provider-invalid "$_context_requested_providers"
+      return 29
+    }
   _context_next="$(_context_prepare_packages "$_context_default_operands" "$_context_requested_operands")" || return $?
   _context_path_unapply "${PATH-}" "${m_CONTEXT_PATH_PREFIX-}" || return $?
   _context_host_path=$_context_path_base
