@@ -2,6 +2,8 @@ name: m real provider-backed srv lifecycle
 
 on:
   push:
+    branches: [master, codex/srv-persistent-supervisor, m-os-completion-s]
+  pull_request:
     branches: [master]
   workflow_dispatch:
 
@@ -16,70 +18,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Build portable srv supervisor
+        shell: sh
+        run: ./tools/build-srv-supervisor.sh
       - name: Exercise srv against actual published Electron web-control service
         shell: sh
         run: |
-          set -eu
-          ./m osarch update
-
-          command -v Xvfb >/dev/null 2>&1 || {
-            echo 'INFRASTRUCTURE: Xvfb unavailable on runner' >&2
-            exit 3
-          }
-          Xvfb :97 -screen 0 1280x900x24 > /tmp/m-srv-xvfb.log 2>&1 &
-          xvfb_pid=$!
-          cleanup() {
-            ./m srv stop web-control >/dev/null 2>&1 || :
-            ./m pkg provider default -u -- web-control >/dev/null 2>&1 || :
-            kill "$xvfb_pid" 2>/dev/null || :
-            wait "$xvfb_pid" 2>/dev/null || :
-          }
-          trap cleanup 0
-          trap 'exit 130' HUP INT TERM
-
-          export DISPLAY=:97
-          export WEB_CONTROL_HEADLESS=1
-          export ELECTRON_WEB_CONTROL_SOFTWARE_RENDERING=1
-          sleep 1
-          kill -0 "$xvfb_pid" || {
-            cat /tmp/m-srv-xvfb.log >&2
-            exit 3
-          }
-
-          # Real catalog release and runtime dependency installation.
-          ./m pkg install electron-web-control@v0.1.0
-          [ "$(./m pkg default electron-web-control)" = electron-web-control@v0.1.0 ]
-          ./m pkg versions electron
-          ./m pkg versions nodejs
-
-          # This published package supplies facility web-control 1 and
-          # the service part mapping to its real web-control-service command.
-          ./m pkg provider default web-control electron-web-control
-          [ "$(./m pkg provider default web-control)" = electron-web-control ]
-          ./m srv start web-control
-
-          ready=0
-          i=0
-          while [ "$i" -lt 30 ]
-          do
-            if ./m web-control status > /tmp/m-srv-status.json 2>/tmp/m-srv-status.err
-            then
-              ready=1
-              break
-            fi
-            sleep 1
-            i=$((i + 1))
-          done
-          if [ "$ready" -ne 1 ]
-          then
-            echo 'FAIL: real srv process did not become responsive' >&2
-            cat /tmp/m-srv-status.err >&2 || :
-            ./m state-path user sys srv log || :
-            exit 1
-          fi
-          [ -s /tmp/m-srv-status.json ]
-          ./m srv stop web-control
-          ./m srv stop web-control
-          ./m pkg provider default -u -- web-control
-          if ./m pkg provider default web-control >/dev/null 2>&1; then exit 1; fi
-          echo 'PASS: real published provider install, srv lifecycle, responsive service and idempotent stop'
+          .github/scripts/m-srv-provider-live.sh

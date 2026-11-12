@@ -1,0 +1,27 @@
+name: m real host-user supervisor service lifecycle
+
+on:
+  push:
+    branches: [codex/srv-persistent-supervisor, m-os-completion-s]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-user:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate native user supervisor with real installed web-control provider
+        shell: sh
+        run: sh .github/scripts/m-srv-host-user-live.sh
