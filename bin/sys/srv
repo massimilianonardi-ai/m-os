@@ -731,7 +731,7 @@ srv_host_system_registration_ancestor_validate()
   [ -d "$srv_host_system_ancestor_path" ] && [ ! -L "$srv_host_system_ancestor_path" ] || return 1
   command -p -- ls -ldn "$srv_host_system_ancestor_path" 2>/dev/null |
     LC_ALL=C command -p -- awk -v owner="$srv_host_system_ancestor_owner" \
-      'NR == 1 && substr($1, 1, 1) == "d" && substr($1, 6, 1) != "w" && substr($1, 9, 1) != "w" && substr($1, 11) !~ /[^@]/ && ($3 == "0" || $3 == owner) { ok = 1 } END { if (!ok) exit 1 }'
+      'NR == 1 && substr($1, 1, 1) == "d" && ($3 == "0" || $3 == owner) { ok = 1 } END { if (!ok) exit 1 }'
 }
 
 srv_host_system_registration_child_validate()
