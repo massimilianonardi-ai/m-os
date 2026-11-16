@@ -1,34 +1,102 @@
 NAME
-    context.lib.sh - activate package command selections in the current shell
+    context.lib.sh - activate a validated m process context in the current shell
 
 DESCRIPTION
     context is a POSIX shell function loaded by the m core shell runtime.
-    This initial implementation selects already installed package concrete
-    command and published library directories, composing executable and
+    It selects one installation-managed system profile, logical user-state
+    identity, locale, OS/architecture target, provider pins, and already
+    installed package concrete command and published library directories,
+    composing executable and
     non-executable shell source lookup through PATH and selected Java JAR
-    directories through CLASSPATH. It does not create filesystem projections and
-    does not resolve package dependencies or facility provider environments.
+    directories through CLASSPATH. It does not create filesystem projections or
+    materialize provider environments. Provider dependencies are resolved by
+    the package subsystem when a package is prepared or launched.
+    It stores explicit dimensions for per-POSIX-account defaults and named
+    presets in the strict context-store library. Logical user identity is
+    separate from POSIX account identity. The system
+    profile registry at $m_ROOT/state/system/profile/.inventory is read-only
+    to m; installation administrators provision it. The account store is
+    under $m_ROOT/state/<effective-UID>/context. The
+    explicit context --migrate-legacy operation imports only validated direct
+    legacy selectors; it does not change those selectors. A versioned,
+    data-only child envelope carries all selected context dimensions and is
+    checked against the current root, effective UID and profile registry.
 
     The caller must invoke the function in the shell whose PATH should change.
     Calling it in a pipeline, subshell or command substitution changes only
     that child environment.
 
 FUNCTIONS
-    context [pkg=<package>@<version>[!<osarch>] ...]
+    context [system=<profile> | user=<identity> | pkg=<package>@<version>[!<osarch>] | provider.<facility>=<selector> | locale=<locale> | osarch=<id> | full-context=<name> ...]
 
-        With no arguments, clear the current context-owned package command
-        selections and remove the previously published command/library block
-        from PATH and Java JAR contributions from CLASSPATH.
+        With no arguments, initialize persisted per-account dimensions and
+        validated baselines: the installation registry's system profile,
+        logical user identity default, current validated locale and host
+        m_OSARCH. If the account record is absent, no packages or provider pins
+        are selected. An absent or invalid profile inventory fails closed.
+        The operation does not change global current selectors; state roots
+        and locale selection are process-local.
 
-        With one or more pkg= arguments, select each installed concrete.
-        Arguments are evaluated left-to-right. A later selection for the same
-        package name replaces the earlier one; selections for other package
-        names are retained across calls. The most recently selected package
-        directory appears first in the context-owned PATH block. A v1 concrete
-        contributes cmd and lib/sh/lib/java views; a v2 concrete contributes
-        link/bin and link/lib/sh/link/lib/java views. Each selected concrete's
-        shell libraries join PATH and its Java JAR view contributes one literal
-        wildcard entry (<directory>/*) to CLASSPATH.
+        system= selects one identity present in the validated installation
+        inventory. user= selects a canonical logical identity under
+        $m_ROOT/state/user; it does not authenticate or change the POSIX
+        account. locale= selects a real locale resource directory. osarch=
+        selects a validated package-resolution target identifier. It does not
+        change detected host m_OSARCH or permit launching an incompatible
+        concrete. pkg install, pkg depend and pkg requirement use this target
+        by default; explicit request qualifiers take precedence.
+        provider.<facility>= pins one
+        installed provider concrete that actually declares that facility for
+        the selected osarch; an unavailable or mismatched pin fails before the
+        shell context changes. A consumer package binding still takes
+        precedence. pkg= selects one installed concrete; full-context=
+        expands a saved named preset at its command-line position. Selections start
+        from persisted defaults and fold left-to-right. A later system= replaces
+        the prior profile; a later selection for the same package replaces its
+        earlier version, and unrelated package selections remain. The most recent
+        package directory appears first in the context-owned PATH block. A v1
+        concrete contributes cmd and lib/sh/lib/java views; a v2 concrete
+        contributes link/bin and link/lib/sh/link/lib/java views. Each selected
+        concrete's shell libraries join PATH and its Java JAR view contributes
+        one literal wildcard entry (<directory>/*) to CLASSPATH.
+
+    context --set-defaults [system=<profile> | user=<identity> | pkg=<package>@<version>[!<osarch>] | provider.<facility>=<selector> | locale=<locale> | osarch=<id> ...]
+
+        Validate supplied dimensions and the complete merged package
+        selection, then atomically replace only the supplied dimensions in the
+        current POSIX account's defaults. Unspecified dimensions are retained.
+        This operation does not change the current shell context and does not
+        install packages.
+
+    context --clear-defaults
+
+        Remove the current POSIX account's persisted context defaults. This is
+        idempotent, leaves the active shell context unchanged, and leaves saved
+        presets intact. A later no-argument context selects the validated
+        installation baseline and no packages unless package defaults are set.
+
+    context --define-preset <name> [system=<profile> | user=<identity> | pkg=<package>@<version>[!<osarch>] | provider.<facility>=<selector> | locale=<locale> | osarch=<id> ...]
+
+        Validate and atomically create or replace a named context
+        selection preset under the current POSIX account. Preset names contain only ASCII
+        letters, digits, underscore, dot or hyphen and begin with a letter or
+        digit. Preset definitions do not change the active shell context.
+
+    context --delete-preset <name>
+
+        Delete one saved preset. Deleting an absent preset succeeds; the active
+        shell context and other saved selections are unchanged.
+
+    context --migrate-legacy
+
+        Import validated direct values from existing system/current,
+        user/current, lang/current and the selected profile's env-osarch link
+        into account defaults only where that dimension has no saved value.
+        Repeated migration is idempotent. Invalid or indirect selectors fail
+        closed. Migration does not follow directory scans, overwrite saved
+        choices or mutate the legacy selectors.
+
+        Package-concrete rules:
 
         An osarch-qualified concrete must match the current m_OSARCH.
         A generic concrete has no osarch suffix. The installed concrete and
@@ -84,25 +152,46 @@ RETURN STATUS
     17   CLASSPATH is readonly in the invoking shell
     18   v2 installed command link target no longer satisfies its validated
          concrete-local direct or wrapper layout
+    19   account context store missing, unsafe, malformed or inaccessible
+    20   invalid or unavailable named preset
+    21   account default or preset could not be atomically written
+    22   account default update lock remained busy beyond the bounded wait
+    23   selected system profile is invalid or absent from the managed inventory
+    24   installation-managed profile inventory or selected profile is unavailable
+    25   a validated context envelope could not be built
+    26   logical user identity/path is invalid
+    27   locale is invalid or unavailable
+    28   OS/architecture target is invalid or unavailable
+    29   provider pin is invalid
 
 LIMITATIONS
-    This is the first package-command and library selection increment of the broader
-    context design. It does not yet accept facility, provider, profile,
-    locale, user/system, full-context or inheritance-policy operands.
+    The account record accepts v1 and v2 records and writes v3 records. The
+    inherited envelope accepts v1 records and writes v2 records. Packages with
+    mutable var/ state remain tied to their supported selected system profile;
+    their launch fails closed when state cannot be safely resolved.
     Only sh and Java ordinary library search views are supported; other
     runtimes need their own defined import/loader semantics. CLASSPATH may be
     overridden by explicit Java -cp or launcher-specific class loading;
     wildcard expansion order within one directory is unspecified.
-    Provider environment/service coherence and child-context propagation
-    are still handled by their existing owners, not by this function.
-    In particular v2 contract-keyed provider environment values are
-    materialized by pkg and applied by the existing pkg-provider machinery;
-    activating context does not apply a second facility environment.
+    Child m bootstrap validates and consumes the inherited envelope at process
+    startup. Provider environment/service coherence remains with
+    its existing owners. In particular v2 contract-keyed provider environment
+    values are materialized by pkg and applied by pkg-provider; activating
+    context does not apply a second facility environment or grant service/CA
+    authority.
     The function makes no claim to an atomic filesystem snapshot during
     concurrent package uninstallation or publication. Activation-time
     validation cannot prevent subsequent external mutation of a direct
     command symlink already placed on PATH; package-local materialization
     remains the immutable installation owned by pkg.
+
+    All account-record mutations (default merge/clear and preset create/delete)
+    serialize through one private lock, so replacement and deletion cannot
+    race another context-store mutation. If an uncatchable termination leaves
+    the private update-lock directory behind, mutations fail closed after a
+    bounded wait. The account owner may remove that lock and any matching
+    `._defaults-owner.*` marker only after confirming no context store mutation
+    is running.
 
 DEPENDENCIES
     m_ROOT, m_PKG_DIR, optionally m_OSARCH, m_BIN_SYS_DIR and

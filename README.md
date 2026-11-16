@@ -84,6 +84,30 @@ The source checkout preserves the existing `m` state and platform-selection
 contract. `osarch update` materializes the platform-specific technical paths
 for the current host. There is no implicit platform mutation in bootstrap.
 
+### Portable services in a source checkout
+
+`srv start` and `srv stop` use the native supervisor built for the current
+host. A source-checkout user must have a C compiler and run
+`./tools/build-srv-supervisor.sh` once before using portable services. The
+helper is written to `libexec/sys/srv-supervisor` in this checkout; `m`
+bootstrap remains POSIX-shell-only and never invokes a compiler. A complete
+RumiAI installation must package a helper built for each supported host and
+architecture at the same path.
+
+To build and validate a relocatable technical `m` distribution for the current
+Linux or macOS host, use:
+
+```sh
+./tools/package-m-distribution.sh
+```
+
+The command packages the exact clean Git revision as
+`dist/m-os-<osarch>.tar.gz`, builds the native supervisor inside that package,
+records the source commit and target in `M-DISTRIBUTION`, and exercises the
+extracted archive's public supervisor checks. It requires a C compiler and `tar`
+with gzip support. The archive is a technical `m` source distribution, not a full
+branded RumiAI-OS installer.
+
 The current repository adapters cover GitHub, Node.js, Google Chrome's
 Linux Debian repository, Chromium snapshots, shared artifact resolution,
 Apache Maven and Temurin. Hosted V2 validation includes real Java/Maven

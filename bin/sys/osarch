@@ -4,6 +4,9 @@
 
 . "$m_LIB_DIR/sys/sh/core.lib.sh" || { printf '%s\n' 'osarch: m shell runtime unavailable' >&2; exit 2; }
 
+_m_system_state_selector_validate ||
+  fatal execution system-state-selector-invalid selector "$m_STATE_SYS_DIR"
+
 osarch_valid()
 {
   [ "$#" -eq 1 ] || return 2

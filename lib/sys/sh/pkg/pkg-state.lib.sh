@@ -9,6 +9,8 @@ _pkg_state_area_root_set()
     *) return 1 ;;
   esac
 
+  _m_system_state_selector_validate || return 1
+
   pkg_state_area_root="$(command -- state-path system pkg "$pkg_state_pkg" "$pkg_state_area")" || return 1
   [ -n "$pkg_state_area_root" ] || return 1
   case "$pkg_state_area_root" in

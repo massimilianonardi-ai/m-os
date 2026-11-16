@@ -22,15 +22,33 @@ state_path_instance=${5-}
 
 case "$state_path_scope" in
   system)
+    state_path_system_profile=${m_CONTEXT_SYSTEM_PROFILE-}
+    state_path_name_valid "$state_path_system_profile" || \
+      fatal 3 execution context-profile-invalid profile "$state_path_system_profile"
+    state_path_system_expected="$m_STATE_DIR/system/profile/$state_path_system_profile"
+    [ "$m_STATE_SYS_DIR" = "$state_path_system_expected" ] && \
+      [ -d "$state_path_system_expected" ] && \
+      [ ! -L "$state_path_system_expected" ] || \
+      fatal 3 execution system-state-selector-invalid selector "$m_STATE_SYS_DIR"
     state_path_root=$m_STATE_SYS_DIR
     ;;
   user)
-    if [ -L "$m_STATE_USER_DIR" ]
+    state_path_user_identity=${m_CONTEXT_USER_IDENTITY:-default}
+    state_path_name_valid "$state_path_user_identity" || \
+      fatal 4 execution context-user-identity-invalid identity "$state_path_user_identity"
+    state_path_user_parent="$m_STATE_DIR/user"
+    if [ -e "$state_path_user_parent" ] || [ -L "$state_path_user_parent" ]
     then
-      state_path_root=$m_STATE_USER_DIR
-    else
-      state_path_root="$m_STATE_DIR/user/default"
+      [ -d "$state_path_user_parent" ] && [ ! -L "$state_path_user_parent" ] || \
+        fatal 5 execution context-user-state-parent-invalid path "$state_path_user_parent"
     fi
+    state_path_user_root="$state_path_user_parent/$state_path_user_identity"
+    if [ -e "$state_path_user_root" ] || [ -L "$state_path_user_root" ]
+    then
+      [ -d "$state_path_user_root" ] && [ ! -L "$state_path_user_root" ] || \
+        fatal 6 execution context-user-state-path-invalid path "$state_path_user_root"
+    fi
+    state_path_root=$state_path_user_root
     ;;
   *)
     fatal 2 execution invalid-arguments operation state-path

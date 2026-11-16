@@ -8,12 +8,19 @@ DESCRIPTION
     lang resolves text from the technical sys language catalog.
 
     Lookup order is:
-        selected sys locale
+        active process-context locale, when selected
+        global selected sys locale, when no context locale is selected
         en_US fallback locale
         literal <domain>.<message-id> fallback
 
     Catalog content is treated as UTF-8 data and is not evaluated as shell code.
     The command does not merge or resolve branded ai catalogs.
+
+    The context locale is a process-local selection of an available direct
+    locale directory. It overrides only lookup in this process and its ordinary
+    children; it does not change the global language current selector. If a
+    message is absent from the selected context catalog, lookup falls back to
+    en_US rather than consulting the global selected locale.
 
 OPERANDS
     <domain>
@@ -23,6 +30,8 @@ OPERANDS
 
 ENVIRONMENT
     Requires a nonempty m_ROOT inherited from an initialized m environment.
+    An active m_CONTEXT_LOCALE selects the process-local technical catalog.
+    Without that selection, lookup follows m_LANG_CURRENT_DIR.
     From an uninitialized host shell, invoke m lang [arguments].
 
 

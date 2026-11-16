@@ -1,0 +1,30 @@
+name: m native host-user lifecycle with isolated local service provider
+
+on:
+  push:
+    branches: [codex/srv-persistent-supervisor, codex/c3-srv-host-profile-binding, m-os-completion-s]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-user-local:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build portable srv supervisor for cleanup and local lifecycle coverage
+        shell: sh
+        run: ./tools/build-srv-supervisor.sh
+      - name: Exercise real user manager through local test-owned package integration
+        shell: sh
+        run: ./.github/scripts/m-srv-host-user-profile-public.sh

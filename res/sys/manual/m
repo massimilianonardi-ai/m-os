@@ -12,6 +12,14 @@ DESCRIPTION
     exposes the final technical command path, and then performs command dispatch
     or managed-shell entry.
 
+    After core loading, the bootstrap validates the installation-managed
+    system profile inventory and either initializes the effective POSIX
+    account's saved context defaults or verifies a versioned inherited
+    context envelope. The selected registered real profile and logical
+    user-state identity are process-local; this does not mutate legacy global
+    system/current or user/current selectors. An unsafe/missing inventory,
+    invalid selected profile or forged context envelope fails closed.
+
     With no command operand, m starts the managed shell through the shell
     facility.
 
@@ -31,7 +39,7 @@ DESCRIPTION
 GLOBAL EXECUTION ENVIRONMENT
     Before command dispatch, m reads generated environment state from:
 
-        state/system/current/sys/environment/cache
+        <validated-selected-system-profile>/sys/environment/cache
 
     relative to m_ROOT.
 
@@ -50,9 +58,10 @@ GLOBAL EXECUTION ENVIRONMENT
     These files are derived state. m does not resolve package providers,
     facility defaults or package defaults while bootstrapping.
 
-    Provider PATH contributions are applied to the inherited host PATH by the
-    generated files. m then prepends its technical sys/ext command roots, so the
-    final technical precedence is:
+    Provider PATH contributions are applied to the inherited host PATH by
+    generated files for the validated selected system profile. m then
+    prepends its protected technical sys/ext command roots, so the final
+    technical precedence is:
 
         m technical command roots
         selected-osarch provider PATH

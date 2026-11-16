@@ -10,6 +10,7 @@ on:
       - '.github/scripts/m-pkg-p3-typed-env.sh'
       - '.github/scripts/m-pkg-p4-facility-map-unit.sh'
       - '.github/workflows/m-pkg-provider-lifecycle.yml'
+      - 'lib/sys/sh/pkg/repository/pkg-repository-graalvm.lib.sh'
       - 'lib/sys/sh/pkg/facility/pkg-facility-map.lib.sh'
       - 'lib/sys/sh/pkg/pkg-catalog.lib.sh'
       - 'lib/sys/sh/pkg/pkg-integration.lib.sh'

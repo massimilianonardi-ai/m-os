@@ -92,6 +92,26 @@ pkg_catalog_installed_versions_compare()
         END { if (!left_seen || !right_seen) exit 1 }
       ' "$pkg_catalog_installed_repository/versions" || return 1
       ;;
+    graalvm)
+      [ -f "$pkg_catalog_installed_repository/versions" ] &&
+        [ ! -L "$pkg_catalog_installed_repository/versions" ] || return 1
+      LC_ALL=C command -p -- awk \
+        -v left="$pkg_catalog_installed_left" \
+        -v right="$pkg_catalog_installed_right" '
+          {
+            if ($0 !~ /^[A-Za-z0-9][A-Za-z0-9._+~-]*$/ || seen[$0]++) exit 1
+            if ($0 == left) left_rank=NR
+            if ($0 == right) right_rank=NR
+          }
+          END {
+            if (NR == 0 || !left_rank || !right_rank) exit 1
+            if (left_rank < right_rank) print "-1"
+            else if (left_rank > right_rank) print "1"
+            else print "0"
+          }
+        ' "$pkg_catalog_installed_repository/versions" || return 1
+      return 0
+      ;;
     nodejs|chrome|chromium) : ;;
     *) return 1 ;;
   esac

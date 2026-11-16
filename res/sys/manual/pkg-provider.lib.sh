@@ -22,6 +22,11 @@ DESCRIPTION
     bindings may be made read-only/traversable for a service account while their
     enclosing state remains non-writable to that account.
 
+    System-scoped provider operations resolve state through state-path; the
+    system/current selector must be a direct relative link to a real managed
+    profile. Global environment materialization validates that selector before
+    creating or replacing environment snapshots.
+
     Global environment is materialized as derived system environment cache when
     facility-default or provider-package-default state changes. The materializer
     resolves every supported osarch, extracts assignments common to all platform

@@ -72,7 +72,7 @@ jobs:
           # Pure state-path resolution, including package State Instances,
           # must never materialize directories or resolve user binding targets.
           system_path=$(./m state-path system sys shell conf)
-          [ "$system_path" = "$root/state/system/current/sys/shell/conf" ]
+          [ "$system_path" = "$root/state/system/profile/main/sys/shell/conf" ]
           default_path=$(./m state-path user pkg a1probe home)
           [ "$default_path" = "$root/state/user/default/pkg/a1probe/home" ]
           [ ! -e "$default_path" ]
@@ -83,7 +83,7 @@ jobs:
           mkdir -p state/user/profile/a1
           ln -s profile/a1 state/user/current
           bound_path=$(./m state-path user pkg a1probe home)
-          [ "$bound_path" = "$root/state/user/current/pkg/a1probe/home" ]
+          [ "$bound_path" = "$root/state/user/default/pkg/a1probe/home" ]
           [ ! -e "$bound_path" ]
           rm -- state/user/current
 

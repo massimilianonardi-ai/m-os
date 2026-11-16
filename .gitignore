@@ -1,6 +1,9 @@
 .DS_Store
 /src/
 /pkg/
+/dist/
+/libexec/
+/.tmp/
 /state/user/
 /state/system/profile/*/*/*/data/
 /state/system/profile/*/*/*/home/

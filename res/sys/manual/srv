@@ -18,7 +18,9 @@ SYNOPSIS
 DESCRIPTION
     srv provides the portable local service lifecycle owned by the technical m
     layer. The service process remains a foreground program from its own point of
-    view; srv performs the surrounding background lifecycle management.
+    view; an internal native supervisor owns the child process for the managed
+    lifecycle. The public srv command asks that supervisor to start or stop the
+    service through a private local control socket.
 
     For a provider-backed service, <service> is a facility identity. srv resolves
     the configured system facility default to one installed concrete provider,
@@ -46,51 +48,61 @@ COMMANDS
 
     host user install <service>
         Persist the service in the calling POSIX account's native user supervisor
-        without starting it in the current session. The service must currently
-        resolve through a valid system facility default/provider realization.
-        Host-account discovery follows the actual POSIX account rather than
-        caller-overridden HOME/XDG state roots.
+        without starting it in the current session. Registration records the
+        validated system profile active in the installing m context. Future starts
+        and restarts use that profile even if the account defaults or another shell's
+        context changes. The service must resolve through a valid system facility
+        default/provider realization within the registered profile. Reinstall while
+        the service is running updates later launches and does not retarget the
+        running process. Host-account discovery follows the actual POSIX account
+        rather than caller-overridden HOME/XDG state roots.
 
     host user uninstall <service>
         Stop/unload the hosted service when necessary and remove its persistent
         native registration.
 
     host user start <service>
-        Start the installed native user-supervisor registration. Current facility
-        default intent is resolved for this launch.
+        Validate the registered system profile against the installation inventory,
+        then start the installed native user-supervisor registration. Current system
+        facility-default intent is resolved within the registered profile for this
+        launch. A missing, malformed or unmanaged profile fails closed.
 
     host user stop <service>
         Stop/unload the current hosted process while leaving the native registration
         installed.
 
     host user restart <service>
-        Restart the installed hosted service through the native supervisor, resolving
-        current facility default intent for the replacement process.
+        Validate the registered system profile and restart the hosted service through
+        the native supervisor, resolving current system facility-default intent within
+        that profile for the replacement process.
 
     host system install <service> <account>
         Administratively reconcile a persistent system-supervisor registration for
         the service using an explicit pre-existing non-root POSIX account. The caller
         must already execute with effective UID 0; srv never invokes sudo/doas or
         creates/modifies the account. Install resolves and records the exact current
-        concrete provider, prepares its service-specific system package HOME and
-        enables boot persistence without starting the service.
+        system profile, host account and concrete provider in the installation's
+        protected system-service registry, prepares profile-specific service package
+        state and enables boot persistence without starting the service. Subsequent
+        starts and service launches validate and apply that registered profile,
+        independent of an interactive shell's context.
 
     host system uninstall <service>
         Administratively stop/unload and remove native system registration. The
         execution account and authoritative package/service state are preserved.
 
     host system start <service>
-        Start the installed system registration only when the current system
-        facility default still resolves to the concrete provider reconciled by the
-        last install.
+        Start the installed system registration only when the registered profile's
+        system facility default still resolves to the concrete provider reconciled
+        by the last install.
 
     host system stop <service>
         Stop/unload the current system-hosted process while leaving persistent
         registration installed.
 
     host system restart <service>
-        Restart/reload the installed system service only when provider selection
-        still matches the reconciled concrete registration.
+        Restart/reload the installed system service only when its registered profile
+        still resolves the provider recorded at installation.
 
 OPTIONS
     -f
@@ -104,15 +116,49 @@ STATE
         state-path user sys srv run
         state-path user sys srv log
 
-    Runtime metadata below those roots is private to srv. Provider-backed running
-    instances persist the selected concrete provider identity together with PID,
-    caller-owner and exact command identity. Later facility-default changes do not
-    retarget the running instance; stop operates on recorded runtime state and does
-    not resolve another provider.
+    Runtime metadata below those roots is inspection/recovery data only. The
+    running supervisor's direct-child relationship is the authority for a stop;
+    persisted PID data never authorizes a signal. The supervisor is keyed by the
+    installation root and effective POSIX UID, and uses an owner-only runtime
+    directory under m_ROOT/state. Its local control socket accepts peers only
+    from the same UID. The logical m user-state identity is not used as an
+    account-security boundary.
 
-    Runtime records created by older revisions without provider metadata remain
-    readable for stop and stale-state cleanup. Current starts always persist the
-    selected concrete provider identity.
+    The C helper source is native/sys/srv-supervisor.c. A source checkout must build
+    it before portable start/stop:
+
+        ./tools/build-srv-supervisor.sh
+
+    The build writes libexec/sys/srv-supervisor. The m bootstrap itself does not
+    require a C compiler; an installed distribution must include the native
+    helper built for its host. A clean checkout can build and verify a relocatable
+    host distribution with ./tools/package-m-distribution.sh; the resulting
+    dist/m-os-<osarch>.tar.gz contains the helper at that same path and records
+    its source commit and target in M-DISTRIBUTION. The helper supports Linux
+    and macOS.
+
+    The supervisor keeps its direct service child unreaped until it has completed
+    a stop request. It checks waitpid(WNOHANG) immediately before SIGTERM; an
+    exiting child remains unreaped, so its PID cannot be reused for an unrelated
+    process during the signal operation. Normal stop waits up to ten seconds and
+    does not escalate to SIGKILL. The supervisor exits after one minute with no
+    managed children.
+
+    Each start request sends the calling process's environment as bounded,
+    length-prefixed data over the private socket. The supervisor does not retain
+    the first caller's environment and does not interpret environment values as
+    shell source; each service starts with the environment of its own request.
+
+    If the supervisor is killed or crashes, its service children may become
+    orphaned. A later srv start/stop refuses to treat their persisted PID as
+    authority and leaves both process and record untouched. The operator must
+    identify and stop an orphan independently, then remove its stale runtime
+    record before starting the service again. A graceful supervisor termination
+    sends SIGTERM to children it still owns and reaps them before exit.
+
+    Start resolves and records the selected concrete provider. Stop uses only
+    the active supervisor's child relationship and does not resolve a provider
+    again; later facility-default changes do not retarget the running instance.
 
 HOST USER SUPERVISION
     On Linux, srv resolves the calling account's UID and home from host account
@@ -145,11 +191,17 @@ HOST SYSTEM SUPERVISION
     non-root. srv does not create/remove accounts and does not invoke privilege
     escalation itself.
 
-    System registration records the exact concrete provider prepared by install.
-    The system facility default remains authoritative selection intent: each hosted
-    launch re-resolves it and fails as stale registration if it no longer matches.
-    Re-run "srv host system install <service> <account>" to reconcile a changed
-    provider before a later start/restart.
+    System registration records the validated system profile, host account and exact
+    concrete provider prepared by install in the installation's root-owned registry.
+    Each hosted start validates and applies that profile before resolving the system
+    facility default, so an unrelated interactive context cannot retarget the
+    service. Reinstall updates subsequent launches and does not retarget a process
+    already running. The system facility default remains authoritative selection intent:
+    each hosted launch re-resolves it within the registered profile and fails as
+    stale registration if it no longer matches. Re-run
+    "srv host system install <service> <account>" to reconcile a changed provider
+    or profile before a later start/restart. Existing registrations created before
+    profile-bound system records require reinstall before they can launch.
 
     The provider process runs through the ordinary package launcher with system
     package State Instance equal to the service identity. Its package HOME is
@@ -178,9 +230,15 @@ ENVIRONMENT
 EXIT STATUS
     0     The requested lifecycle operation completed successfully. This includes
           idempotent stop cases where the service is not running.
-    1     A lifecycle operation failed, including unavailable or invalid provider
-          selection/service realization.
+    1     A general lifecycle or host operation failed.
     2     The invocation, host scope/action, or service name is invalid.
+    4     The native supervisor helper is unavailable.
+    5     The supervisor request failed.
+    6     The supervisor returned an invalid response.
+    7     Start refused orphaned runtime state.
+    8     The service failed during startup.
+    9     Stop refused orphaned runtime state.
+    10    Stop timed out; the supervisor still owns the service process.
 
 EXAMPLES
     Start a service named web:
