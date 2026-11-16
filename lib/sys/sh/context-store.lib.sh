@@ -316,6 +316,27 @@ _context_store_read()
   _context_store_name=$2
   _context_store_name_valid "$_context_store_name" || return 1
   _context_store_uid=$(_context_store_uid) || return 1
+  # An administrator may operate on a non-root-owned development checkout
+  # (for example, sudo ./m srv host system ...). The account-default store
+  # must never be created or trusted beneath a directory writable by the
+  # checkout owner: that owner could replace state/0 between root operations.
+  # Use an empty, ephemeral root selection instead. The installation-managed
+  # system-profile inventory is validated separately by context.
+  if [ "$_context_store_uid" = 0 ]
+  then
+    _context_store_metadata "$_context_store_root" || return 1
+    _context_store_install_owner=$_context_store_owner
+    case "$_context_store_install_owner" in
+      '' | *[!0-9]*) return 1 ;;
+    esac
+    if [ "$_context_store_install_owner" != 0 ]
+    then
+      _context_store_state_validate "$_context_store_root" "$_context_store_install_owner" || return 1
+      [ ! -e "$_context_store_root/state/0" ] &&
+      [ ! -L "$_context_store_root/state/0" ] || return 1
+      return 5
+    fi
+  fi
   _context_store_context=$(_context_store_directory "$_context_store_root" "$_context_store_uid" existing) || return $?
   _context_store_file="$_context_store_context/$_context_store_name"
   [ ! -L "$_context_store_file" ] || return 1
