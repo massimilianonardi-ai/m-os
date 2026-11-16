@@ -110,10 +110,17 @@ case "$CONTEXT_STORE_PACKAGES" in
   *) exit 23 ;;
 esac
 
-# Unsafe shared parents fail without having their permissions changed.
-if _context_store_write "$unsafe" defaults "$record_a"; then exit 24; fi
+# The shared state parent does not impose permission-bit policy.
+# Account and context leaves remain private and strictly validated.
+_context_store_write "$unsafe" defaults "$record_a" || exit 24
 _context_store_metadata "$unsafe/state" || exit 25
 [ "$_context_store_mode" = drwxrwxrwx ] || exit 26
+_context_store_read "$unsafe" defaults || exit 99
+[ "$CONTEXT_STORE_PACKAGES" = 'pkg=context-a@1' ] || exit 100
+command -p chmod 775 "$unsafe/state"
+_context_store_read "$unsafe" defaults || exit 101
+_context_store_metadata "$unsafe/state/$test_uid" || exit 102
+case "$_context_store_mode" in drwx------ | drwx------@) : ;; *) exit 103 ;; esac
 
 # A read-only parent works only after the account/context leaves are provisioned.
 readonly_root="$work/readonly"
