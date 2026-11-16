@@ -32,32 +32,6 @@ FUNCTIONS
         incomplete catalog schema emits `pkg-catalog.schema-root-incomplete`
         and returns status 1.
 
-    pkg_install_validate <package-spec>...
-        Check the syntax of a nonempty list of package requests without
-        consulting a catalog or changing package state. Return success only
-        when every operand is syntactically valid; otherwise return nonzero.
-        This does not check artifact availability or dependency satisfaction.
-
-    pkg_install_resolve_one <package-spec>
-        Resolve one request into an exact concrete identity and print it on
-        success. An already installed matching concrete, or an installed
-        current concrete for an unversioned request, may satisfy resolution
-        without upstream discovery. Otherwise consult the selected catalog
-        stream and its repository adapter. Return nonzero on failure.
-        Requires an initialized package-install context, including its
-        selected catalog snapshot and target m_CONTEXT_OSARCH, falling back
-        to detected host m_OSARCH. An explicit request qualifier takes
-        precedence. Selecting a foreign target does not change host execution
-        compatibility.
-
-    pkg_install_resolve <package-spec>...
-        Resolve a nonempty request list through pkg_install_resolve_one and
-        print the resulting exact concrete identities as one shell-quoted,
-        space-separated argument sequence. This is shell argument text, not
-        a newline-delimited list or an installed-package inventory.
-        Return nonzero if any request cannot be resolved or quoted.
-        Requires the same initialized package-install context.
-
     pkg_install_one <package-spec>
         Resolve one request against the current installation snapshot,
         download/extract/validate/integrate it if absent, and reuse an already
