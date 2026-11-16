@@ -474,6 +474,46 @@ _pkg_depend_candidate_choose_report()
   case "$pkg_depend_choose_status" in
     0) return 0 ;;
     4)
+      # Dependency candidates are collected through here-documents; read the
+      # operator's decision from the controlling terminal, never from stdin.
+      if [ -r /dev/tty ] && [ -w /dev/tty ]
+      then
+        {
+          printf 'Ambiguous provider for %s (%s, %s):\n' \
+            "$pkg_depend_choose_facility" "$pkg_depend_choose_constraints" "$pkg_depend_choose_target"
+          pkg_depend_menu_number=0
+          while IFS= read -r pkg_depend_menu_candidate
+          do
+            [ -n "$pkg_depend_menu_candidate" ] || continue
+            pkg_depend_menu_number=$((pkg_depend_menu_number + 1))
+            printf '  %s) %s\n' "$pkg_depend_menu_number" "$pkg_depend_menu_candidate"
+          done <<EOF_PKG_DEPEND_MENU
+$pkg_depend_candidates
+EOF_PKG_DEPEND_MENU
+          printf '  0) Abort (default)\n'
+          printf 'Choice [0]: '
+        } > /dev/tty
+        IFS= read -r pkg_depend_menu_choice < /dev/tty || pkg_depend_menu_choice=0
+        case "$pkg_depend_menu_choice" in
+          '' | 0) : ;;
+          *[!0-9]*) : ;;
+          *)
+            pkg_depend_menu_number=0
+            while IFS= read -r pkg_depend_menu_candidate
+            do
+              [ -n "$pkg_depend_menu_candidate" ] || continue
+              pkg_depend_menu_number=$((pkg_depend_menu_number + 1))
+              if [ "$pkg_depend_menu_choice" = "$pkg_depend_menu_number" ]
+              then
+                pkg_depend_selected=$pkg_depend_menu_candidate
+                return 0
+              fi
+            done <<EOF_PKG_DEPEND_MENU_SELECT
+$pkg_depend_candidates
+EOF_PKG_DEPEND_MENU_SELECT
+            ;;
+        esac
+      fi
       _pkg_depend_ambiguity_log \
         "$pkg_depend_choose_facility" \
         "$pkg_depend_choose_constraints" \
