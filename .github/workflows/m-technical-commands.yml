@@ -100,5 +100,39 @@ jobs:
           grep 'validation-unknown.missing-message' "$work/log-err" > /dev/null
           if ./m log invalid validation-unknown missing-message >/dev/null 2>&1; then exit 1; fi
 
+          assert_filtered_log_status() {
+            expected=$1
+            name=$2
+            shift 2
+            if output=$(m_LOG_LEVEL=off ./m log "$@" 2>&1); then
+              actual=0
+            else
+              actual=$?
+            fi
+            [ "$actual" -eq "$expected" ] || {
+              printf 'FAIL: %s returned %s, expected %s\n%s\n' \
+                "$name" "$actual" "$expected" "$output" >&2
+              exit 1
+            }
+            [ -n "$output" ] || {
+              printf 'FAIL: %s emitted no validation diagnostic\n' "$name" >&2
+              exit 1
+            }
+          }
+          assert_filtered_log_status 1 too-few-arguments warn
+          assert_filtered_log_status 4 invalid-domain warn 'Bad' message
+          assert_filtered_log_status 5 invalid-message-id warn domain 'Bad'
+          assert_filtered_log_status 6 odd-field-pair warn domain message key
+          assert_filtered_log_status 7 invalid-field-name warn domain message 'Bad field' value
+          output=$(m_LOG_LEVEL=off ./m log warn validation-unknown missing-message 2>&1)
+          [ -z "$output" ]
+          if output=$(m_LOG_LEVEL=invalid ./m log warn domain message 2>&1); then
+            echo 'FAIL: invalid m_LOG_LEVEL was accepted' >&2
+            exit 1
+          else
+            status=$?
+          fi
+          [ "$status" -eq 3 ] && [ -n "$output" ]
+
           SHELL=/bin/sh ./m shell -c 'test -n "$m_ROOT" && test -n "$m_LIB_DIR"'
           echo 'PASS: real public m technical commands, state, digest/extract and loopback HTTP'

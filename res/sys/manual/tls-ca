@@ -45,6 +45,11 @@ ENVIRONMENT
 
 
 EXIT STATUS
+
+    Bootstrap failure:
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+
     0    Operation completed, including idempotent add and empty list.
     2    Invalid command syntax.
     3-19 Distinct authorization-state, certificate, dependency or filesystem

@@ -17,15 +17,31 @@ DESCRIPTION
     m_LOG_LEVEL accepts the current filtering levels off/none, fatal, error,
     warn, info, debug and trace/all.
 
+    Every operand is validated before filtering. A filtered record is silent
+    only when the complete invocation is valid.
+
 ENVIRONMENT
     Requires a nonempty m_ROOT inherited from an initialized m environment.
     From an uninitialized host shell, invoke m log [arguments].
 
 
 EXIT STATUS
-    0   The invocation was valid, whether the record was emitted or filtered.
-    Non-zero status indicates invalid severity, log level, identifiers or field
-        arguments.
+
+    Bootstrap failures (before operation dispatch):
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    2    The m shell runtime could not be loaded.
+    Operation-specific failures below may also use these numeric
+    statuses; stderr identifies the bootstrap or operation branch.
+
+    0   Valid record emitted or filtered by m_LOG_LEVEL.
+    1   Missing severity, domain or message identifier.
+    2   Invalid severity.
+    3   Invalid m_LOG_LEVEL.
+    4   Invalid domain.
+    5   Invalid message identifier.
+    6   Field arguments are not name/value pairs.
+    7   Invalid field name.
 
 SEE ALSO
     lang

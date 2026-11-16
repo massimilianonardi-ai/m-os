@@ -15,8 +15,9 @@ DESCRIPTION
     must be a valid local relative symbolic link.
 
     Non-sys selectors are updated first and the sys selector is updated last.
-    On an ordinary update error the command attempts rollback. Successful
-    selection writes no output.
+    Preparation errors leave every selector unchanged. On an ordinary update
+    error the command attempts rollback and reports rollback failure separately.
+    Successful selection writes no output.
 
     Package-local language resources are not modified.
 
@@ -26,9 +27,22 @@ ENVIRONMENT
 
 
 EXIT STATUS
+
+    Bootstrap failures (before operation dispatch):
+    1    m_ROOT is missing or empty; invoke the command through m or
+         from an initialized m environment.
+    2    The m shell runtime could not be loaded.
+    Operation-specific failures below may also use these numeric
+    statuses; stderr identifies the bootstrap or operation branch.
+
     0   Query or selection succeeded.
-    Non-zero status indicates invalid invocation, invalid selector/locale or an
-        operational update failure.
+    1   Invalid argument count.
+    2   Requested locale is unavailable in a participating owner.
+    3   A selector or selector path is structurally invalid.
+    4   Selector preparation failed before updates began.
+    5   Selector update failed and rollback completed.
+    6   Selector update and rollback both failed.
+        Distinct language.* diagnostic identities identify each failure class.
 
 SEE ALSO
     lang
