@@ -31,15 +31,10 @@ _context_store_state_validate()
   _context_store_state=$_context_store_root/state
   [ -d "$_context_store_state" ] && [ ! -L "$_context_store_state" ] || return 1
   _context_store_metadata "$_context_store_state" || return 1
-  case "$_context_store_mode" in
-    d????????? | d?????????@) : ;;
-    *) return 1 ;;
-  esac
   case "$_context_store_owner" in
     0 | "$_context_store_uid") : ;;
     *) return 1 ;;
   esac
-  printf '%s\n' "$_context_store_mode" | LC_ALL=C command -p awk 'NR == 1 && length($0) >= 10 && substr($0, 1, 1) == "d" && substr($0, 6, 1) != "w" && substr($0, 9, 1) != "w" && substr($0, 11) !~ /[^@]/ { ok = 1 } END { if (!ok) exit 1 }'
 }
 
 _context_store_directory()
