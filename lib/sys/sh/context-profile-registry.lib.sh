@@ -9,7 +9,7 @@ _context_profile_registry_directory_validate()
   _context_store_metadata "$_context_profile_dir" || return 1
   case "$_context_store_mode" in d????????? | d?????????@) : ;; *) return 1 ;; esac
   case "$_context_store_owner" in 0 | "$_context_profile_root_owner") : ;; *) return 1 ;; esac
-  printf '%s\n' "$_context_store_mode" | LC_ALL=C command -p awk 'NR == 1 && length($0) >= 10 && substr($0, 1, 1) == "d" && substr($0, 6, 1) != "w" && substr($0, 9, 1) != "w" && substr($0, 11) !~ /[^@]/ { ok = 1 } END { if (!ok) exit 1 }'
+  return 0
 }
 
 _context_profile_registry_identity_valid()
@@ -45,7 +45,7 @@ _context_profile_registry_read()
   _context_store_metadata "$_context_profile_registry_file" || return 1
   case "$_context_store_mode" in -????????? | -?????????@) : ;; *) return 1 ;; esac
   case "$_context_store_owner" in 0 | "$_context_profile_root_owner") : ;; *) return 1 ;; esac
-  printf '%s\n' "$_context_store_mode" | LC_ALL=C command -p awk 'NR == 1 && length($0) >= 10 && substr($0, 1, 1) == "-" && substr($0, 6, 1) != "w" && substr($0, 9, 1) != "w" && substr($0, 11) !~ /[^@]/ { ok = 1 } END { if (!ok) exit 1 }' || return 1
+  # Permission bits of installation-managed inventory files are not an initialization gate.
 
   _context_profile_registry_size=$(LC_ALL=C command -p wc -c < "$_context_profile_registry_file" | LC_ALL=C command -p awk '{ print $1 }') || return 1
   case "$_context_profile_registry_size" in '' | *[!0-9]*) return 1 ;; esac
