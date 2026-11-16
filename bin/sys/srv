@@ -725,14 +725,13 @@ srv_host_system_registration_prepare()
 
 srv_host_system_registration_ancestor_validate()
 {
-  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || return 2
+  [ "$#" -eq 2 ] || return 2
   srv_host_system_ancestor_path=$1
   srv_host_system_ancestor_owner=$2
-  srv_host_system_ancestor_blocked_uid=${3-}
   [ -d "$srv_host_system_ancestor_path" ] && [ ! -L "$srv_host_system_ancestor_path" ] || return 1
   command -p -- ls -ldn "$srv_host_system_ancestor_path" 2>/dev/null |
-    LC_ALL=C command -p -- awk -v owner="$srv_host_system_ancestor_owner" -v blocked="$srv_host_system_ancestor_blocked_uid" \
-      'NR == 1 && substr($1, 1, 1) == "d" && substr($1, 6, 1) != "w" && substr($1, 9, 1) != "w" && substr($1, 11) !~ /[^@]/ && ($3 == "0" || $3 == owner) && !(blocked != "" && $3 == blocked && substr($1, 3, 1) == "w") { ok = 1 } END { if (!ok) exit 1 }'
+    LC_ALL=C command -p -- awk -v owner="$srv_host_system_ancestor_owner" \
+      'NR == 1 && substr($1, 1, 1) == "d" && substr($1, 6, 1) != "w" && substr($1, 9, 1) != "w" && substr($1, 11) !~ /[^@]/ && ($3 == "0" || $3 == owner) { ok = 1 } END { if (!ok) exit 1 }'
 }
 
 srv_host_system_registration_child_validate()
@@ -752,9 +751,9 @@ srv_host_system_registration_write()
   umask 077
   srv_host_system_root_owner="$(command -p -- ls -ldn "$m_ROOT" 2>/dev/null | command -p -- awk 'NR == 1 { print $3 }')" || return 1
   [ -n "${srv_host_account_uid-}" ] && [ "$srv_host_account_uid" != 0 ] || return 1
-  srv_host_system_registration_ancestor_validate "$m_ROOT" "$srv_host_system_root_owner" "$srv_host_account_uid" || return 1
-  srv_host_system_registration_ancestor_validate "$m_STATE_DIR" "$srv_host_system_root_owner" "$srv_host_account_uid" || return 1
-  srv_host_system_registration_ancestor_validate "$m_STATE_DIR/system" "$srv_host_system_root_owner" "$srv_host_account_uid" || return 1
+  srv_host_system_registration_ancestor_validate "$m_ROOT" "$srv_host_system_root_owner" || return 1
+  srv_host_system_registration_ancestor_validate "$m_STATE_DIR" "$srv_host_system_root_owner" || return 1
+  srv_host_system_registration_ancestor_validate "$m_STATE_DIR/system" "$srv_host_system_root_owner" || return 1
   for srv_host_system_registration_parent in \
     "$m_STATE_DIR/system/srv" \
     "$m_STATE_DIR/system/srv/conf" \
@@ -842,9 +841,9 @@ srv_host_system_registration_read()
   case "$srv_host_registered_uid" in '' | 0 | *[!0123456789]*) return 1 ;; esac
   srv_host_registered_canonical="$(command -p -- id -un "$srv_host_registered_uid" 2>/dev/null)" || return 1
   [ "$srv_host_registered_canonical" = "$srv_host_registered_account" ] || return 1
-  srv_host_system_registration_ancestor_validate "$m_ROOT" "$srv_host_system_root_owner" "$srv_host_registered_uid" || return 1
-  srv_host_system_registration_ancestor_validate "$m_STATE_DIR" "$srv_host_system_root_owner" "$srv_host_registered_uid" || return 1
-  srv_host_system_registration_ancestor_validate "$m_STATE_DIR/system" "$srv_host_system_root_owner" "$srv_host_registered_uid" || return 1
+  srv_host_system_registration_ancestor_validate "$m_ROOT" "$srv_host_system_root_owner" || return 1
+  srv_host_system_registration_ancestor_validate "$m_STATE_DIR" "$srv_host_system_root_owner" || return 1
+  srv_host_system_registration_ancestor_validate "$m_STATE_DIR/system" "$srv_host_system_root_owner" || return 1
   [ -n "$srv_host_registered_profile" ] || return 1
   _pkg_provider_concrete_parse "$srv_host_registered_provider" || return 1
   context "system=$srv_host_registered_profile" || return 1
