@@ -159,16 +159,18 @@ _pkg_install_init()
   trap '_pkg_install_end' 0
   trap 'exit 130' HUP INT TERM
 
-  umask 077
+  umask 000
 
   pkg_install_tmp_root="$(state-path system sys pkg tmp)" || return 2
-  mkdir -p -- "$pkg_install_tmp_root" || return 3
+  mkdir -p -m 777 -- "$pkg_install_tmp_root" || return 3
+  chmod 777 -- "$pkg_install_tmp_root" || return 3
 
   pkg_install_cache_root="$(state-path system sys pkg cache)" || return 4
-  mkdir -p -- "$pkg_install_cache_root" || return 5
+  mkdir -p -m 777 -- "$pkg_install_cache_root" || return 5
+  chmod 777 -- "$pkg_install_cache_root" || return 5
 
   pkg_install_work="$pkg_install_tmp_root/install2-$$"
-  mkdir -p -- "$pkg_install_work" || return 6
+  mkdir -p -m 777 -- "$pkg_install_work" || return 6
 
   pkg_catalog_init pkg_install_catalog_work pkg_install_catalog_head "$pkg_install_work" "$pkg_install_cache_root"
   pkg_install_catalog_status=$?
