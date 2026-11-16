@@ -98,7 +98,7 @@ trap 'exit 130' HUP INT TERM
 [ ! -e "bin/ext/web-control" ] && [ ! -L "bin/ext/web-control" ] || exit 9
 catalog="$work/catalog"
 git clone --quiet -- https://github.com/massimilianonardi-ai/pkg-catalog.git "$catalog" || exit 4
-git -C "$catalog" checkout --quiet 4083aa19c4362f00ec62428a631edfa493faf7f0 || exit 5
+git -C "$catalog" checkout --quiet -b ci-pinned 4083aa19c4362f00ec62428a631edfa493faf7f0 || exit 5
 conf=$(./m state-path system sys pkg conf) || exit 6
 catalog_config="$conf/catalog"
 provider_config="$conf/provider/default/web-control"
