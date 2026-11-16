@@ -85,7 +85,9 @@ tls_nss_main()
     return 0
   fi
 
-  [ -L "$m_STATE_SYS_DIR" ] && [ -d "$m_STATE_SYS_DIR" ] ||
+  # The validated profile may be a real context-selected directory rather
+  # than the legacy system/current symlink. Preserve fail-closed absence.
+  [ -d "$m_STATE_SYS_DIR" ] ||
     tls_nss_fail system-selector-invalid 'selected system state profile is unavailable' 28
 
   for tls_nss_tool in certutil openssl flock
