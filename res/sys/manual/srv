@@ -9,7 +9,7 @@ SYNOPSIS
     srv host user start <service>
     srv host user stop <service>
     srv host user restart <service>
-    srv host system install <service> <account>
+    srv host system install <service> <account> [unit-name]
     srv host system uninstall <service>
     srv host system start <service>
     srv host system stop <service>
@@ -76,7 +76,10 @@ COMMANDS
         the native supervisor, resolving current system facility-default intent within
         that profile for the replacement process.
 
-    host system install <service> <account>
+    host system install <service> <account> [unit-name]
+        The optional unit-name selects the native host registration identity;
+        by default it is the service name (geoserver.service on systemd).
+        The selected name is persisted so subsequent actions require only <service>.
         Administratively reconcile a persistent system-supervisor registration for
         the service using an explicit pre-existing non-root POSIX account. The caller
         must already execute with effective UID 0; srv never invokes sudo/doas or
