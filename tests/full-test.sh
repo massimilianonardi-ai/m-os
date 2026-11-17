@@ -1,7 +1,5 @@
 #!/bin/sh
 
-
-
 bash -eu <<'SH'
 BASE="$HOME/m-os-validation"
 
