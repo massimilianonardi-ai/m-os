@@ -1,0 +1,4 @@
+# POSIX runtime scripts and strict data records must retain LF on every host.
+# In particular, Git for Windows core.autocrlf=true must not rewrite
+# state/system/profile/.inventory into CRLF and break profile validation.
+* text=auto eol=lf
