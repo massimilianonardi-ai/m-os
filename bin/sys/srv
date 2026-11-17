@@ -278,6 +278,52 @@ srv_host_systemd_call()
     "$srv_systemctl" --user "$@"
 }
 
+srv_host_user_unit_prepare()
+{
+  srv_host_unit_record="$srv_host_dir/.$srv_name.srv-unit"
+  if [ "$srv_host_action" = install ]
+  then
+    srv_host_unit_name=${srv_host_requested_unit:-$srv_name}
+    srv_host_unit_name_valid "$srv_host_unit_name" ||
+      fatal 2 execution invalid-arguments operation srv subcommand host unit "$srv_host_unit_name"
+    if [ -e "$srv_host_unit_record" ] || [ -L "$srv_host_unit_record" ]
+    then
+      [ -f "$srv_host_unit_record" ] && [ ! -L "$srv_host_unit_record" ] ||
+        fatal 1 srv host-registration-invalid service "$srv_name"
+      IFS= read -r srv_host_existing_unit < "$srv_host_unit_record" ||
+        fatal 1 srv host-registration-invalid service "$srv_name"
+      [ "$srv_host_existing_unit" = "$srv_host_unit_name" ] ||
+        fatal 1 srv host-registration-invalid service "$srv_name"
+    fi
+  else
+    srv_host_unit_name=$srv_name
+    if [ -e "$srv_host_unit_record" ] || [ -L "$srv_host_unit_record" ]
+    then
+      [ -f "$srv_host_unit_record" ] && [ ! -L "$srv_host_unit_record" ] ||
+        fatal 1 srv host-registration-invalid service "$srv_name"
+      IFS= read -r srv_host_unit_name < "$srv_host_unit_record" ||
+        fatal 1 srv host-registration-invalid service "$srv_name"
+      srv_host_unit_name_valid "$srv_host_unit_name" ||
+        fatal 1 srv host-registration-invalid service "$srv_name"
+    fi
+  fi
+}
+
+srv_host_user_unit_write()
+{
+  srv_host_unit_tmp="$srv_host_unit_record.tmp.$"
+  ( umask 077; printf '%s\\n' "$srv_host_unit_name" > "$srv_host_unit_tmp" ) ||
+    fatal 1 srv host-registration-write-failed service "$srv_name"
+  command -p -- mv -- "$srv_host_unit_tmp" "$srv_host_unit_record" ||
+    fatal 1 srv host-registration-write-failed service "$srv_name"
+}
+
+srv_host_user_unit_remove()
+{
+  command -p -- rm -f -- "$srv_host_unit_record" ||
+    fatal 1 srv host-registration-remove-failed service "$srv_name"
+}
+
 srv_host_systemd_prepare()
 {
   srv_systemctl="$(command -p -v systemctl 2>/dev/null)" ||
@@ -298,8 +344,9 @@ srv_host_systemd_prepare()
   srv_host_systemd_call show-environment >/dev/null 2>&1 ||
     fatal 1 execution execution-failed operation srv reason host-supervisor-unavailable host systemd service "$srv_name"
 
-  srv_host_unit="$srv_name.service"
   srv_host_dir="$srv_host_home/.config/systemd/user"
+  srv_host_user_unit_prepare
+  srv_host_unit="$srv_host_unit_name.service"
   srv_host_manifest="$srv_host_dir/$srv_host_unit"
 }
 
@@ -349,6 +396,8 @@ srv_host_systemd_install()
   command -p -- mv -- "$srv_host_tmp" "$srv_host_manifest" ||
     fatal 1 execution execution-failed operation srv reason host-registration-write-failed service "$srv_name"
   srv_host_profile_manifest_write "$srv_host_registered_profile"
+  srv_host_user_unit_write
+  srv_host_user_unit_write
 
   srv_host_systemd_call daemon-reload ||
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action install service "$srv_name"
@@ -400,6 +449,7 @@ srv_host_systemd_uninstall()
   then
     srv_host_profile_manifest_remove ||
       fatal 1 srv host-registration-remove-failed service "$srv_name"
+    srv_host_user_unit_remove
     return 0
   fi
   srv_host_systemd_manifest_require
@@ -410,6 +460,7 @@ srv_host_systemd_uninstall()
     fatal 1 execution execution-failed operation srv reason host-registration-remove-failed service "$srv_name"
   srv_host_profile_manifest_remove ||
     fatal 1 srv host-registration-remove-failed service "$srv_name"
+  srv_host_user_unit_remove
   srv_host_systemd_call daemon-reload ||
     fatal 1 execution execution-failed operation srv reason host-supervisor-operation-failed action uninstall service "$srv_name"
 }
@@ -435,8 +486,9 @@ srv_host_launchd_prepare()
   )" || fatal 1 execution execution-failed operation srv reason host-home-unavailable service "$srv_name"
   srv_host_home_validate
 
-  srv_host_label="$srv_name"
   srv_host_dir="$srv_host_home/Library/LaunchAgents"
+  srv_host_user_unit_prepare
+  srv_host_label="$srv_host_unit_name"
   srv_host_manifest="$srv_host_dir/$srv_host_label.plist"
   srv_host_target="$srv_host_domain/$srv_host_label"
 }
@@ -562,6 +614,7 @@ srv_host_launchd_uninstall()
     srv_host_profile_manifest_remove ||
       fatal 1 srv host-registration-remove-failed service "$srv_name"
     "$srv_launchctl" disable "$srv_host_target" >/dev/null 2>&1 || :
+    srv_host_user_unit_remove
     return 0
   fi
   srv_host_launchd_manifest_require
@@ -577,12 +630,20 @@ srv_host_launchd_uninstall()
     fatal 1 execution execution-failed operation srv reason host-registration-remove-failed service "$srv_name"
   srv_host_profile_manifest_remove ||
     fatal 1 srv host-registration-remove-failed service "$srv_name"
+  srv_host_user_unit_remove
   "$srv_launchctl" disable "$srv_host_target" >/dev/null 2>&1 || :
 }
 
 srv_host_user()
 {
-  [ "$#" -eq 2 ] || fatal 2 execution invalid-arguments operation srv subcommand host
+  [ "$#" -ge 2 ] || fatal 2 execution invalid-arguments operation srv subcommand host
+  if [ "$1" = install ]; then
+    [ "$#" -eq 2 ] || [ "$#" -eq 3 ] || fatal 2 execution invalid-arguments operation srv subcommand host
+    srv_host_requested_unit=${3-}
+  else
+    [ "$#" -eq 2 ] || fatal 2 execution invalid-arguments operation srv subcommand host
+    srv_host_requested_unit=
+  fi
   srv_host_action=$1
   srv_name=$2
   srv_name_valid "$srv_name" ||
