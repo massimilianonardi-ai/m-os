@@ -124,3 +124,183 @@ cd "$HOME/m-os-validation/m-os" || exit 1
 '
 
 
+
+bash -eu <<'SH'
+cd "$HOME/m-os-validation/m-os"
+
+echo "=== REVISIONE M-OS ==="
+git rev-parse HEAD
+git status --short
+
+echo
+echo "=== VERSIONE ==="
+cat VERSION
+
+echo
+echo "=== IDENTITA ==="
+id
+uname -a
+
+echo
+echo "=== SERVIZI SYSTEMD ==="
+systemctl list-unit-files --no-legend |
+    grep -E '^m-srv-(geoserver|keycloak)\.service[[:space:]]' || :
+
+echo
+echo "=== STATO GEOSERVER ==="
+systemctl show m-srv-geoserver.service \
+    -p LoadState -p ActiveState -p SubState \
+    -p User -p ExecStart --no-pager
+
+echo
+echo "=== STATO KEYCLOAK ==="
+systemctl show m-srv-keycloak.service \
+    -p LoadState -p ActiveState -p SubState \
+    -p User -p ExecStart --no-pager
+
+echo
+echo "=== PROVIDER PREDEFINITI ==="
+for service in geoserver keycloak java; do
+    echo "--- $service ---"
+    ./m pkg provider default "$service" || :
+done
+
+echo
+echo "=== VERSIONI INSTALLATE ==="
+for package in geoserver keycloak temurin; do
+    echo "--- $package ---"
+    ./m pkg versions "$package" || :
+done
+SH
+
+
+
+cd "$HOME/m-os-validation/m-os" || exit 1
+
+./m pkg provider default geoserver geoserver@3.0.1
+./m pkg provider default keycloak keycloak@26.7.3
+
+./m pkg provider default geoserver
+./m pkg provider default keycloak
+
+echo "=== ACCOUNT DI SERVIZIO DISPONIBILI ==="
+
+getent passwd |
+while IFS=: read -r user password uid gid description home shell; do
+    if [ "$uid" -ne 0 ]; then
+        case "$shell" in
+            */nologin|*/false)
+                printf '%-24s UID=%-8s GID=%-8s HOME=%s SHELL=%s\n' \
+                    "$user" "$uid" "$gid" "$home" "$shell"
+                ;;
+        esac
+    fi
+done
+
+sudo userdel geoserver 2>/dev/null || true
+sudo userdel keycloak 2>/dev/null || true
+
+sudo groupdel geoserver 2>/dev/null || true
+sudo groupdel keycloak 2>/dev/null || true
+
+sudo groupadd --system geoserver
+sudo groupadd --system keycloak
+
+sudo useradd --system \
+    --gid geoserver \
+    --home-dir /var/lib/geoserver \
+    --shell /usr/sbin/nologin \
+    geoserver
+
+sudo useradd --system \
+    --gid keycloak \
+    --home-dir /var/lib/keycloak \
+    --shell /usr/sbin/nologin \
+    keycloak
+
+id geoserver
+id keycloak
+
+sudo userdel geoserver 2>/dev/null || true
+sudo userdel keycloak 2>/dev/null || true
+
+sudo groupdel geoserver 2>/dev/null || true
+sudo groupdel keycloak 2>/dev/null || true
+
+
+
+BASE="$HOME/m-os-validation/m-os"
+
+namei -l "$BASE/m"
+
+cd "$HOME/m-os-validation/m-os" || exit 1
+
+cd "$HOME/m-os-validation/m-os" || exit 1
+
+sudo ./m srv host system stop geoserver
+sudo ./m srv host system stop keycloak
+
+sudo ./m srv host system uninstall geoserver
+sudo ./m srv host system uninstall keycloak
+
+
+
+cd "$HOME/m-os-validation/m-os"
+
+sudo rm -rf -- \
+  "$PWD"'/state/system/profile/main/pkg/geoserver@!geoserver/home' \
+  "$PWD"'/state/system/profile/main/pkg/keycloak@!keycloak/home'
+
+
+
+#sudo ./m srv host system install geoserver geoserver
+#sudo ./m srv host system install keycloak keycloak
+sudo ./m srv host system install geoserver mnardi
+sudo ./m srv host system install keycloak mnardi
+
+sudo ./m srv host system start geoserver
+sudo ./m srv host system start keycloak
+
+systemctl status m-srv-geoserver.service --no-pager
+systemctl status m-srv-keycloak.service --no-pager
+
+systemctl show m-srv-geoserver.service \
+    -p User -p MainPID -p ActiveState
+
+systemctl show m-srv-keycloak.service \
+    -p User -p MainPID -p ActiveState
+
+sudo journalctl -u m-srv-geoserver.service -n 30 --no-pager
+sudo journalctl -u m-srv-keycloak.service -n 30 --no-pager
+
+curl -i --max-time 30 'http://127.0.0.1:8080/geoserver/ows?service=WFS&version=2.0.0&request=GetCapabilities'
+curl -i --max-time 30 'http://127.0.0.1:8080/realms/master/.well-known/openid-configuration'
+
+for service in geoserver keycloak; do
+    pid=$(systemctl show "m-srv-$service.service" \
+        --property=MainPID --value)
+
+    echo "=== $service PID=$pid ==="
+
+    if [ "$pid" -gt 0 ]; then
+        ps -p "$pid" -o user,pid,ppid,args
+        sudo readlink -f "/proc/$pid/exe"
+    fi
+done
+
+
+sudo ./m srv host system restart geoserver
+sudo ./m srv host system restart keycloak
+
+systemctl is-active m-srv-geoserver.service
+systemctl is-active m-srv-keycloak.service
+
+
+
+sudo ./m srv host system stop geoserver
+sudo ./m srv host system stop keycloak
+
+systemctl is-active m-srv-geoserver.service
+systemctl is-active m-srv-keycloak.service
+
+
