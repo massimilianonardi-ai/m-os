@@ -4,7 +4,7 @@ NAME
 SYNOPSIS
     srv start <service>
     srv stop [-f] <service>
-    srv host user install <service>
+    srv host user install <service> [unit-name]
     srv host user uninstall <service>
     srv host user start <service>
     srv host user stop <service>
@@ -46,7 +46,9 @@ COMMANDS
         clean termination. If no active managed service remains, stop succeeds
         idempotently.
 
-    host user install <service>
+    host user install <service> [unit-name]
+        Optionally select the native host registration name. By default it is
+        the unprefixed service name; the selected name is saved for later actions.
         Persist the service in the calling POSIX account's native user supervisor
         without starting it in the current session. Registration records the
         validated system profile active in the installing m context. Future starts
