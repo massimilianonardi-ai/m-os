@@ -451,6 +451,21 @@ _pkg_integration_v2_validate_definition()
       cmd | link | state-map | facility-bin | facility-service | facility-env)
         valid_dir "$pkg_v2_entry" || return 1
         ;;
+      # The established extractor and setuid handlers are schema-neutral.
+      # Retain their checked descriptors for v2 package streams as well.
+      component)
+        _pkg_integration_component_file_validate "$pkg_v2_entry" || return 1
+        ;;
+      payload-root)
+        pkg_integration_link_target_read "$pkg_v2_entry" || return 1
+        ;;
+      overlay)
+        _pkg_integration_dmg_overlay_validate "$pkg_v2_entry" || return 1
+        ;;
+      setuid_root)
+        [ -f "$pkg_v2_entry" ] && [ ! -L "$pkg_v2_entry" ] &&
+          [ -r "$pkg_v2_entry" ] && [ ! -x "$pkg_v2_entry" ] || return 1
+        ;;
       facility)
         _pkg_facility_file_validate "$pkg_v2_entry" || return 1
         ;;
@@ -471,6 +486,25 @@ _pkg_integration_v2_validate_definition()
   done
 
   [ -f "$pkg_v2_range/format" ] && [ ! -L "$pkg_v2_range/format" ] || return 1
+  pkg_v2_format="$(command -p -- cat -- "$pkg_v2_range/format")" || return 1
+  case "$pkg_v2_format" in
+    flat-pkg | dmg-pkg)
+      [ -f "$pkg_v2_range/component" ] &&
+        [ ! -L "$pkg_v2_range/component" ] || return 1
+      if [ "$pkg_v2_format" = flat-pkg ]
+      then
+        [ ! -e "$pkg_v2_range/overlay" ] &&
+          [ ! -L "$pkg_v2_range/overlay" ] || return 1
+      fi
+      ;;
+    *)
+      for pkg_v2_installer_field in component payload-root overlay
+      do
+        [ ! -e "$pkg_v2_range/$pkg_v2_installer_field" ] &&
+          [ ! -L "$pkg_v2_range/$pkg_v2_installer_field" ] || return 1
+      done
+      ;;
+  esac
   if [ -e "$pkg_v2_range/link" ] || [ -L "$pkg_v2_range/link" ]
   then
     valid_dir "$pkg_v2_range/link" || return 1
