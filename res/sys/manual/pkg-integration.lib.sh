@@ -17,7 +17,11 @@ FUNCTIONS
         lib/sh and lib/java. The optional schema is v1 by default. v2 stores a
         schema marker and exposes commands through link/bin (either useful-root
         executables or validated cmd wrappers), with library links under
-        link/lib/sh and link/lib/java. Both layouts bind to one exact installed
+        link/lib/sh and link/lib/java. v2 retains the validated component,
+        payload-root and overlay metadata for supported macOS installer formats
+        and setuid_root for Linux; these are processed by the same trusted
+        extractor and privilege handlers as v1, rather than being ignored.
+        Both layouts bind to one exact installed
         concrete. Only non-executable POSIX *.lib.sh and readable *.jar
         library exports are supported; ordinary libraries do not create
         facility provider-selection state. v2 also accepts an explicit
