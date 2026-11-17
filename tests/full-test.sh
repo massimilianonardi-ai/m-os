@@ -95,3 +95,32 @@ cd "$HOME/m-os-validation/m-os"
 echo "INSTALLAZIONE PACCHETTI COMPLETATA"
 SH
 
+
+
+cd "$HOME/m-os-validation/m-os" || exit 1
+
+./m pkg install m-core@v0.1.1
+./m pkg install m-term@v0.1.1
+./m pkg install m-rsudo@v0.1.2
+
+
+
+cd "$HOME/m-os-validation/m-os" || exit 1
+
+./m sh -c '
+  . "$m_LIB_DIR/sys/sh/core.lib.sh"
+  context pkg=m-core@v0.1.1 pkg=m-term@v0.1.1
+  menu -H "Test m-term" Primo Secondo Terzo
+'
+
+
+
+cd "$HOME/m-os-validation/m-os" || exit 1
+
+./m sh -c '
+  . "$m_LIB_DIR/sys/sh/core.lib.sh"
+  context pkg=m-core@v0.1.1 pkg=m-term@v0.1.1 pkg=m-rsudo@v0.1.2
+  rsudo-admin
+'
+
+
