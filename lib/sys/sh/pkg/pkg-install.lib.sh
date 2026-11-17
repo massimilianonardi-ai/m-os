@@ -163,11 +163,11 @@ _pkg_install_init()
 
   pkg_install_tmp_root="$(state-path system sys pkg tmp)" || return 2
   mkdir -p -m 777 -- "$pkg_install_tmp_root" || return 3
-  chmod 777 -- "$pkg_install_tmp_root" || return 3
+  chmod 777 "$pkg_install_tmp_root" || return 3
 
   pkg_install_cache_root="$(state-path system sys pkg cache)" || return 4
   mkdir -p -m 777 -- "$pkg_install_cache_root" || return 5
-  chmod 777 -- "$pkg_install_cache_root" || return 5
+  chmod 777 "$pkg_install_cache_root" || return 5
 
   pkg_install_work="$pkg_install_tmp_root/install2-$$"
   mkdir -p -m 777 -- "$pkg_install_work" || return 6
