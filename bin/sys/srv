@@ -298,7 +298,7 @@ srv_host_systemd_prepare()
   srv_host_systemd_call show-environment >/dev/null 2>&1 ||
     fatal 1 execution execution-failed operation srv reason host-supervisor-unavailable host systemd service "$srv_name"
 
-  srv_host_unit="m-srv-$srv_name.service"
+  srv_host_unit="$srv_name.service"
   srv_host_dir="$srv_host_home/.config/systemd/user"
   srv_host_manifest="$srv_host_dir/$srv_host_unit"
 }
@@ -435,7 +435,7 @@ srv_host_launchd_prepare()
   )" || fatal 1 execution execution-failed operation srv reason host-home-unavailable service "$srv_name"
   srv_host_home_validate
 
-  srv_host_label="m.srv.$srv_name"
+  srv_host_label="$srv_name"
   srv_host_dir="$srv_host_home/Library/LaunchAgents"
   srv_host_manifest="$srv_host_dir/$srv_host_label.plist"
   srv_host_target="$srv_host_domain/$srv_host_label"
@@ -717,6 +717,14 @@ srv_host_system_state_prepare()
   fi
 }
 
+srv_host_unit_name_valid()
+{
+  [ "$#" -eq 1 ] || return 2
+  case "$1" in
+    "" | [!abcdefghijklmnopqrstuvwxyz0123456789]* | *[!abcdefghijklmnopqrstuvwxyz0123456789._-]* | *[._-]) return 1 ;;
+  esac
+}
+
 srv_host_system_registration_prepare()
 {
   srv_host_system_registration_dir="$m_STATE_DIR/system/srv/conf/system"
@@ -779,7 +787,8 @@ srv_host_system_registration_write()
     m-srv-host-system-registration-v1 \
     "account=$srv_host_account" \
     "system=$srv_host_system_registered_profile" \
-    "provider=$srv_provider" > "$srv_host_system_registration_tmp"
+    "provider=$srv_provider" \
+    "unit=$srv_host_unit_name" > "$srv_host_system_registration_tmp"
   then
     command -p -- rm -f -- "$srv_host_system_registration_tmp" 2>/dev/null
     return 1
@@ -818,12 +827,14 @@ srv_host_system_registration_read()
   srv_host_registered_account_line=
   srv_host_registered_system_line=
   srv_host_registered_provider_line=
+  srv_host_registered_unit_line=
   srv_host_registered_extra=
   {
     IFS= read -r srv_host_registered_header || return 1
     IFS= read -r srv_host_registered_account_line || return 1
     IFS= read -r srv_host_registered_system_line || return 1
     IFS= read -r srv_host_registered_provider_line || return 1
+    IFS= read -r srv_host_registered_unit_line || return 1
     IFS= read -r srv_host_registered_extra
     srv_host_registered_second_status=$?
   } < "$srv_host_system_registration_file"
@@ -833,6 +844,8 @@ srv_host_system_registration_read()
   case "$srv_host_registered_account_line" in account=*) srv_host_registered_account=${srv_host_registered_account_line#account=} ;; *) return 1 ;; esac
   case "$srv_host_registered_system_line" in system=*) srv_host_registered_profile=${srv_host_registered_system_line#system=} ;; *) return 1 ;; esac
   case "$srv_host_registered_provider_line" in provider=*) srv_host_registered_provider=${srv_host_registered_provider_line#provider=} ;; *) return 1 ;; esac
+  case "$srv_host_registered_unit_line" in unit=*) srv_host_registered_unit=${srv_host_registered_unit_line#unit=} ;; *) return 1 ;; esac
+  srv_host_unit_name_valid "$srv_host_registered_unit" || return 1
 
   case "$srv_host_registered_account" in
     "" | [!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_]* | *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]*) return 1 ;;
@@ -965,7 +978,7 @@ srv_host_systemd_system_prepare()
 {
   srv_systemctl="$(command -p -v systemctl 2>/dev/null)" ||
     fatal 1 execution execution-failed operation srv reason host-supervisor-unavailable host systemd service "$srv_name"
-  srv_host_unit="m-srv-$srv_name.service"
+  srv_host_unit="${srv_host_unit_name:-$srv_name.service}"
   srv_host_dir=/etc/systemd/system
   srv_host_manifest="$srv_host_dir/$srv_host_unit"
 }
@@ -1094,7 +1107,7 @@ srv_host_launchd_system_prepare()
   srv_plutil="$(command -p -v plutil 2>/dev/null)" ||
     fatal 1 execution execution-failed operation srv reason host-supervisor-unavailable host launchd service "$srv_name"
 
-  srv_host_label="m.srv.$srv_name"
+  srv_host_label="${srv_host_unit_name:-$srv_name}"
   srv_host_domain=system
   srv_host_dir=/Library/LaunchDaemons
   srv_host_manifest="$srv_host_dir/$srv_host_label.plist"
@@ -1234,7 +1247,7 @@ srv_host_system()
 
   case "$srv_host_action" in
     install)
-      [ "$#" -eq 3 ] || fatal 2 execution invalid-arguments operation srv subcommand host action install
+      [ "$#" -eq 3 ] || [ "$#" -eq 4 ] || fatal 2 execution invalid-arguments operation srv subcommand host action install
       ;;
     uninstall | start | stop | restart)
       [ "$#" -eq 2 ] || fatal 2 execution invalid-arguments operation srv subcommand host action "$srv_host_action"
@@ -1249,9 +1262,19 @@ srv_host_system()
   if [ "$srv_host_action" = install ]
   then
     srv_host_profile_capture || return $?
+    srv_host_unit_name=${4:-$srv_name}
+    srv_host_unit_name_valid "$srv_host_unit_name" ||
+      fatal 2 execution invalid-arguments operation srv subcommand host unit "$srv_host_unit_name"
     srv_host_system_account_prepare "$3"
     srv_host_system_provider_prepare
     srv_host_system_state_prepare
+  fi
+
+  if [ "$srv_host_action" != install ]
+  then
+    srv_host_system_registration_read ||
+      fatal 1 execution execution-failed operation srv reason host-registration-missing service "$srv_name"
+    srv_host_unit_name=$srv_host_registered_unit
   fi
 
   srv_host_os="$(command -p -- uname -s 2>/dev/null)" ||
