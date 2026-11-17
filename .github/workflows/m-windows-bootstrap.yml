@@ -1,0 +1,35 @@
+name: Windows Git Bash strict profile bootstrap
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - .gitattributes
+      - m
+      - state/system/profile/.inventory
+      - lib/sys/sh/context-profile-registry.lib.sh
+      - lib/sys/sh/context-store.lib.sh
+      - .github/workflows/m-windows-bootstrap.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-bootstrap:
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert checkout preserves exact LF inventory and public m bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git check-attr eol -- state/system/profile/.inventory)" = 'state/system/profile/.inventory: eol: lf'
+          git show HEAD:state/system/profile/.inventory | cmp - state/system/profile/.inventory
+          ./m osarch update
+          ./m sh -c 'test "$m_OSARCH" = windows-x86_64'
+          ./m state-path system sys pkg conf
+          echo 'PASS: Windows Git Bash strict profile inventory and m bootstrap'
