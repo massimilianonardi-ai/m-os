@@ -312,7 +312,7 @@ srv_host_user_unit_prepare()
 srv_host_user_unit_write()
 {
   srv_host_unit_tmp="$srv_host_unit_record.tmp.$"
-  ( umask 077; printf '%s\\n' "$srv_host_unit_name" > "$srv_host_unit_tmp" ) ||
+  ( umask 077; printf '%s\n' "$srv_host_unit_name" > "$srv_host_unit_tmp" ) ||
     fatal 1 srv host-registration-write-failed service "$srv_name"
   command -p -- mv -- "$srv_host_unit_tmp" "$srv_host_unit_record" ||
     fatal 1 srv host-registration-write-failed service "$srv_name"
