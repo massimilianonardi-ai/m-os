@@ -8,7 +8,7 @@ SYNOPSIS
 DESCRIPTION
     The caller enters through m: m context-run ...
     The execution form applies ordered context selectors within this child
-    process only, then execs the requested command. The parent shell and its
+    process only, then re-enters the m bootstrap with a validated context envelope before\n    execing the requested command, so selected system global environment\n    snapshots are applied. The parent shell and its
     context are not modified. Selectors use the native context syntax:
     pkg=..., system=..., user=..., locale=..., osarch=...,
     provider.<facility>=..., full-context=<preset>.

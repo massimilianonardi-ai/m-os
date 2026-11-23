@@ -22,6 +22,11 @@ pkg_provider_selector_resolve() { printf '%s\n' "$1"; }
 _pkg_dependency_provider_satisfies() { [ "$1" = node@v26 ] && [ "$2" = node ] && [ "$3" = '>=26' ]; }
 pkg_dependency_default_resolve() { printf '%s\n' default-node; }
 EOF_CORE
+cat > "$work/m" <<'EOF_M'
+#!/bin/sh
+exec "$@"
+EOF_M
+chmod 700 "$work/m"
 m_ROOT=$work
 m_LIB_DIR=$work/lib
 CONTEXT_RUN_TEST_SELECTORS=$work/selectors

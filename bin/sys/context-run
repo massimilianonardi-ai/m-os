@@ -123,4 +123,6 @@ done
   exit 2
 }
 _context_run_activate "$_context_run_selectors" || exit $?
-exec "$@"
+# Re-enter m to apply the selected profile's global environment snapshots.
+# The validated context envelope prevents resetting the selection to defaults.
+exec "$m_ROOT/m" "$@"
