@@ -1,0 +1,126 @@
+#!/bin/sh
+# Execute in one isolated m context, or resolve a contextual facility requirement.
+[ -n "${m_ROOT:-}" ] && [ -n "${m_LIB_DIR:-}" ] || {
+  printf '%s\n' 'context-run: m environment not initialized' >&2
+  exit 1
+}
+. "$m_LIB_DIR/sys/sh/core.lib.sh" || exit 1
+
+_context_run_requirement()
+(
+  [ "$#" -ge 2 ] || return 2
+  loadsyslib 'pkg/facility/pkg-dependency' || return 1
+  _context_run_facility=$1
+  shift
+  _pkg_facility_name_valid "$_context_run_facility" || return 2
+  _context_run_constraints=
+  for _context_run_constraint
+  do
+    _pkg_dependency_constraint_parse "$_context_run_constraint" || return 2
+    if [ -z "$_context_run_constraints" ]
+    then
+      _context_run_constraints=$_context_run_constraint
+    else
+      _context_run_constraints="$_context_run_constraints $_context_run_constraint"
+    fi
+  done
+
+  _context_run_pin=
+  _context_run_rest=${m_CONTEXT_PROVIDER_PINS-}
+  _context_run_newline='
+'
+  while [ -n "$_context_run_rest" ]
+  do
+    case "$_context_run_rest" in
+      *"$_context_run_newline"*)
+        _context_run_item=${_context_run_rest%%"$_context_run_newline"*}
+        _context_run_rest=${_context_run_rest#*"$_context_run_newline"}
+        ;;
+      *) _context_run_item=$_context_run_rest; _context_run_rest= ;;
+    esac
+    case "$_context_run_item" in
+      "provider.$_context_run_facility="*)
+        _context_run_pin=${_context_run_item#*=}
+        break
+        ;;
+      provider.*=*) : ;;
+      *) return 2 ;;
+    esac
+  done
+
+  if [ -z "$_context_run_pin" ]
+  then
+    pkg_dependency_default_resolve "$_context_run_facility" "$@"
+    return $?
+  fi
+
+  _context_run_provider="$(pkg_provider_selector_resolve \
+    "$_context_run_pin" "${m_CONTEXT_OSARCH:-${m_OSARCH-}}")" || return 1
+  _pkg_dependency_provider_satisfies \
+    "$_context_run_provider" "$_context_run_facility" "$_context_run_constraints" || return 1
+  printf '%s\n' "$_context_run_provider"
+)
+
+_context_run_activate()
+{
+  [ "$#" -eq 1 ] || return 2
+  _context_run_data=$1
+  _context_run_saved_ifs=$IFS
+  _context_run_glob_disabled=0
+  case $- in *f*) _context_run_glob_disabled=1 ;; esac
+  IFS='
+'
+  set -f
+  # Split only at line boundaries; no eval, shell interpolation or globbing.
+  set -- $_context_run_data
+  IFS=$_context_run_saved_ifs
+  [ "$_context_run_glob_disabled" -eq 1 ] || set +f
+  context "$@"
+}
+
+case "${1-}" in
+  --resolve)
+    shift
+    _context_run_requirement "$@"
+    exit $?
+    ;;
+esac
+
+_context_run_selectors=
+_context_run_separator=0
+_context_run_newline='
+'
+_context_run_cr=$(printf '\r')
+while [ "$#" -gt 0 ]
+do
+  if [ "$1" = -- ]
+  then
+    _context_run_separator=1
+    shift
+    break
+  fi
+  case "$1" in
+    pkg=* | system=* | user=* | locale=* | osarch=* | provider.*=* | full-context=*) : ;;
+    *) printf '%s\n' 'context-run: invalid selector' >&2; exit 2 ;;
+  esac
+  case "$1" in
+    *"$_context_run_newline"* | *"$_context_run_cr"*)
+      printf '%s\n' 'context-run: invalid selector line break' >&2
+      exit 2
+      ;;
+  esac
+  if [ -n "$_context_run_selectors" ]
+  then
+    _context_run_selectors="$_context_run_selectors$_context_run_newline$1"
+  else
+    _context_run_selectors=$1
+  fi
+  shift
+done
+[ "$_context_run_separator" -eq 1 ] && [ "$#" -ge 1 ] &&
+[ -n "$_context_run_selectors" ] || {
+  printf '%s\n' 'context-run: expected selectors -- command [args...]' >&2
+  exit 2
+}
+_context_run_activate "$_context_run_selectors" || exit $?
+exec "$@"

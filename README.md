@@ -126,3 +126,15 @@ contracts and ongoing source-composition work live in `rumiai-dev`.
 
 This is a technical foundation checkout, not a complete `rumiai-os` product
 distribution. The first-stage extraction does not migrate host installations.
+
+## Isolated command execution in a context
+
+A process can use a context without changing the caller's shell:
+
+```sh
+./m context-run full-context=development -- node app.js
+./m context-run provider.node=nodejs@v26.8.2 -- context-run --resolve node '>=26'
+```
+
+`context-run` only selects installed packages/providers; it does not install
+packages or persist a new default. See `res/sys/manual/context-run`.

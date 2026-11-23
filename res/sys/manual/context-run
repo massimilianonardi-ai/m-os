@@ -1,0 +1,44 @@
+NAME
+    context-run - execute one command inside a selected m context
+
+SYNOPSIS
+    context-run <context-selector>... -- <command> [<argument> ...]
+    context-run --resolve <facility> <constraint>...
+
+DESCRIPTION
+    The caller enters through m: m context-run ...
+    The execution form applies ordered context selectors within this child
+    process only, then execs the requested command. The parent shell and its
+    context are not modified. Selectors use the native context syntax:
+    pkg=..., system=..., user=..., locale=..., osarch=...,
+    provider.<facility>=..., full-context=<preset>.
+
+    No package installation or persistent context configuration occurs.
+    Errors in selector validation prevent execution. Arguments are passed
+    without shell interpretation, and exec preserves signal/exit behavior.
+
+    --resolve checks one facility requirement against the selected context.
+    A pinned provider.<facility> is validated against the supplied constraints;
+    without a pin, the existing pkg system-default requirement resolution is
+    used for compatibility. The command prints the concrete provider on
+    success and never installs or binds packages.
+
+    --resolve uses the active context and does not accept selectors itself.
+    To resolve in another context, run context-run <selectors> --
+    context-run --resolve <facility> <constraint>... .
+
+EXAMPLES
+    m context-run pkg=nodejs@v26.8.2 -- node --version
+    m context-run full-context=development -- node app.js
+    m context-run provider.node=nodejs@v26.8.2 -- context-run --resolve node '>=26'
+
+EXIT STATUS
+    Command mode: the executed command's status (or context failure).
+    Requirement mode: 0 on success, 1 on unavailable/incompatible provider,
+    2 on invalid invocation.
+
+OWNERSHIP
+    Context selects installed packages and validated providers in m-os.
+    pkg supplies facility metadata and compatibility checking.
+    Development tools such as mk delegate to this boundary; they do not
+    recreate context resolution or PATH construction.
